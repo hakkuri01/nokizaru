@@ -1,8 +1,7 @@
-````md
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-3-red.svg?style=plastic">
-<img src="https://img.shields.io/badge/All In One-red.svg?style=plastic">
-<img src="https://img.shields.io/badge/Web Recon-red.svg?style=plastic">
+<img src="https://img.shields.io/badge/All%20In%20One-red.svg?style=plastic">
+<img src="https://img.shields.io/badge/Web%20Recon-red.svg?style=plastic">
 </p>
 
 # Nokizaru
@@ -42,7 +41,7 @@ NK_NETLAS_KEY, NK_SHODAN_KEY, NK_VT_KEY, NK_ZOOMEYE_KEY
 
 # Example :
 export NK_SHODAN_KEY="kl32lcdqwcdfv"
-````
+```
 
 #### Saved Keys
 
@@ -213,5 +212,4 @@ Nokizaru took inspiration from FinalRecon by thewhiteh4t:
 
 Nokizaru is licensed under the MIT License. If you reuse Nokizaru or redistribute derived work, ensure you preserve applicable license notices.
 
-```
 
