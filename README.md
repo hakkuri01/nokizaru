@@ -199,17 +199,8 @@ By default, results are exported to:
 
 You can change the export directory with `-cd`.
 
-## Responsible Use
+## Responsible Use / Disclaimers
 
-Nokizaru is intended for authorized security testing and research. Always ensure you have explicit permission to scan targets you do not own.
-
-## Attribution
-
-Nokizaru took inspiration from FinalRecon by thewhiteh4t:
-
-* Upstream project: [https://github.com/thewhiteh4t/FinalRecon](https://github.com/thewhiteh4t/FinalRecon)
-* Nokizaru reimplements the workflow in Ruby and includes independent architectural and UX refinements.
-
-Nokizaru is licensed under the MIT License. If you reuse Nokizaru or redistribute derived work, ensure you preserve applicable license notices.
-
+* **Nokizaru is intended for authorized security testing and research. Always ensure you have explicit permission to scan targets you do not own.**
+* Nokizaru is licensed under the MIT License. If you reuse Nokizaru or redistribute derived work, ensure you preserve applicable license notices.
 
