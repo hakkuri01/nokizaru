@@ -1,0 +1,61 @@
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+*.swp
+*.swo
+*.swn
+*~
+.idea/
+.vscode/
+*.vim
+.netrwhist
+
+# =========================
+# Ruby / Bundler
+# =========================
+.bundle/
+vendor/bundle/
+pkg/
+*.gem
+.irb_history
+.ruby-gemset
+.rbenv-vars
+.byebug_history
+.yardoc/
+doc/
+coverage/
+*.rbc
+Gemfile.lock
+
+# =========================
+# Nokizaru runtime outputs
+# =========================
+*.log
+tmp/
+log/
+
+# =========================
+# Secrets / local config
+# =========================
+.env
+*.env
+/keys.json
+conf/keys.json.bak
+conf/keys.json.old
+config.local.json
+config.local.yml
+config.local.yaml
+keys.local.json
+keys.json.bak
+keys.json.old
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+

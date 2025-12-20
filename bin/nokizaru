@@ -1,0 +1,57 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Nokizaru aims to be flag-compatible with FinalRecon.
+# FinalRecon uses multi-letter short options like -nb, -dt, -pt, -sp, -cd, -of.
+# Ruby's OptionParser (used by Thor) does not support multi-letter *short* flags,
+# so we normalize them into equivalent long options before Thor parses ARGV.
+
+def normalize_argv!(argv)
+  replacements = {}
+  replacements['-nb'] = '--nb'
+  replacements['-dt'] = '--dt'
+  replacements['-pt'] = '--pt'
+  replacements['-sp'] = '--sp'
+  replacements['-cd'] = '--cd'
+  replacements['-of'] = '--of'
+
+  argv.map! do |arg|
+    if replacements.key?(arg)
+      replacements[arg]
+    else
+      found = replacements.find { |k, _| arg.start_with?(k + '=') }
+      if found
+        k, v = found
+        v + arg[k.length..-1]
+      else
+        arg
+      end
+    end
+  end
+end
+
+def normalize_help_invocation!(argv)
+  # Thor's canonical help form is: `nokizaru help scan`.
+  # Many users expect: `nokizaru scan --help`.
+  # Depending on Thor/version/config, `scan --help` may be treated as a positional argument.
+  # Normalize common help patterns into `help <command>`.
+
+  # `nokizaru scan --help` or `nokizaru run --help`
+  if argv[0] && %w[scan run].include?(argv[0]) && (argv.include?('--help') || argv.include?('-h'))
+    argv.replace(['help', 'scan'])
+    return
+  end
+
+  # `nokizaru --help scan`
+  if argv[0] && %w[--help -h].include?(argv[0]) && argv[1] == 'scan'
+    argv.replace(['help', 'scan'])
+    return
+  end
+end
+
+normalize_help_invocation!(ARGV)
+normalize_argv!(ARGV)
+
+require_relative '../lib/nokizaru'
+
+Nokizaru::CLI.start(ARGV)

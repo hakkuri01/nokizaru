@@ -1,0 +1,135 @@
+.TH NOKIZARU 1 "December 2025" "Nokizaru" "User Commands"
+.SH NAME
+Nokizaru \- Recon Refined
+.SH DESCRIPTION
+.nf
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⣶⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⢤⣤⣀⠀⠀⣀⡀⠀⠀⠀⠀⠀⠸⣿⣿⣀⣀⣀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠹⣿⣧⣀⣾⣿⣿⠆⠀⣀⣠⣴⣿⣿⠿⠟⠛⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⣻⣿⣿⠿⠋⠁⠀⠀⠉⠉⢹⣿⣿⠀⠀⠀⣀⣠⣤⣄⠀⠀⠀⠀
+⠀⠀⠀⢀⣤⠾⠿⣿⡇⠀⢀⠀⣀⣀⣤⣴⡾⠿⠛⠛⠛⠉⠙⠛⠛⠛⠛⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⣿⡇⠀⠈⢿⠿⠛⣉⠁⢀⣀⣠⣤⣦⣄⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⣼⣿⣿⠀⠀⠀⠀⢺⣿⡟⠋⠉⠁⣼⣿⡿⠁⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⢀⣾⣿⣿⣿⠀⠀⠀⠀⠈⣿⣷⣤⣤⣤⣿⣿⠁⢀⣀⣀⠀⠀⠀⠀⠀
+⠀⠀⠀⣠⣿⠟⠁⢸⣿⠀⠀⠀⠀⠀⠹⣿⣿⣯⡉⠉⠀⣠⣾⣿⠟⠀⠀⠀⠀⠀
+⠀⣠⣾⠟⠁⠀⠀⢸⣿⠀⠀⠀⠀⠀⣠⣿⣿⡁⠙⢷⣾⡟⠉⠀⠀⠀⠀⠀⠀⠀
+⠈⠉⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⢀⣼⡿⠋⣿⡇⠀⠀⠙⣿⣦⣄⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⣾⣿⠀⣠⣴⠟⠋⠀⢀⣿⡇⠀⠀⠀⡈⠻⣿⣷⣦⣄⠀⠀⠀
+⠀⠀⠀⠱⣶⣤⣴⣿⣿⠀⠁⠀⠀⠀⠀⢸⣿⡇⣀⣴⡾⠁⠀⠈⠻⠿⠿⠿⠷⠖
+⠀⠀⠀⠀⠈⠻⣿⣿⡇⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⠟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠀⢻⡿⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+ ▐ ▄       ▄ •▄ ▪  ·▄▄▄▄• ▄▄▄· ▄▄▄  ▄• ▄▌
+•█▌▐█▪     █▌▄▌▪██ ▪▀·.█▌▐█ ▀█ ▀▄ █·█▪██▌
+▐█▐▐▌ ▄█▀▄ ▐▀▀▄·▐█·▄█▀▀▀•▄█▀▀█ ▐▀▀▄ █▌▐█▌
+██▐█▌▐█▌.▐▌▐█.█▌▐█▌█▌▪▄█▀▐█ ▪▐▌▐█•█▌▐█▄█▌
+▀▀ █▪ ▀█▄▀▪·▀  ▀▀▀▀·▀▀▀ • ▀  ▀ .▀  ▀ ▀▀▀
+
+.fi
+Nokizaru is an all-in-one web recon CLI intended for bug bounty/web app pentesting engagements.
+It can collect common recon signals from a target such as HTTP headers, SSL/TLS certificate details, WHOIS, DNS records, subdomains,
+crawler link extraction, directory enumeration, Wayback URLs, and also features a fast port scan.
+.SH REQUIRED OPTIONS
+.TS
+box, allbox;
+l l.
+OPTION	MEANING
+--url URL	Target URL (e.g. https://example.com)
+.TE
+.SH MODULE SELECTION OPTIONS
+These options enable modules. You may enable multiple in one run.
+.TS
+box, allbox;
+l l.
+OPTION	MODULE
+--headers	Header Information
+--sslinfo	SSL Certificate Information
+--whois	Whois Lookup
+--crawl	Crawl Target
+--dns	DNS Enumeration
+--sub	Sub-Domain Enumeration
+--dir	Directory Search
+--wayback	Wayback URLs
+--ps	Fast Port Scan
+--full	Full Recon
+--no-MODULE	Skip specified modules above during full scan (e.g. --no-dir)
+--export	Write results to export directory
+.TE
+.SH EXTRA OPTIONS
+.TS
+box, allbox;
+l l l.
+OPTION	MEANING	DEFAULT / NOTES
+-h, --help	Show help and exit	-
+-nb	Hide Banner	-
+-dt DT	Directory enum threads	50
+-pt PT	Port scan threads	50
+-T T	Request timeout (seconds)	30.0
+-w W	Path to wordlist	wordlists/dirb_common.txt
+-r	Allow Redirect	False
+-s	Toggle SSL Verification	True
+-sp SP	Specify SSL port	443
+-d D	Custom DNS servers	1.1.1.1
+-e E	File extensions	txt, xml, php, etc.
+-o O	Export format	txt
+-cd CD	Change export base directory	~/.local/share/nokizaru
+-of OF	Change export folder name	nk_<host>_<DD-MM-YYYY_HH:MM:SS>
+-k K	Add API key (NAME@KEY)	shodan@key
+.TE
+.SH API KEYS
+Some subdomain sources require API keys.
+Keys may be provided via environment variables (NK_*) or saved to:
+.IR ~/.config/nokizaru/keys.json .
+.PP
+.TS
+box, allbox;
+l l.
+ENV VAR	PROVIDER
+NK_BEVIGIL_KEY	BeVigil
+NK_BINEDGE_KEY	BinaryEdge
+NK_FB_KEY	Facebook
+NK_HUNTER_KEY	Hunter
+NK_NETLAS_KEY	Netlas
+NK_SHODAN_KEY	Shodan
+NK_VT_KEY	VirusTotal
+NK_ZOOMEYE_KEY	ZoomEye
+.TE
+.PP
+To add a key from the CLI:
+.PP
+.nf
+nokizaru -k shodan@YOURKEY
+.fi
+.SH FILES
+.TS
+box, allbox;
+l l.
+PATH	PURPOSE
+~/.config/nokizaru/config.json	Main configuration file
+~/.config/nokizaru/keys.json	API keys file (optional)
+~/.local/share/nokizaru/dumps/	Export directory for run outputs
+~/.local/share/nokizaru/run.log	Runtime log file
+.TE
+.SH EXAMPLES
+.TS
+box, allbox;
+l l.
+COMMAND	DESCRIPTION
+nokizaru --full --url https://example.com	Full recon
+nokizaru --headers --url https://example.com	Header inspection
+nokizaru --dir --url https://example.com -e php,xml	Directory enum with extensions
+nokizaru --wayback --url https://example.com	Wayback URLs
+nokizaru --ps --url https://example.com -pt 80	Port scan with more threads
+.TE
+.SH EXIT STATUS
+.TS
+box, allbox;
+l l.
+CODE	MEANING
+0	Success
+1	Failure (invalid target, missing URL, runtime error)
+130	Interrupted (Ctrl-C)
+.TE
+.SH SECURITY NOTES
+Run only against targets you have explicit permission to test.
+Nokizaru is intended for authorized security testing and OSINT workflows.
+
