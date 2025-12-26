@@ -108,6 +108,7 @@ module Nokizaru
         if exts.empty?
           words.each do |word|
             next if word.nil? || word.empty?
+
             urls << "#{target}/#{word}"
           end
         else
@@ -115,6 +116,7 @@ module Nokizaru
           exts_with_empty = [''] + exts
           words.each do |word|
             next if word.nil? || word.empty?
+
             exts_with_empty.each do |ext|
               if ext.empty?
                 urls << "#{target}/#{word}"
@@ -147,6 +149,7 @@ module Nokizaru
 
         responses.each do |(url, status)|
           next unless status
+
           if status == 200
             (result['Status 200'] ||= []) << "200, #{url}" if output
           elsif [301, 302, 303, 307, 308].include?(status)

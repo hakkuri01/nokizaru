@@ -29,6 +29,7 @@ module Nokizaru
       if keys.key?(name)
         val = keys[name]
         return nil if val.nil? || val.to_s.empty?
+
         return val
       end
 

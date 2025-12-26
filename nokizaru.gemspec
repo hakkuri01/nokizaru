@@ -9,10 +9,10 @@ Gem::Specification.new do |spec|
   spec.homepage    = 'https://github.com/hakkuri01/nokizaru'
 
   spec.metadata = {
-    'homepage_uri'    => spec.homepage,
+    'homepage_uri' => spec.homepage,
     'source_code_uri' => spec.homepage,
     'bug_tracker_uri' => "#{spec.homepage}/issues",
-    'rubygems_mfa_required'  => 'true'
+    'rubygems_mfa_required' => 'true'
   }
 
   spec.summary     = 'Nokizaru - Recon Refined'

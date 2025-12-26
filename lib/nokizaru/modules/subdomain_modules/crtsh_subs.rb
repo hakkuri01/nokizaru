@@ -28,6 +28,7 @@ module Nokizaru
               json_out.each do |entry|
                 name = entry['name_value']
                 next unless name
+
                 name.to_s.split("\n").each { |n| subs << n.strip }
               end
 

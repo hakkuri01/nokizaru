@@ -66,6 +66,7 @@ module Nokizaru
           sleep((0.6 * (2**(i - 1))) + rand * 0.25) if i < attempts
         rescue StandardError => e
           raise e if i == attempts
+
           sleep((0.6 * (2**(i - 1))) + rand * 0.25)
         end
       end

@@ -36,7 +36,6 @@ module Nokizaru
 
         @dir_enum_wordlist = File.join(Paths.project_root, 'wordlists', 'dirb_common.txt')
         @export_format     = export.fetch('format')
-
       rescue JSON::ParserError, KeyError
         # Config file is invalid JSON or missing required keys.
         # Restore default config.json (backup existing) and retry.
@@ -59,4 +58,3 @@ module Nokizaru
     def export_format = @export_format
   end
 end
-

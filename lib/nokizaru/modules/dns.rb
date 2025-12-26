@@ -23,24 +23,24 @@ module Nokizaru
       ].freeze
 
       def format_rdata(rdata)
-  # Dnsruby returns simple rdata as strings/objects, but DNSSEC-ish records often return arrays with binary strings.
-  case rdata
-  when Array
-    rdata.map { |v| format_rdata(v) }.join(' ')
-  when String
-    # If string contains non-printable bytes, encode it.
-    if rdata.bytes.any? { |b| b < 32 || b > 126 }
-      require 'base64'
-      Base64.strict_encode64(rdata)
-    else
-      rdata
-    end
-  else
-    rdata.to_s
-  end
-end
+        # Dnsruby returns simple rdata as strings/objects, but DNSSEC-ish records often return arrays with binary strings.
+        case rdata
+        when Array
+          rdata.map { |v| format_rdata(v) }.join(' ')
+        when String
+          # If string contains non-printable bytes, encode it.
+          if rdata.bytes.any? { |b| b < 32 || b > 126 }
+            require 'base64'
+            Base64.strict_encode64(rdata)
+          else
+            rdata
+          end
+        else
+          rdata.to_s
+        end
+      end
 
-def call(domain, dns_servers, output, data)
+      def call(domain, dns_servers, output, data)
         result = {}
         puts("\n#{Y}[!] Starting DNS Enumeration...#{W}\n\n")
 
@@ -88,6 +88,7 @@ def call(domain, dns_servers, output, data)
             loop do
               rr_type = (q.pop(true) rescue nil)
               break unless rr_type
+
               begin
                 resp = resolver.query(domain, rr_type)
                 resp.answer.each do |rr|

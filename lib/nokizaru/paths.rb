@@ -82,4 +82,3 @@ module Nokizaru
     end
   end
 end
-

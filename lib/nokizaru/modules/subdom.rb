@@ -97,11 +97,14 @@ module Nokizaru
           Thread.new do
             loop do
               break if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
               job = (q.pop(true) rescue nil)
               break unless job
+
               name, fn = job
               t = vendor_timeouts[name] || vendor_default
-              http = base_http.with(timeout: { connect_timeout: 5, read_timeout: t, write_timeout: 5, operation_timeout: t })
+              http = base_http.with(timeout: { connect_timeout: 5, read_timeout: t, write_timeout: 5,
+                                               operation_timeout: t })
               begin
                 fn.call(http)
               rescue StandardError => e

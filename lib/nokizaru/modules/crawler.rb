@@ -193,6 +193,7 @@ module Nokizaru
       def registered_domain_for(target)
         host = URI.parse(target).host
         return nil unless host
+
         PublicSuffix.domain(host)
       rescue StandardError
         nil
@@ -257,6 +258,7 @@ module Nokizaru
           begin
             sm_rqst = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(site_url, verify: false)
             next unless sm_rqst.status == 200
+
             sm_soup = Nokogiri::XML(sm_rqst.to_s)
             sm_soup.xpath('//loc').each do |node|
               url = node.text
@@ -306,7 +308,8 @@ module Nokizaru
         Export.call(output, data)
       end
 
-      def stats(output, r_total, sm_total, css_total, js_total, int_total, ext_total, img_total, sm_crawl_total, js_crawl_total, total, data, soup)
+      def stats(output, r_total, sm_total, css_total, js_total, int_total, ext_total, img_total, sm_crawl_total,
+                js_crawl_total, total, data, soup)
         total.concat(r_total)
         total.concat(sm_total)
         total.concat(css_total)
@@ -340,7 +343,6 @@ module Nokizaru
           'total_urls' => total.length,
           'exported' => false
         }
-
       end
     end
   end
