@@ -22,7 +22,7 @@ FinalRecon’s Python implementation achieves speed through an async-first appro
 
 - **Concurrency model:** Nokizaru favors bounded concurrency (worker pools / thread queues) with strict per-task timeouts. This prevents a single flaky provider or endpoint from stalling the entire scan.
 - **Reusable networking:** A shared HTTP client (keep-alive / connection reuse) is used where possible to reduce handshake overhead across modules.
-- **Error UX:** Provider failures are reported cleanly and consistently (FinalRecon-style), but Nokizaru also aims to make errors more actionable and less noisy.
+- **Error UX:** Provider failures are reported cleanly and consistently, but Nokizaru also aims to make errors more actionable and less noisy.
 - **Performance consistency:** Timeouts and budgets are designed to produce consistent runtimes between executions, rather than “sometimes fast, sometimes stuck.”
 
 ## Configuration
@@ -100,32 +100,30 @@ Default config file is available at `~/.config/nokizaru/config.json`
 
 ## Installation
 
-### Fedora / RPM-based Linux (primary)
+### Linux / macOS (Homebrew)
+
+* Homebrew is planned as the primary install method for future releases, as it can be used on both Linux or macOS comfortably, and will be pulled down as such:
 
 ```bash
-sudo dnf install nokizaru
+brew install hakkuri01/tap/nokizaru
+nokizaru --help
 ```
+* However, before implementing this install method officially, I would like to know if people would prefer a single executable, bundled runtime folder, or simply making use of `depends_on "ruby"` to let the tap rely on Homebrew Ruby.
 
-### macOS (Homebrew) (primary)
-
-```bash
-brew install YOUR_GITHUB_USERNAME/tap/nokizaru
-```
-
-### Other Linux / Build From Source (git clone)
+### Build From Source (Git Clone)
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/nokizaru.git
+git clone https://github.com/hakkuri01/nokizaru.git
 cd nokizaru
 bundle install
 bundle exec nokizaru --help
 ```
 
-### Curl / Wget (release tarball)
+### Tarball
 
 ```bash
-curl -L -o nokizaru.tar.gz https://github.com/YOUR_GITHUB_USERNAME/nokizaru/releases/latest/download/nokizaru.tar.gz
-tar -xvf nokizaru.tar.gz
+curl -L -o nokizaru.tar.gz https://github.com/hakkuri01/nokizaru/archive/refs/heads/main.tar.gz
+tar -xzf nokizaru.tar.gz
 cd nokizaru
 bundle install
 bundle exec nokizaru --help
@@ -193,7 +191,7 @@ nokizaru --full --url https://example.com
 
 ## Output / Exports
 
-By default, results are exported to:
+If you specify `--export`, results will be exported to the following location by default:
 
 * `~/.local/share/nokizaru/dumps/`
 
