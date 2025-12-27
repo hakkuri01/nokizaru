@@ -6,7 +6,6 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Transliteration of FinalRecon's zoomeye_subs.py
       module ZoomEye
         module_function
 
@@ -14,7 +13,7 @@ module Nokizaru
           key = Base.ensure_key('zoomeye', conf_path, 'NK_ZOOMEYE_KEY')
           if key
             puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}ZoomEye#{Base::W}")
-            url = "https://api.zoomeye.hk/domain/search"
+            url = 'https://api.zoomeye.hk/domain/search'
             headers = { 'API-KEY' => key, 'User-Agent' => 'curl' }
             begin
               resp = http.get(url, params: { q: hostname, type: '0' }, headers: headers)
@@ -26,12 +25,12 @@ module Nokizaru
                 puts("#{Base::G}[+] #{Base::Y}zoomeye #{Base::W}found #{Base::C}#{subs.length} #{Base::W}subdomains!")
                 found.concat(subs)
               else
-                puts("#{Base::R}[-] #{Base::C}zoomeye Status : #{Base::W}#{Base.status_label(resp)}#{(Base.failure_reason(resp).empty? ? "" : " (#{Base.failure_reason(resp)})")}")
+                puts("#{Base::R}[-] #{Base::C}zoomeye Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
                 Log.write("[zoomeye_subs] Status = #{status}, expected 200")
               end
-            rescue StandardError => exc
-              puts("#{Base::R}[-] #{Base::C}zoomeye Exception : #{Base::W}#{exc}")
-              Log.write("[zoomeye_subs] Exception = #{exc}")
+            rescue StandardError => e
+              puts("#{Base::R}[-] #{Base::C}zoomeye Exception : #{Base::W}#{e}")
+              Log.write("[zoomeye_subs] Exception = #{e}")
             end
           else
             puts("#{Base::Y}[!] Skipping zoomeye : #{Base::W}API key not found!")

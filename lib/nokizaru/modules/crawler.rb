@@ -3,11 +3,14 @@
 require 'httpx'
 require 'nokogiri'
 require 'public_suffix'
-require_relative 'export'
 require_relative '../log'
 
 module Nokizaru
   module Modules
+    # Lightweight on-page crawler:
+    # - robots.txt + sitemap.xml discovery
+    # - CSS/JS/internal/external/img extraction
+    # - URL harvesting from sitemap + JS
     module Crawler
       module_function
 
@@ -19,54 +22,66 @@ module Nokizaru
 
       USER_AGENT = { 'User-Agent' => 'Nokizaru' }.freeze
 
-      def call(target, protocol, netloc, output, data)
-        r_total = []
-        sm_total = []
-        css_total = []
-        js_total = []
-        int_total = []
-        ext_total = []
-        img_total = []
-        sm_crawl_total = []
-        js_crawl_total = []
-        total = []
+      def call(target, protocol, netloc, ctx)
+        result = {
+          'robots_links' => [],
+          'sitemap_links' => [],
+          'css_links' => [],
+          'js_links' => [],
+          'internal_links' => [],
+          'external_links' => [],
+          'images' => [],
+          'urls_inside_sitemap' => [],
+          'urls_inside_js' => [],
+          'stats' => {}
+        }
 
         puts("\n#{Y}[!] Starting Crawler...#{W}\n\n")
 
+        rqst = nil
         begin
           rqst = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(target, verify: false)
         rescue StandardError => exc
           puts("#{R}[-] Exception : #{C}#{exc}#{W}")
           Log.write("[crawler] Exception = #{exc}")
+          result['error'] = exc.to_s
+          ctx.run['modules']['crawler'] = result
           return
         end
 
         status = rqst.status
-        if status == 200
-          page = rqst.to_s
-          soup = Nokogiri::HTML(page)
-          r_url = "#{protocol}://#{netloc}/robots.txt"
-          sm_url = "#{protocol}://#{netloc}/sitemap.xml"
-          base_url = "#{protocol}://#{netloc}"
-
-          robots(r_url, r_total, sm_total, base_url, data, output)
-          sitemap(sm_url, sm_total, data, output)
-          css(target, css_total, data, soup, output)
-          js_scan(target, js_total, data, soup, output)
-          internal_links(target, int_total, data, soup, output)
-          external_links(target, ext_total, data, soup, output)
-          images(target, img_total, data, soup, output)
-          sm_crawl(data, sm_crawl_total, sm_total, sm_url, output)
-          js_crawl(data, js_crawl_total, js_total, output)
-
-          stats(output, r_total, sm_total, css_total, js_total,
-                int_total, ext_total, img_total, sm_crawl_total,
-                js_crawl_total, total, data, soup)
-          Log.write('[crawler] Completed')
-        else
+        if status != 200
           puts("#{R}[-] #{C}Status : #{W}#{status}")
           Log.write("[crawler] Status code = #{status}, expected 200")
+          result['error'] = "HTTP status #{status}"
+          ctx.run['modules']['crawler'] = result
+          return
         end
+
+        page = rqst.to_s
+        soup = Nokogiri::HTML(page)
+
+        base_url = "#{protocol}://#{netloc}"
+        robots_url = "#{base_url}/robots.txt"
+        sitemap_url = "#{base_url}/sitemap.xml"
+
+        result['robots_links'], discovered_sitemaps = robots(robots_url, base_url)
+        result['sitemap_links'] = sitemap(sitemap_url, discovered_sitemaps)
+        result['css_links'] = css(target, soup)
+        result['js_links'] = js_scan(target, soup)
+        result['internal_links'] = internal_links(target, soup)
+        result['external_links'] = external_links(soup)
+        result['images'] = images(target, soup)
+
+        result['urls_inside_sitemap'] = sm_crawl(result['sitemap_links'])
+        result['urls_inside_js'] = js_crawl(result['js_links'])
+
+        result['stats'] = stats(result)
+
+        ctx.run['modules']['crawler'] = result
+        ctx.add_artifact('urls', result['stats']['total_urls'])
+
+        Log.write('[crawler] Completed')
       end
 
       def url_filter(target, link)
@@ -95,7 +110,10 @@ module Nokizaru
         link
       end
 
-      def robots(robo_url, r_total, sm_total, base_url, data, output)
+      def robots(robo_url, base_url)
+        r_total = []
+        sm_total = []
+
         print("#{G}[+] #{C}Looking for robots.txt#{W}")
 
         begin
@@ -118,8 +136,8 @@ module Nokizaru
             end
 
             r_total.uniq!
+            sm_total.uniq!
             puts("#{G}#{'['.rjust(8, '.')} #{r_total.length} ]")
-            exporter(data, output, r_total, 'robots')
           elsif r_sc == 404
             puts("#{R}#{'['.rjust(9, '.')} Not Found ]#{W}")
           else
@@ -129,9 +147,12 @@ module Nokizaru
           puts("\n#{R}[-] Exception : #{C}#{exc}#{W}")
           Log.write("[crawler.robots] Exception = #{exc}")
         end
+
+        [r_total, sm_total]
       end
 
-      def sitemap(target_url, sm_total, data, output)
+      def sitemap(target_url, sm_total)
+        sm_total = Array(sm_total).dup
         print("#{G}[+] #{C}Looking for sitemap.xml#{W}")
 
         begin
@@ -139,209 +160,177 @@ module Nokizaru
           sm_sc = sm_rqst.status
           if sm_sc == 200
             puts("#{G}#{'['.rjust(8, '.')} Found ]#{W}")
-            print("#{G}[+] #{C}Extracting sitemap Links#{W}")
-
-            sm_page = sm_rqst.to_s
-            sm_soup = Nokogiri::XML(sm_page)
-            sm_soup.xpath('//loc').each do |node|
-              url = node.text
-              sm_total << url if url && !url.empty?
-            end
-
-            sm_total.uniq!
-            puts("#{G}#{'['.rjust(7, '.')} #{sm_total.length} ]#{W}")
-            exporter(data, output, sm_total, 'sitemap')
+            sm_total << target_url
           elsif sm_sc == 404
             puts("#{R}#{'['.rjust(8, '.')} Not Found ]#{W}")
           else
-            puts("#{R}#{'['.rjust(8, '.')} Status Code : #{sm_sc} ]#{W}")
+            puts("#{R}#{'['.rjust(8, '.')} #{sm_sc} ]#{W}")
           end
         rescue StandardError => exc
           puts("\n#{R}[-] Exception : #{C}#{exc}#{W}")
           Log.write("[crawler.sitemap] Exception = #{exc}")
         end
+
+        sm_total.uniq
       end
 
-      def css(target, css_total, data, soup, output)
+      def css(target, soup)
+        css_total = []
         print("#{G}[+] #{C}Extracting CSS Links#{W}")
-        soup.css('link[href]').each do |link|
-          href = link['href']
-          next unless href && href.include?('.css')
-
-          css_total << url_filter(target, href)
+        soup.css('link[rel="stylesheet"]').each do |tag|
+          href = url_filter(target, tag['href'])
+          css_total << href if href
         end
-        css_total.compact!
         css_total.uniq!
-        puts("#{G}#{'['.rjust(11, '.')} #{css_total.length} ]#{W}")
-        exporter(data, output, css_total, 'css')
+        puts("#{G}#{'['.rjust(13, '.')} #{css_total.length} ]")
+        css_total
       end
 
-      def js_scan(target, js_total, data, soup, output)
-        print("#{G}[+] #{C}Extracting Javascript Links#{W}")
+      def js_scan(target, soup)
+        js_total = []
+        print("#{G}[+] #{C}Extracting JavaScript Links#{W}")
         soup.css('script[src]').each do |tag|
-          src = tag['src']
-          next unless src && src.include?('.js')
-
-          tmp = url_filter(target, src)
-          js_total << tmp if tmp
+          src = url_filter(target, tag['src'])
+          js_total << src if src
         end
         js_total.uniq!
-        puts("#{G}#{'['.rjust(4, '.')} #{js_total.length} ]#{W}")
-        exporter(data, output, js_total, 'javascripts')
+        puts("#{G}#{'['.rjust(5, '.')} #{js_total.length} ]")
+        js_total
       end
 
-      def registered_domain_for(target)
-        host = URI.parse(target).host
-        return nil unless host
-
-        PublicSuffix.domain(host)
-      rescue StandardError
-        nil
-      end
-
-      def internal_links(target, int_total, data, soup, output)
+      def internal_links(target, soup)
+        int_total = []
         print("#{G}[+] #{C}Extracting Internal Links#{W}")
 
-        domain = registered_domain_for(target)
-        soup.css('a[href]').each do |a|
-          href = a['href']
-          next unless href
-          next unless domain && href.include?(domain)
+        host = begin
+          PublicSuffix.domain(URI(target).host)
+        rescue StandardError
+          nil
+        end
 
+        soup.css('a[href]').each do |tag|
+          href = url_filter(target, tag['href'])
+          next unless href
+
+          begin
+            u = URI(href)
+            next unless u.host
+            next if host && PublicSuffix.domain(u.host) != host
+          rescue StandardError
+            next
+          end
           int_total << href
         end
 
         int_total.uniq!
-        puts("#{G}#{'['.rjust(6, '.')} #{int_total.length} ]#{W}")
-        exporter(data, output, int_total, 'internal_urls')
+        puts("#{G}#{'['.rjust(11, '.')} #{int_total.length} ]")
+        int_total
       end
 
-      def external_links(target, ext_total, data, soup, output)
+      def external_links(soup)
+        ext_total = []
         print("#{G}[+] #{C}Extracting External Links#{W}")
-
-        domain = registered_domain_for(target)
-        soup.css('a[href]').each do |a|
-          href = a['href']
+        soup.css('a[href]').each do |tag|
+          href = tag['href']
           next unless href
-          next unless href.include?('http')
-          next if domain && href.include?(domain)
+          next unless href.start_with?('http://', 'https://')
 
           ext_total << href
         end
-
         ext_total.uniq!
-        puts("#{G}#{'['.rjust(6, '.')} #{ext_total.length} ]#{W}")
-        exporter(data, output, ext_total, 'external_urls')
+        puts("#{G}#{'['.rjust(11, '.')} #{ext_total.length} ]")
+        ext_total
       end
 
-      def images(target, img_total, data, soup, output)
-        print("#{G}[+] #{C}Extracting Images#{W}")
-        soup.css('img[src]').each do |img|
-          src = img['src']
-          next unless src && src.length > 1
-
-          img_total << url_filter(target, src)
+      def images(target, soup)
+        img_total = []
+        print("#{G}[+] #{C}Extracting Image Links#{W}")
+        soup.css('img[src]').each do |tag|
+          src = url_filter(target, tag['src'])
+          img_total << src if src
         end
-        img_total.compact!
         img_total.uniq!
-        puts("#{G}#{'['.rjust(14, '.')} #{img_total.length} ]#{W}")
-        exporter(data, output, img_total, 'images')
+        puts("#{G}#{'['.rjust(14, '.')} #{img_total.length} ]")
+        img_total
       end
 
-      def sm_crawl(data, sm_crawl_total, sm_total, sm_url, output)
+      def sm_crawl(sm_total)
+        links = []
+        sm_total = Array(sm_total).compact.uniq
+        return links if sm_total.empty?
+
         print("#{G}[+] #{C}Crawling Sitemaps#{W}")
-
-        sm_total.each do |site_url|
-          next if site_url == sm_url
-          next unless site_url.end_with?('xml')
-
+        sm_total.each do |sm|
           begin
-            sm_rqst = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(site_url, verify: false)
-            next unless sm_rqst.status == 200
+            resp = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(sm, verify: false)
+            next unless resp.status == 200
 
-            sm_soup = Nokogiri::XML(sm_rqst.to_s)
-            sm_soup.xpath('//loc').each do |node|
-              url = node.text
-              sm_crawl_total << url if url && !url.empty?
+            xml = resp.to_s
+            doc = Nokogiri::XML(xml)
+            doc.remove_namespaces!
+            doc.xpath('//url/loc').each do |loc|
+              u = loc.text.to_s.strip
+              links << u unless u.empty?
+            end
+            # sitemap index
+            doc.xpath('//sitemap/loc').each do |loc|
+              u = loc.text.to_s.strip
+              sm_total << u unless u.empty?
             end
           rescue StandardError => exc
             Log.write("[crawler.sm_crawl] Exception = #{exc}")
           end
         end
 
-        sm_crawl_total.uniq!
-        puts("#{G}#{'['.rjust(14, '.')} #{sm_crawl_total.length} ]#{W}")
-        exporter(data, output, sm_crawl_total, 'urls_inside_sitemap')
+        links.uniq!
+        puts("#{G}#{'['.rjust(16, '.')} #{links.length} ]")
+        links
       end
 
-      def js_crawl(data, js_crawl_total, js_total, output)
-        print("#{G}[+] #{C}Crawling Javascripts#{W}")
+      def js_crawl(js_total)
+        urls = []
+        js_total = Array(js_total).compact.uniq
+        return urls if js_total.empty?
 
-        js_total.each do |js_url|
+        print("#{G}[+] #{C}Crawling JS#{W}")
+        js_total.each do |js|
           begin
-            js_rqst = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(js_url, verify: false)
-            next unless js_rqst.status == 200
+            resp = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(js, verify: false)
+            next unless resp.status == 200
 
-            js_rqst.to_s.split(';').each do |line|
-              next unless line.include?('http://') || line.include?('https://')
-
-              line.scan(/\"(http[s]?:\/\/.*?)\"/).flatten.each do |item|
-                js_crawl_total << item if item && item.length > 8
-              end
+            body = resp.to_s
+            body.scan(%r{https?://[\w\-\._~:/\?#\[\]@!\$&'\(\)\*\+,;=%]+}) do |m|
+              urls << m
             end
           rescue StandardError => exc
             Log.write("[crawler.js_crawl] Exception = #{exc}")
           end
         end
-
-        js_crawl_total.uniq!
-        puts("#{G}#{'['.rjust(11, '.')} #{js_crawl_total.length} ]#{W}")
-        exporter(data, output, js_crawl_total, 'urls_inside_js')
+        urls.uniq!
+        puts("#{G}#{'['.rjust(22, '.')} #{urls.length} ]")
+        urls
       end
 
-      def exporter(data, output, list_name, file_name)
-        return unless output
+      def stats(result)
+        all = []
+        %w[robots_links sitemap_links css_links js_links internal_links external_links images urls_inside_sitemap
+           urls_inside_js].each do |k|
+          all.concat(Array(result[k]))
+        end
+        all.uniq!
 
-        data["module-crawler-#{file_name}"] = { 'links' => list_name.dup, 'exported' => false }
-        fname = File.join(output[:directory], "#{file_name}.#{output[:format]}")
-        output[:file] = fname
-        Export.call(output, data)
-      end
-
-      def stats(output, r_total, sm_total, css_total, js_total, int_total, ext_total, img_total, sm_crawl_total,
-                js_crawl_total, total, data, soup)
-        total.concat(r_total)
-        total.concat(sm_total)
-        total.concat(css_total)
-        total.concat(js_total)
-        total.concat(js_crawl_total)
-        total.concat(sm_crawl_total)
-        total.concat(int_total)
-        total.concat(ext_total)
-        total.concat(img_total)
-        total.uniq!
-
-        puts("\n#{G}[+] #{C}Total Unique Links Extracted : #{W}#{total.length}")
-
-        return unless output
-        return if total.empty?
-
-        title = soup.at('title')&.text || 'None'
-
-        data['module-crawler-stats'] = {
-          'Total Unique Links Extracted' => total.length.to_s,
-          'Title ' => title,
-          'total_urls_robots' => r_total.length,
-          'total_urls_sitemap' => sm_total.length,
-          'total_urls_css' => css_total.length,
-          'total_urls_js' => js_total.length,
-          'total_urls_in_js' => js_crawl_total.length,
-          'total_urls_in_sitemaps' => sm_crawl_total.length,
-          'total_urls_internal' => int_total.length,
-          'total_urls_external' => ext_total.length,
-          'total_urls_images' => img_total.length,
-          'total_urls' => total.length,
-          'exported' => false
+        {
+          'robots_count' => Array(result['robots_links']).length,
+          'sitemap_count' => Array(result['sitemap_links']).length,
+          'css_count' => Array(result['css_links']).length,
+          'js_count' => Array(result['js_links']).length,
+          'internal_count' => Array(result['internal_links']).length,
+          'external_count' => Array(result['external_links']).length,
+          'images_count' => Array(result['images']).length,
+          'sitemap_url_count' => Array(result['urls_inside_sitemap']).length,
+          'js_url_count' => Array(result['urls_inside_js']).length,
+          'total_unique' => all.length,
+          'total_urls' => all
         }
       end
     end

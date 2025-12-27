@@ -6,7 +6,6 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Transliteration of FinalRecon's shodan_subs.py
       module Shodan
         module_function
 
@@ -26,12 +25,12 @@ module Nokizaru
                 puts("#{Base::G}[+] #{Base::Y}Shodan #{Base::W}found #{Base::C}#{tmp.length} #{Base::W}subdomains!")
                 found.concat(tmp)
               else
-                puts("#{Base::R}[-] #{Base::C}Shodan Status : #{Base::W}#{Base.status_label(resp)}#{(Base.failure_reason(resp).empty? ? "" : " (#{Base.failure_reason(resp)})")}")
+                puts("#{Base::R}[-] #{Base::C}Shodan Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
                 Log.write("[shodan_subs] Status = #{status}, expected 200")
               end
-            rescue StandardError => exc
-              puts("#{Base::R}[-] #{Base::C}Shodan Exception : #{Base::W}#{exc}")
-              Log.write("[shodan_subs] Exception = #{exc}")
+            rescue StandardError => e
+              puts("#{Base::R}[-] #{Base::C}Shodan Exception : #{Base::W}#{e}")
+              Log.write("[shodan_subs] Exception = #{e}")
             end
           else
             puts("#{Base::Y}[!] Skipping Shodan : #{Base::W}API key not found!")

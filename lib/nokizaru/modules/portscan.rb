@@ -2,7 +2,6 @@
 
 require 'socket'
 require 'concurrent'
-require_relative 'export'
 require_relative '../log'
 
 module Nokizaru
@@ -130,8 +129,8 @@ module Nokizaru
         50_070 => "Hadoop"
       }.freeze
 
-      def call(ip_addr, output, data, threads)
-        result = { 'ports' => [] }
+      def call(ip_addr, threads, ctx)
+        result = { 'open_ports' => [] }
         puts("\n#{Y}[!] Starting Port Scan...#{W}\n\n")
         puts("#{G}[+] #{C}Scanning Top 100+ Ports With #{threads} Threads...#{W}\n\n")
 
@@ -147,7 +146,7 @@ module Nokizaru
               if open_port?(ip_addr, port)
                 mutex.synchronize do
                   puts("\e[K#{G}[+] #{C}#{port} (#{name})#{W}")
-                  result['ports'] << "#{port} (#{name})"
+                  result['open_ports'] << "#{port} (#{name})"
                 end
               end
             rescue StandardError
@@ -164,13 +163,8 @@ module Nokizaru
 
         puts("\n#{G}[+] #{C}Scan Completed!#{W}\n\n")
 
-        if output
-          data['module-Port Scan'] = result
-          result['exported'] = false
-          fname = File.join(output[:directory], "ports.#{output[:format]}")
-          output[:file] = fname
-          Export.call(output, data)
-        end
+        ctx.run['modules']['portscan'] = result
+        ctx.add_artifact('open_ports', result['open_ports'].map { |p| p.to_s.split.first })
 
         Log.write('[portscan] Completed')
       end

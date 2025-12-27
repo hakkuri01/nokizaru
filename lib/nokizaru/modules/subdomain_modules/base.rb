@@ -63,12 +63,11 @@ module Nokizaru
           return '' unless resp
 
           if resp.respond_to?(:error) && (err = resp.error)
-            # HTTPX error strings can be *very* noisy, often embedding headers hashes
+            # HTTPX error strings can be very noisy, often embedding headers hashes
             # and sometimes an entire HTML page. Keep this short and human-readable.
             s = err.to_s.to_s
             # Common pattern: "HTTP Error: 500 { ...headers hash... }".
             s = s.split(' {', 2).first if s.include?(' {')
-            # Some builds wrap extra details in parentheses.
             s = s.split(' (', 2).first if s.start_with?('HTTP Error:') && s.include?(' (')
             s.strip
           elsif resp.respond_to?(:exception) && (exc = resp.exception)
@@ -80,7 +79,6 @@ module Nokizaru
           ''
         end
 
-        # Render a consistent FinalRecon-style status line, without dumping headers or objects.
         def print_status(vendor, resp)
           st = status_label(resp)
           reason = failure_reason(resp)
@@ -93,7 +91,7 @@ module Nokizaru
           st ? st.to_s : 'ERR'
         end
 
-        # Centralized key lookup (kept for signature parity with upstream).
+        # Centralized key lookup
         def ensure_key(name, _conf_path, env)
           KeyStore.fetch(name, env: env)
         end

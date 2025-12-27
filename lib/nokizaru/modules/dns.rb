@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'dnsruby'
-require_relative 'export'
 require_relative '../log'
 
 module Nokizaru
@@ -40,19 +39,15 @@ module Nokizaru
         end
       end
 
-      def call(domain, dns_servers, output, data)
-        result = {}
+      def call(domain, dns_servers, ctx)
+        result = { 'records' => {} }
         puts("\n#{Y}[!] Starting DNS Enumeration...#{W}\n\n")
 
         full_ans = []
 
-        # Hard cap keeps full scans snappy even on flaky resolvers.
+        # Hard cap keeps full scans smooth even on flaky resolvers.
         per_query_timeout = 2
-        nameservers = if dns_servers && !dns_servers.to_s.empty?
-                        dns_servers.split(',').map(&:strip)
-                      else
-                        nil
-                      end
+        nameservers = (dns_servers.split(',').map(&:strip) if dns_servers && !dns_servers.to_s.empty?)
 
         # Quick NXDOMAIN check (avoid spawning a pool for a dead domain).
         begin
@@ -65,10 +60,11 @@ module Nokizaru
         rescue Dnsruby::NXDomain => e
           Log.write("[dns] Exception = #{e}")
           puts("#{R}[-] #{C}DNS Records Not Found!#{W}")
-          result['dns'] = ['DNS Records Not Found'] if output
+          result['error'] = 'DNS Records Not Found'
+          ctx.run['modules']['dns'] = result
           return
         rescue StandardError
-          # ignore; proceed to best-effort enumeration
+          # ignore; proceed to best-effort enumeration.
         end
 
         q = Queue.new
@@ -86,7 +82,11 @@ module Nokizaru
             resolver.nameserver = nameservers if nameservers
 
             loop do
-              rr_type = (q.pop(true) rescue nil)
+              rr_type = begin
+                q.pop(true)
+              rescue StandardError
+                nil
+              end
               break unless rr_type
 
               begin
@@ -119,14 +119,14 @@ module Nokizaru
         order_idx = DNS_RECORDS.each_with_index.to_h
         temp.sort_by! { |(t, _)| order_idx[t] || 9_999 }
         temp.each do |rr_type, rr_val|
-          full_ans << "#{rr_type} : #{rr_val}"
+          (result['records'][rr_type] ||= []) << rr_val
         end
 
-        full_ans.each do |entry|
-          rr_type, rr_val = entry.split(' : ', 2)
-          puts("#{C}#{rr_type}\t: #{W}#{rr_val}")
-          result['dns'] ||= []
-          result['dns'] << entry if output
+        result['records'].each do |rr_type, rr_vals|
+          Array(rr_vals).each do |rr_val|
+            puts("#{C}#{rr_type}\t: #{W}#{rr_val}")
+            full_ans << "#{rr_type} : #{rr_val}"
+          end
         end
 
         # DMARC (separate query; not part of the RR loop)
@@ -141,29 +141,23 @@ module Nokizaru
           resp = dmarc_resolver.query(dmarc_target, 'TXT')
           resp.answer.each do |rr|
             puts("#{C}DMARC \t: #{W}#{rr.rdata}")
-            if output
-              result['dmarc'] ||= []
-              result['dmarc'] << "DMARC : #{rr.rdata}"
-            end
+            (result['records']['DMARC'] ||= []) << rr.rdata.to_s
           end
         rescue Dnsruby::NXDomain => e
           Log.write("[dns.dmarc] Exception = #{e}")
           puts("\n#{R}[-] #{C}DMARC Record Not Found!#{W}")
-          result['dmarc'] = ['DMARC Record Not Found!'] if output
+          result['records']['DMARC'] ||= []
         rescue Dnsruby::ResolvError => e
           Log.write("[dns.dmarc] Exception = #{e}")
         rescue StandardError => e
           Log.write("[dns.dmarc] Exception = #{e}")
         end
 
-        result['exported'] = false
+        ctx.run['modules']['dns'] = result
 
-        if output
-          data['module-DNS Enumeration'] = result
-          fname = File.join(output[:directory], "dns_records.#{output[:format]}")
-          output[:file] = fname
-          Export.call(output, data)
-        end
+        # artifacts
+        txt = Array(result.dig('records', 'TXT'))
+        ctx.add_artifact('dns_txt', txt)
 
         Log.write('[dns] Completed')
       end

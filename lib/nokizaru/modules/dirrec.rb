@@ -2,8 +2,6 @@
 
 require_relative '../http_client'
 require 'concurrent'
-require 'thread'
-require_relative 'export'
 require_relative '../log'
 
 module Nokizaru
@@ -19,7 +17,7 @@ module Nokizaru
 
       DEFAULT_UA = 'Mozilla/5.0 (X11; Linux x86_64; rv:72.0) Gecko/20100101 Firefox/72.0'
 
-      def call(target, threads, timeout_s, wdlist, allow_redirects, verify_ssl, output, data, filext)
+      def call(target, threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext, ctx)
         puts("\n#{Y}[!] Starting Directory Enum...#{W}\n\n")
         puts("#{G}[+] #{C}Threads          : #{W}#{threads}")
         puts("#{G}[+] #{C}Timeout          : #{W}#{timeout_s}")
@@ -35,13 +33,13 @@ module Nokizaru
         urls = build_urls(target, words, filext)
         total = urls.length
 
-        # Keep allocations low; we only need to record interesting statuses.
+        # Keep allocations low; only need to record interesting statuses.
         responses = Concurrent::Array.new
         found = Concurrent::Array.new
         exc_count = Concurrent::AtomicFixnum.new(0)
         count = Concurrent::AtomicFixnum.new(0)
 
-        # Build the client once; avoid per-request options (faster and more compatible across HTTPX versions).
+        # Build client once; avoid per-request options (faster and more compatible across HTTPX versions).
         client = Nokizaru::HTTPClient.build(
           timeout_s: timeout_s.to_f,
           headers: { 'User-Agent' => DEFAULT_UA },
@@ -62,14 +60,18 @@ module Nokizaru
         workers = Array.new(worker_n) do
           Thread.new do
             loop do
-              url = q.pop(true) rescue nil
+              url = begin
+                q.pop(true)
+              rescue StandardError
+                nil
+              end
               break unless url
 
               begin
                 resp = client.get(url)
                 status = resp.respond_to?(:status) ? resp.status : nil
                 if status
-                  # Keep only interesting statuses (same as upstream output/export).
+                  # Keep only interesting statuses.
                   if status == 200 || status == 403 || [301, 302, 303, 307, 308].include?(status)
                     responses << [url, status]
                   end
@@ -94,15 +96,13 @@ module Nokizaru
 
         workers.each(&:join)
 
-        dir_output(responses, found, exc_count.value, output, data)
+        dir_output(responses, found, exc_count.value, ctx)
         Log.write('[dirrec] Completed')
       end
 
       def build_urls(target, words, filext)
         exts = []
-        if filext && !filext.strip.empty?
-          exts = filext.split(',').map(&:strip)
-        end
+        exts = filext.split(',').map(&:strip) if filext && !filext.strip.empty?
 
         urls = []
         if exts.empty?
@@ -118,11 +118,11 @@ module Nokizaru
             next if word.nil? || word.empty?
 
             exts_with_empty.each do |ext|
-              if ext.empty?
-                urls << "#{target}/#{word}"
-              else
-                urls << "#{target}/#{word}.#{ext}"
-              end
+              urls << if ext.empty?
+                        "#{target}/#{word}"
+                      else
+                        "#{target}/#{word}.#{ext}"
+                      end
             end
           end
         end
@@ -144,31 +144,28 @@ module Nokizaru
         end
       end
 
-      def dir_output(responses, found, exc_count, output, data)
-        result = {}
+      def dir_output(responses, found, exc_count, ctx)
+        result = { 'found' => [], 'by_status' => {}, 'exceptions' => exc_count }
 
         responses.each do |(url, status)|
           next unless status
 
           if status == 200
-            (result['Status 200'] ||= []) << "200, #{url}" if output
+            (result['by_status']['200'] ||= []) << url
           elsif [301, 302, 303, 307, 308].include?(status)
-            (result["Status #{status}"] ||= []) << "#{status}, #{url}" if output
+            (result['by_status'][status.to_s] ||= []) << url
           elsif status == 403
-            (result['Status 403'] ||= []) << "403, #{url}" if output
+            (result['by_status']['403'] ||= []) << url
           end
         end
+
+        result['found'] = found.uniq
 
         puts("\n\n#{G}[+] #{C}Directories Found   : #{W}#{found.uniq.length}\n\n")
         puts("#{Y}[!] #{C}Exceptions          : #{W}#{exc_count}")
 
-        return unless output
-
-        result['exported'] = false
-        data['module-Directory Search'] = result
-        fname = File.join(output[:directory], "directory_enum.#{output[:format]}")
-        output[:file] = fname
-        Export.call(output, data)
+        ctx.run['modules']['directory_enum'] = result
+        ctx.add_artifact('paths', result['found'])
       end
     end
   end

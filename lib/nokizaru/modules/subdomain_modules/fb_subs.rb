@@ -6,7 +6,6 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Transliteration of FinalRecon's fb_subs.py
       module FacebookCT
         module_function
 
@@ -28,12 +27,12 @@ module Nokizaru
                   found.concat(entry['domains'] || [])
                 end
               else
-                puts("#{Base::R}[-] #{Base::C}Facebook Status : #{Base::W}#{Base.status_label(resp)}#{(Base.failure_reason(resp).empty? ? "" : " (#{Base.failure_reason(resp)})")}")
+                puts("#{Base::R}[-] #{Base::C}Facebook Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
                 Log.write("[fb_subs] Status = #{status}, expected 200")
               end
-            rescue StandardError => exc
-              puts("#{Base::R}[-] #{Base::C}Facebook Exception : #{Base::W}#{exc}")
-              Log.write("[fb_subs] Exception = #{exc}")
+            rescue StandardError => e
+              puts("#{Base::R}[-] #{Base::C}Facebook Exception : #{Base::W}#{e}")
+              Log.write("[fb_subs] Exception = #{e}")
             end
           else
             puts("#{Base::Y}[!] Skipping Facebook : #{Base::W}API key not found!")
