@@ -5,10 +5,9 @@ require 'fileutils'
 require_relative 'paths'
 
 module Nokizaru
-  # Performs:
-  # - Ensure ~/.config/nokizaru exists and is seeded with default conf/
-  # - Ensure ~/.local/share/nokizaru/dumps/ exists
-  # - Load config.json and expose expected keys
+  # Ensure ~/.config/nokizaru exists and is seeded with default conf/
+  # Ensure ~/.local/share/nokizaru/dumps/ exists
+  # Load config.json and expose expected keys
   module Settings
     module_function
 

@@ -6,7 +6,6 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Transliteration of FinalRecon's urlscan_subs.py
       module UrlScan
         module_function
 
@@ -29,9 +28,9 @@ module Nokizaru
               Base.print_status('UrlScan', resp)
               Log.write("[urlscan_subs] Status = #{status.inspect}, expected 200")
             end
-          rescue StandardError => exc
-            puts("#{Base::R}[-] #{Base::C}UrlScan Exception : #{Base::W}#{exc}")
-            Log.write("[urlscan_subs] Exception = #{exc}")
+          rescue StandardError => e
+            puts("#{Base::R}[-] #{Base::C}UrlScan Exception : #{Base::W}#{e}")
+            Log.write("[urlscan_subs] Exception = #{e}")
           end
 
           Log.write('[urlscan_subs] Completed')

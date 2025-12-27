@@ -8,7 +8,6 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Transliteration of FinalRecon's hunter_subs.py
       module Hunter
         module_function
 
@@ -52,12 +51,12 @@ module Nokizaru
                 found.concat(subs)
                 puts("#{Base::G}[+] #{Base::Y}Hunter #{Base::W}found #{Base::C}#{subs.length} #{Base::W}subdomains!")
               else
-                puts("#{Base::R}[-] #{Base::C}Hunter Status : #{Base::W}#{Base.status_label(resp)}#{(Base.failure_reason(resp).empty? ? "" : " (#{Base.failure_reason(resp)})")}")
+                puts("#{Base::R}[-] #{Base::C}Hunter Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
                 Log.write("[hunter_subs] Status = #{status}, expected 200")
               end
-            rescue StandardError => exc
-              puts("#{Base::R}[-] #{Base::C}Hunter Exception : #{Base::W}#{exc}")
-              Log.write("[hunter_subs] Exception = #{exc}")
+            rescue StandardError => e
+              puts("#{Base::R}[-] #{Base::C}Hunter Exception : #{Base::W}#{e}")
+              Log.write("[hunter_subs] Exception = #{e}")
             end
           else
             puts("#{Base::Y}[!] Skipping Hunter : #{Base::W}API key not found!")

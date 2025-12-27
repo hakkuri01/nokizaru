@@ -22,11 +22,6 @@ end
 
 module Nokizaru
   # Centralized HTTP client builder.
-  #
-  # Goals:
-  # - Consistent performance by enforcing tight connect/read/overall timeouts.
-  # - Avoid per-request options that can be slow or incompatible across HTTPX versions.
-  # - Reuse connections when possible (persistent).
   module HTTPClient
     module_function
 

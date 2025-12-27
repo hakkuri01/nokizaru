@@ -51,8 +51,12 @@ OPTION	MODULE
 --wayback	Wayback URLs
 --ps	Fast Port Scan
 --full	Full Recon
---no-MODULE	Skip specified modules above during full scan (e.g. --no-dir)
+--no-[MODULE]	Skip specified modules above during full scan (e.g. --no-dir)
 --export	Write results to export directory
+--project [NAME]	Enable a persistent workspace (profiles, caching, diffing)
+--cache	Enable caching even without a project
+--no-cache	Disable caching (even in a project)
+--diff last / [ID]	Diff this run against the last (or another run ID in the workspace)
 .TE
 .SH EXTRA OPTIONS
 .TS
@@ -69,8 +73,8 @@ OPTION	MEANING	DEFAULT / NOTES
 -s	Toggle SSL Verification	True
 -sp SP	Specify SSL port	443
 -d D	Custom DNS servers	1.1.1.1
--e E	File extensions	txt, xml, php, etc.
--o O	Export format	txt
+-e E	File extension(s) (comma separated)	txt,xml,php,etc.
+-o O	Export Format(s) (comma-separated)	txt,json,html
 -cd CD	Change export base directory	~/.local/share/nokizaru
 -of OF	Change export folder name	nk_<host>_<DD-MM-YYYY_HH:MM:SS>
 -k K	Add API key (NAME@KEY)	shodan@key
@@ -107,7 +111,7 @@ PATH	PURPOSE
 ~/.config/nokizaru/config.json	Main configuration file
 ~/.config/nokizaru/keys.json	API keys file (optional)
 ~/.local/share/nokizaru/dumps/	Export directory for run outputs
-~/.local/share/nokizaru/run.log	Runtime log file
+~/.local/share/nokizaru/nokizaru.log	Runtime log file
 .TE
 .SH EXAMPLES
 .TS
@@ -130,6 +134,6 @@ CODE	MEANING
 130	Interrupted (Ctrl-C)
 .TE
 .SH SECURITY NOTES
-Run only against targets you have explicit permission to test.
-Nokizaru is intended for authorized security testing and OSINT workflows.
+Run ONLY against targets you have explicit permission to test.
+Nokizaru is intended for authorized security testing and OSINT workflows ONLY.
 

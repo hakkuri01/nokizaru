@@ -6,7 +6,6 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Transliteration of FinalRecon's alienvault_subs.py
       module AlienVault
         module_function
 
@@ -29,9 +28,9 @@ module Nokizaru
               Base.print_status('AlienVault', resp)
               Log.write("[alienvault_subs] Status = #{status.inspect}, expected 200")
             end
-          rescue StandardError => exc
-            puts("#{Base::R}[-] #{Base::C}AlienVault Exception : #{Base::W}#{exc}")
-            Log.write("[alienvault_subs] Exception = #{exc}")
+          rescue StandardError => e
+            puts("#{Base::R}[-] #{Base::C}AlienVault Exception : #{Base::W}#{e}")
+            Log.write("[alienvault_subs] Exception = #{e}")
           end
 
           Log.write('[alienvault_subs] Completed')

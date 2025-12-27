@@ -2,7 +2,6 @@
 
 require 'json'
 require 'socket'
-require_relative 'export'
 require_relative '../paths'
 require_relative '../log'
 
@@ -17,16 +16,27 @@ module Nokizaru
       W = "\e[0m"   # white
       Y = "\e[33m"  # yellow
 
-      def call(domain, tld, output, data)
+      def call(domain, tld, ctx)
         result = {}
-        db_json = JSON.parse(File.read(Paths.whois_servers_file))
+        begin
+          db_json = JSON.parse(File.read(Paths.whois_servers_file))
+        rescue Errno::ENOENT
+          puts("#{R}[-] Error : #{C}Missing whois server database file: #{W}#{Paths.whois_servers_file}")
+          puts("#{G}[+] #{C}Reinstall the gem/repo so #{W}data/whois_servers.json#{C} is present.")
+          Log.write('[whois] Missing whois_servers.json')
+          ctx.run['modules']['whois'] = { 'Error' => 'Missing whois server DB (whois_servers.json)' }
+          return
+        end
 
         puts("\n#{Y}[!] Whois Lookup : #{W}\n\n")
 
         begin
           whois_sv = db_json.fetch(tld)
           query = tld.to_s.empty? ? domain.to_s : "#{domain}.#{tld}"
-          raw = raw_whois(query, whois_sv)
+          cache_key = ctx.cache&.key_for(['whois', query, whois_sv])
+          raw = ctx.cache_fetch(cache_key || "whois:#{query}", ttl_s: 86_400) do
+            raw_whois(query, whois_sv)
+          end
           puts(raw)
           result['whois'] = raw
         rescue KeyError
@@ -39,14 +49,7 @@ module Nokizaru
           Log.write("[whois] Exception = #{exc}")
         end
 
-        result['exported'] = false
-
-        if output
-          fname = File.join(output[:directory], "whois.#{output[:format]}")
-          output[:file] = fname
-          data['module-whois'] = result
-          Export.call(output, data)
-        end
+        ctx.run['modules']['whois'] = result
 
         Log.write('[whois] Completed')
       end

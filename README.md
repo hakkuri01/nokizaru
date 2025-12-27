@@ -147,8 +147,14 @@ Arguments:
   --wayback        Wayback URLs
   --ps             Fast Port Scan
   --full           Full Recon
-  --no-MODULE      Skip specified modules above during full scan (eg. --no-dir)
+  --no-[MODULE]    Skip specified modules above during full scan (eg. --no-dir)
   --export         Write results to export directory
+
+Persistence / Enrichment:
+  --project [NAME]    Enable a persistent workspace (profiles, caching, diffing)
+  --cache             Enable caching even without a project
+  --no-cache          Disable caching (even in a project)
+  --diff last / [ID]  Diff this run against the last (or another run ID in the workspace)
 
 Extra Options:
   -nb         Hide Banner
@@ -160,8 +166,8 @@ Extra Options:
   -s          Toggle SSL Verification [ Default : True ]
   -sp SP      Specify SSL Port [ Default : 443 ]
   -d D        Custom DNS Servers [ Default : 1.1.1.1 ]
-  -e E        File Extensions [ Example : txt, xml, php, etc. ]
-  -o O        Export Format [ Default : txt ]
+  -e E        File Extension(s) (comma separated) [ Example : txt,xml,php,etc. ]
+  -o O        Export Format(s) (comma-separated) [ Default : txt,json,html ]
   -cd CD      Change export directory [ Default : ~/.local/share/nokizaru ]
   -of OF      Change export folder name [ Default : nk_<host>_<DD-MM-YYYY>_<HH:MM:SS> ]
   -k K        Add API key [ Example : shodan@key ]
@@ -191,11 +197,21 @@ nokizaru --full --url https://example.com
 
 ## Output / Exports
 
-If you specify `--export`, results will be exported to the following location by default:
+Nokizaru is **ephemeral by default** (stdout). If you specify `--export`, it will write **TXT**, **JSON**, and **HTML** reports (unless you narrow formats with `-o`).
+
+By default, exports are written to:
 
 * `~/.local/share/nokizaru/dumps/`
 
 You can change the export directory with `-cd`.
+
+## Workspaces / Caching / Diffing
+
+If you specify `--project <name>`, Nokizaru can create a persistent workspace for a target:
+
+- stores each run as `results.json` (so you can build a target profile over time)
+- enables caching (speeding up repeated runs)
+- enables diffing between runs: `--diff last` (or `--diff <run_ID>`)
 
 ## Responsible Use / Disclaimers
 

@@ -24,9 +24,9 @@ Gem::Specification.new do |spec|
   spec.files = Dir[
     'bin/*',
     'lib/**/*',
-    'conf/*',
-    'data/*',
-    'wordlists/*',
+    'conf/**/*',
+    'data/**/*',
+    'wordlists/**/*',
     'man/*',
     'README.md',
     'LICENSE'
@@ -38,12 +38,17 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency 'thor', '~> 1.3'
 
-  spec.add_dependency 'httpx', '~> 1.3'
-  spec.add_dependency 'nokogiri', '~> 1.16'
-  spec.add_dependency 'concurrent-ruby', '~> 1.3'
   spec.add_dependency 'async', '~> 2.10'
   spec.add_dependency 'async-io', '~> 1.35'
-  spec.add_dependency 'public_suffix', '~> 5.0'
+  spec.add_dependency 'concurrent-ruby', '~> 1.3'
   spec.add_dependency 'dnsruby', '~> 1.72'
+  spec.add_dependency 'httpx', '~> 1.3'
+  spec.add_dependency 'nokogiri', '~> 1.16'
+  spec.add_dependency 'public_suffix', '~> 5.0'
+  spec.add_dependency 'ronin-support', '>= 1.0'
   spec.add_dependency 'whois', '~> 5.0'
+
+  # Persistent workspaces + diffing built on the Ronin Database.
+  spec.add_dependency 'ronin-db', '>= 0.2'
+  spec.add_dependency 'sqlite3', '>= 1.6'
 end

@@ -6,7 +6,6 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Transliteration of FinalRecon's thminer_subs.py
       module ThreatMiner
         module_function
 
@@ -26,9 +25,9 @@ module Nokizaru
               Base.print_status('ThreatMiner', resp)
               Log.write("[thminer_subs] Status = #{status}, expected 200")
             end
-          rescue StandardError => exc
-            puts("#{Base::R}[-] #{Base::C}ThreatMiner Exception : #{Base::W}#{exc}")
-            Log.write("[thminer_subs] Exception = #{exc}")
+          rescue StandardError => e
+            puts("#{Base::R}[-] #{Base::C}ThreatMiner Exception : #{Base::W}#{e}")
+            Log.write("[thminer_subs] Exception = #{e}")
           end
           Log.write('[thminer_subs] Completed')
         end

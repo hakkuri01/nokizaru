@@ -2,7 +2,6 @@
 
 require_relative '../http_client'
 
-require_relative 'export'
 require_relative '../log'
 require_relative '../keys'
 require_relative '../version'
@@ -38,13 +37,36 @@ module Nokizaru
 
       VALID = /^[A-Za-z0-9._~()'!*:@,;+?-]*$/
 
-      def call(hostname, timeout, output, data, conf_path)
+      def call(hostname, timeout, ctx, conf_path)
         puts("\n#{Y}[!] Starting Sub-Domain Enumeration...#{W}\n\n")
 
+        cache_key = ctx.cache&.key_for(['subdomains', hostname]) || "subdomains:#{hostname}"
+        found = ctx.cache_fetch(cache_key, ttl_s: 43_200) do
+          enumerate(hostname, timeout, conf_path)
+        end
+
+        print_results(found)
+
+        ctx.run['modules']['subdomains'] = { 'subdomains' => found }
+        ctx.add_artifact('subdomains', found)
+
+        Log.write('[subdom] Completed')
+      end
+
+      def print_results(found)
+        if found.any?
+          puts("\n#{G}[+] #{C}Results : #{W}\n\n")
+          found.first(20).each { |u| puts(u) }
+          puts("\n#{G}[+]#{C} Results truncated...#{W}") if found.length > 20
+        end
+
+        puts("\n#{G}[+] #{C}Total Unique Sub Domains Found : #{W}#{found.length}")
+      end
+
+      def enumerate(hostname, timeout, conf_path)
         # Query passive sources concurrently under a single overall timeout budget.
         # This prevents a single vendor from stalling the whole scan.
-        #
-        # We also cap per-vendor timeouts to keep performance consistent across runs.
+        # Also caps per-vendor timeouts to keep performance consistent across runs.
         require 'concurrent'
         found = Concurrent::Array.new
 
@@ -98,7 +120,11 @@ module Nokizaru
             loop do
               break if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
 
-              job = (q.pop(true) rescue nil)
+              job = begin
+                q.pop(true)
+              rescue StandardError
+                nil
+              end
               break unless job
 
               name, fn = job
@@ -124,23 +150,7 @@ module Nokizaru
         found.select! { |item| item.match?(VALID) }
         found.uniq!
 
-        if found.any?
-          puts("\n#{G}[+] #{C}Results : #{W}\n\n")
-          found.first(20).each { |u| puts(u) }
-          puts("\n#{G}[+]#{C} Results truncated...#{W}") if found.length > 20
-        end
-
-        puts("\n#{G}[+] #{C}Total Unique Sub Domains Found : #{W}#{found.length}")
-
-        if output
-          result = { 'Links' => found, 'exported' => false }
-          data['module-Subdomain Enumeration'] = result
-          fname = File.join(output[:directory], "subdomains.#{output[:format]}")
-          output[:file] = fname
-          Export.call(output, data)
-        end
-
-        Log.write('[subdom] Completed')
+        found
       end
     end
   end

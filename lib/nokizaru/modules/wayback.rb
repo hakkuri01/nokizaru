@@ -5,7 +5,6 @@ require_relative '../http_client'
 
 require 'date'
 require 'uri'
-require_relative 'export'
 require_relative '../log'
 require_relative '../version'
 
@@ -71,14 +70,14 @@ module Nokizaru
         end
       end
 
-      def call(target, data, output, timeout_s: 10.0)
+      def call(target, ctx, timeout_s: 10.0)
         puts("\n#{Y}[!] Starting WayBack Machine...#{W}\n\n")
 
         # Keep Wayback strict: upstream uses a hard 10s timeout; long waits here hurt full-scan UX.
         hard_timeout = [[timeout_s.to_f, 10.0].min, 5.0].max
         client = build_http_client(hard_timeout)
 
-        # 1) Lightweight availability hint (nice UX, but not authoritative)
+        # Lightweight availability hint
         print("#{Y}[!] #{C}Checking Availability on Wayback Machine#{W}")
         $stdout.flush
 
@@ -92,12 +91,12 @@ module Nokizaru
           else
             puts("....[ #{safe_status(chk) || 'Error'} ]")
           end
-        rescue StandardError => exc
-          puts("....[ Error ]")
-          Log.write("[wayback] availability check exception = #{exc}")
+        rescue StandardError => e
+          puts('....[ Error ]')
+          Log.write("[wayback] availability check exception = #{e}")
         end
 
-        # 2) CDX query (authoritative)
+        # CDX query (authoritative)
         print("#{Y}[!] #{C}Fetching URLs#{W}")
         $stdout.flush
 
@@ -119,38 +118,37 @@ module Nokizaru
         }
 
         begin
-          resp = get_with_retries(client, CDX_URL, params: params, attempts: 2)
-          st = safe_status(resp)
+          cache_key = ctx.cache&.key_for(['wayback', domain_query, last_yr,
+                                          curr_yr]) || "wayback:#{domain_query}:#{last_yr}:#{curr_yr}"
+          urls = ctx.cache_fetch(cache_key, ttl_s: 43_200) do
+            resp = get_with_retries(client, CDX_URL, params: params, attempts: 2)
+            st = safe_status(resp)
 
-          if st != 200
-            puts("....[ #{st || 'Error'} ]")
-            Log.write("[wayback] CDX status=#{st.inspect}")
-            return
+            if st != 200
+              Log.write("[wayback] CDX status=#{st.inspect}")
+              []
+            else
+              lines = safe_body(resp).to_s.split("\n").map(&:strip).reject(&:empty?)
+              lines.uniq
+            end
           end
 
-          lines = safe_body(resp).to_s.split("\n").map(&:strip).reject(&:empty?)
-          # CDX may include a header line when output=json; using plain text, so just uniq.
-          urls = lines.uniq
-
           if urls.empty?
-            puts("....[ Not Found ]")
+            puts('....[ Not Found ]')
             Log.write("[wayback] available_hint=#{avail} but CDX returned 0 rows for #{domain_query}")
+            ctx.run['modules']['wayback'] = { 'urls' => [] }
             return
           end
 
           puts("....[ #{G}#{urls.length}#{W} ]")
 
-          if output
-            result = { 'links' => urls, 'exported' => false }
-            data['module-wayback_urls'] = result
-            fname = File.join(output[:directory], "wayback_urls.#{output[:format]}")
-            output[:file] = fname
-            Export.call(output, data)
-          end
-        rescue StandardError => exc
-          puts("....[ Error ]")
-          puts("\n#{R}[-] Exception : #{C}#{exc}#{W}")
-          Log.write("[wayback] Exception = #{exc}")
+          ctx.run['modules']['wayback'] = { 'urls' => urls, 'available_hint' => avail }
+          ctx.add_artifact('urls', urls)
+          ctx.add_artifact('wayback_urls', urls)
+        rescue StandardError => e
+          puts('....[ Error ]')
+          puts("\n#{R}[-] Exception : #{C}#{e}#{W}")
+          Log.write("[wayback] Exception = #{e}")
         ensure
           Log.write('[wayback] Completed')
         end

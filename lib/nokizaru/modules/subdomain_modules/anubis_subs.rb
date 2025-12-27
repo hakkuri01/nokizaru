@@ -6,7 +6,6 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Transliteration of FinalRecon's anubis_subs.py
       module AnubisDB
         module_function
 
@@ -15,7 +14,6 @@ module Nokizaru
           url = "https://jldc.me/anubis/subdomains/#{hostname}"
 
           begin
-            # Note: upstream aiohttp follows redirects by default; ensure our HTTP client does too.
             resp = http.get(url)
             status = Base.safe_status(resp)
 
@@ -31,9 +29,9 @@ module Nokizaru
               Base.print_status('AnubisDB', resp)
               Log.write("[anubis_subs] Status = #{status.inspect}, expected 200")
             end
-          rescue StandardError => exc
-            puts("#{Base::R}[-] #{Base::C}AnubisDB Exception : #{Base::W}#{exc}")
-            Log.write("[anubis_subs] Exception = #{exc}")
+          rescue StandardError => e
+            puts("#{Base::R}[-] #{Base::C}AnubisDB Exception : #{Base::W}#{e}")
+            Log.write("[anubis_subs] Exception = #{e}")
           end
 
           Log.write('[anubis_subs] Completed')

@@ -2,7 +2,6 @@
 
 require 'socket'
 require 'openssl'
-require_relative 'export'
 require_relative '../log'
 
 module Nokizaru
@@ -16,7 +15,7 @@ module Nokizaru
       W = "\e[0m"   # white
       Y = "\e[33m"  # yellow
 
-      def call(hostname, ssl_port, output, data)
+      def call(hostname, ssl_port, ctx)
         result = {}
         presence = false
         puts("\n#{Y}[!] SSL Certificate Information : #{W}\n\n")
@@ -34,9 +33,9 @@ module Nokizaru
         if presence
           begin
             tcp_socket = Socket.tcp(hostname, ssl_port, connect_timeout: 5)
-            ctx = OpenSSL::SSL::SSLContext.new
-            ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
-            ssl = OpenSSL::SSL::SSLSocket.new(tcp_socket, ctx)
+            ssl_ctx = OpenSSL::SSL::SSLContext.new
+            ssl_ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+            ssl = OpenSSL::SSL::SSLSocket.new(tcp_socket, ssl_ctx)
             ssl.hostname = hostname if ssl.respond_to?(:hostname=)
             ssl.sync_close = true
             ssl.connect
@@ -63,6 +62,7 @@ module Nokizaru
             san = extract_san(cert)
             cert_dict['subjectAltName'] = san if san && !san.empty?
 
+            result['cert'] = cert_dict
             process_cert(cert_dict, result)
           rescue StandardError => e
             puts("#{R}[-] #{C}Exception : #{W}#{e}")
@@ -77,14 +77,7 @@ module Nokizaru
           end
         end
 
-        result['exported'] = false
-
-        if output
-          fname = File.join(output[:directory], "ssl.#{output[:format]}")
-          output[:file] = fname
-          data['module-SSL Certificate Information'] = result
-          Export.call(output, data)
-        end
+        ctx.run['modules']['sslinfo'] = result
 
         Log.write('[sslinfo] Completed')
       end

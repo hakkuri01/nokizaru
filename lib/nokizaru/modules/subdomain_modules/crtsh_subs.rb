@@ -6,14 +6,12 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Transliteration of FinalRecon's crtsh_subs.py
       module CrtSh
         module_function
 
         def call(hostname, http, found)
           puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}crt.sh#{Base::W}")
 
-          # Match upstream query param (slightly more reliable than ?q= on some runs).
           url = "https://crt.sh/?dNSName=%25.#{hostname}&output=json"
 
           begin
@@ -40,12 +38,12 @@ module Nokizaru
               Base.print_status('crt.sh', resp)
               Log.write("[crtsh_subs] Status = #{status.inspect}, expected 200")
             end
-          rescue JSON::ParserError => exc
-            puts("#{Base::R}[-] #{Base::C}crt.sh Exception : #{Base::W}invalid JSON (#{exc.message})")
-            Log.write("[crtsh_subs] JSON parse exception = #{exc}")
-          rescue StandardError => exc
-            puts("#{Base::R}[-] #{Base::C}crt.sh Exception : #{Base::W}#{exc}")
-            Log.write("[crtsh_subs] Exception = #{exc}")
+          rescue JSON::ParserError => e
+            puts("#{Base::R}[-] #{Base::C}crt.sh Exception : #{Base::W}invalid JSON (#{e.message})")
+            Log.write("[crtsh_subs] JSON parse exception = #{e}")
+          rescue StandardError => e
+            puts("#{Base::R}[-] #{Base::C}crt.sh Exception : #{Base::W}#{e}")
+            Log.write("[crtsh_subs] Exception = #{e}")
           end
 
           Log.write('[crtsh_subs] Completed')
