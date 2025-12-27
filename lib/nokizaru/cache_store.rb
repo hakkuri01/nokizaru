@@ -25,9 +25,7 @@ module Nokizaru
         begin
           obj = JSON.parse(File.read(path))
           stored_at = Time.at(obj.fetch('stored_at'))
-          if (Time.now - stored_at) <= ttl_s.to_f
-            return obj['payload']
-          end
+          return obj['payload'] if (Time.now - stored_at) <= ttl_s.to_f
         rescue StandardError
           # treat as cache miss
         end

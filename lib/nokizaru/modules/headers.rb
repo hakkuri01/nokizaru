@@ -24,10 +24,10 @@ module Nokizaru
             puts("#{C}#{key} : #{W}#{val}")
             result['headers'][key.to_s] = val.to_s
           end
-        rescue StandardError => exc
-          puts("\n#{R}[-] #{C}Exception : #{W}#{exc}\n")
-          result['error'] = exc.to_s
-          Log.write("[headers] Exception = #{exc}")
+        rescue StandardError => e
+          puts("\n#{R}[-] #{C}Exception : #{W}#{e}\n")
+          result['error'] = e.to_s
+          Log.write("[headers] Exception = #{e}")
         end
 
         ctx.run['modules']['headers'] = result

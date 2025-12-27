@@ -41,10 +41,10 @@ module Nokizaru
         rqst = nil
         begin
           rqst = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(target, verify: false)
-        rescue StandardError => exc
-          puts("#{R}[-] Exception : #{C}#{exc}#{W}")
-          Log.write("[crawler] Exception = #{exc}")
-          result['error'] = exc.to_s
+        rescue StandardError => e
+          puts("#{R}[-] Exception : #{C}#{e}#{W}")
+          Log.write("[crawler] Exception = #{e}")
+          result['error'] = e.to_s
           ctx.run['modules']['crawler'] = result
           return
         end
@@ -87,13 +87,9 @@ module Nokizaru
       def url_filter(target, link)
         return nil if link.nil?
 
-        if link.start_with?('/') && !link.start_with?('//')
-          return target + link
-        end
+        return target + link if link.start_with?('/') && !link.start_with?('//')
 
-        if link.start_with?('//')
-          return link.sub('//', 'http://')
-        end
+        return link.sub('//', 'http://') if link.start_with?('//')
 
         if link !~ %r{//} && link !~ %r{\.\./} && link !~ %r{\./} &&
            !link.start_with?('http://') && !link.start_with?('https://')
@@ -143,9 +139,9 @@ module Nokizaru
           else
             puts("#{R}#{'['.rjust(9, '.')} #{r_sc} ]#{W}")
           end
-        rescue StandardError => exc
-          puts("\n#{R}[-] Exception : #{C}#{exc}#{W}")
-          Log.write("[crawler.robots] Exception = #{exc}")
+        rescue StandardError => e
+          puts("\n#{R}[-] Exception : #{C}#{e}#{W}")
+          Log.write("[crawler.robots] Exception = #{e}")
         end
 
         [r_total, sm_total]
@@ -166,9 +162,9 @@ module Nokizaru
           else
             puts("#{R}#{'['.rjust(8, '.')} #{sm_sc} ]#{W}")
           end
-        rescue StandardError => exc
-          puts("\n#{R}[-] Exception : #{C}#{exc}#{W}")
-          Log.write("[crawler.sitemap] Exception = #{exc}")
+        rescue StandardError => e
+          puts("\n#{R}[-] Exception : #{C}#{e}#{W}")
+          Log.write("[crawler.sitemap] Exception = #{e}")
         end
 
         sm_total.uniq
@@ -261,25 +257,23 @@ module Nokizaru
 
         print("#{G}[+] #{C}Crawling Sitemaps#{W}")
         sm_total.each do |sm|
-          begin
-            resp = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(sm, verify: false)
-            next unless resp.status == 200
+          resp = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(sm, verify: false)
+          next unless resp.status == 200
 
-            xml = resp.to_s
-            doc = Nokogiri::XML(xml)
-            doc.remove_namespaces!
-            doc.xpath('//url/loc').each do |loc|
-              u = loc.text.to_s.strip
-              links << u unless u.empty?
-            end
-            # sitemap index
-            doc.xpath('//sitemap/loc').each do |loc|
-              u = loc.text.to_s.strip
-              sm_total << u unless u.empty?
-            end
-          rescue StandardError => exc
-            Log.write("[crawler.sm_crawl] Exception = #{exc}")
+          xml = resp.to_s
+          doc = Nokogiri::XML(xml)
+          doc.remove_namespaces!
+          doc.xpath('//url/loc').each do |loc|
+            u = loc.text.to_s.strip
+            links << u unless u.empty?
           end
+          # sitemap index
+          doc.xpath('//sitemap/loc').each do |loc|
+            u = loc.text.to_s.strip
+            sm_total << u unless u.empty?
+          end
+        rescue StandardError => e
+          Log.write("[crawler.sm_crawl] Exception = #{e}")
         end
 
         links.uniq!
@@ -294,17 +288,15 @@ module Nokizaru
 
         print("#{G}[+] #{C}Crawling JS#{W}")
         js_total.each do |js|
-          begin
-            resp = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(js, verify: false)
-            next unless resp.status == 200
+          resp = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(js, verify: false)
+          next unless resp.status == 200
 
-            body = resp.to_s
-            body.scan(%r{https?://[\w\-\._~:/\?#\[\]@!\$&'\(\)\*\+,;=%]+}) do |m|
-              urls << m
-            end
-          rescue StandardError => exc
-            Log.write("[crawler.js_crawl] Exception = #{exc}")
+          body = resp.to_s
+          body.scan(%r{https?://[\w\-._~:/?#\[\]@!$&'()*+,;=%]+}) do |m|
+            urls << m
           end
+        rescue StandardError => e
+          Log.write("[crawler.js_crawl] Exception = #{e}")
         end
         urls.uniq!
         puts("#{G}#{'['.rjust(22, '.')} #{urls.length} ]")

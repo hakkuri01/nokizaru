@@ -104,7 +104,7 @@ module Nokizaru
         end
         return [] unless exp
 
-        days = ((exp - Time.now) / 86400.0).round(2)
+        days = ((exp - Time.now) / 86_400.0).round(2)
         if days < 0
           [{
             'id' => 'tls.cert_expired',
@@ -171,9 +171,9 @@ module Nokizaru
         ports = Array(ps['open_ports']).map(&:to_s)
         return [] if ports.empty?
 
-        risky = ports.select { |p|
+        risky = ports.select do |p|
           p.start_with?('2375') || p.start_with?('27017') || p.start_with?('6379') || p.start_with?('9200') || p.start_with?('11211')
-        }
+        end
         return [] if risky.empty?
 
         [{
@@ -193,7 +193,7 @@ module Nokizaru
         found = Array(dir['found']).map(&:to_s)
         return [] if found.empty?
 
-        interesting = found.select { |u| u =~ /\/(admin|backup|\.git|\.env|config|debug|swagger|api|graphql)\b/i }
+        interesting = found.select { |u| u =~ %r{/(admin|backup|\.git|\.env|config|debug|swagger|api|graphql)\b}i }
         return [] if interesting.empty?
 
         [{

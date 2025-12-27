@@ -95,9 +95,7 @@ module Nokizaru
         return [] unless ext
 
         ext.value.split(',').map(&:strip).filter_map do |entry|
-          if entry.start_with?('DNS:')
-            entry.sub('DNS:', '').strip
-          end
+          entry.sub('DNS:', '').strip if entry.start_with?('DNS:')
         end
       end
 

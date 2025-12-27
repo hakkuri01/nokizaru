@@ -43,10 +43,10 @@ module Nokizaru
           puts("#{R}[-] Error : #{C}This domain suffix is not supported.#{W}")
           result['Error'] = 'This domain suffix is not supported.'
           Log.write('[whois] Exception = This domain suffix is not supported.')
-        rescue StandardError => exc
-          puts("#{R}[-] Error : #{C}#{exc}#{W}")
-          result['Error'] = exc.to_s
-          Log.write("[whois] Exception = #{exc}")
+        rescue StandardError => e
+          puts("#{R}[-] Error : #{C}#{e}#{W}")
+          result['Error'] = e.to_s
+          Log.write("[whois] Exception = #{e}")
         end
 
         ctx.run['modules']['whois'] = result
