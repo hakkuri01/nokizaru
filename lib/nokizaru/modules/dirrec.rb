@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative '../http_client'
+require_relative '../http_result'
 require 'concurrent'
 require_relative '../log'
 
@@ -67,22 +68,38 @@ module Nokizaru
               end
               break unless url
 
+              # Check if interrupted
+              break if $interrupted
+
               begin
-                resp = client.get(url)
-                status = resp.respond_to?(:status) ? resp.status : nil
-                if status
-                  # Keep only interesting statuses.
+                raw_resp = client.get(url)
+                http_result = HttpResult.new(raw_resp)
+
+                if http_result.success?
+                  status = http_result.status
+                  # Keep only interesting statuses
                   if status == 200 || status == 403 || [301, 302, 303, 307, 308].include?(status)
                     responses << [url, status]
                   end
                   filter_out(target, url, status, found)
                 else
+                  # HTTP error (connection failed, SSL error, etc.)
                   exc_count.increment
-                  Log.write("[dirrec] HTTP error response for #{url}")
+                  # Only log first few errors to avoid spam
+                  if exc_count.value <= 5
+                    Log.write("[dirrec] Error for #{url}: #{http_result.error_message}")
+                  elsif exc_count.value == 6
+                    Log.write('[dirrec] Suppressing further error logs (too many errors)')
+                  end
                 end
               rescue StandardError => e
                 exc_count.increment
-                Log.write("[dirrec] Exception : #{e}")
+                # Only log first few exceptions to avoid spam
+                if exc_count.value <= 5
+                  Log.write("[dirrec] Exception for #{url}: #{e.class} - #{e.message}")
+                elsif exc_count.value == 6
+                  Log.write('[dirrec] Suppressing further exception logs (too many exceptions)')
+                end
               ensure
                 current = count.increment
                 # Avoid excessive terminal churn; this alone can dwarf network time.

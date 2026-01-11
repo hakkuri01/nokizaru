@@ -2,6 +2,7 @@
 
 require_relative '../../log'
 require_relative '../../keys'
+require_relative '../../http_result'
 
 module Nokizaru
   module Modules
@@ -16,16 +17,21 @@ module Nokizaru
         W = "\e[0m"
         Y = "\e[33m"
 
-        # HTTPX may return an HTTPX::ErrorResponse on network failures.
-        # Those objects do not always implement the same surface (e.g. #status).
-        # Keep subdomain modules resilient by using these helpers.
+        # Wrap raw HTTPX response in HttpResult for consistent handling
+        def wrap_response(raw_response)
+          HttpResult.new(raw_response)
+        end
+
+        # Legacy helper - maintained for backward compatibility
+        # New code should use HttpResult directly
         def safe_status(resp)
           return resp.status if resp&.respond_to?(:status)
 
           nil
         end
 
-        # Prefer the response body; avoid dumping large debug structures for HTTPX error responses.
+        # Legacy helper - maintained for backward compatibility
+        # New code should use HttpResult#body directly
         def safe_body(resp)
           return '' unless resp
 
@@ -57,14 +63,18 @@ module Nokizaru
           ''
         end
 
-        # Human-readable reason for HTTPX failures (ErrorResponse etc.).
-        # Returns empty string when no details are available.
+        # Human-readable reason for HTTPX failures
+        # Works with both raw responses and HttpResult objects
         def failure_reason(resp)
           return '' unless resp
 
+          # If it's an HttpResult, use its error_message
+          if resp.is_a?(HttpResult)
+            return resp.error? ? resp.error_message : ''
+          end
+
+          # Legacy handling for raw HTTPX responses
           if resp.respond_to?(:error) && (err = resp.error)
-            # HTTPX error strings can be very noisy, often embedding headers hashes
-            # and sometimes an entire HTML page. Keep this short and human-readable.
             s = err.to_s.to_s
             # Common pattern: "HTTP Error: 500 { ...headers hash... }".
             s = s.split(' {', 2).first if s.include?(' {')
@@ -79,11 +89,24 @@ module Nokizaru
           ''
         end
 
+        # Print status with improved formatting
+        # Works with both raw responses and HttpResult objects
         def print_status(vendor, resp)
-          st = status_label(resp)
-          reason = failure_reason(resp)
-          suffix = reason.empty? ? '' : " (#{reason})"
-          puts("#{R}[-] #{C}#{vendor} Status : #{W}#{st}#{suffix}")
+          if resp.is_a?(HttpResult)
+            if resp.success?
+              puts("#{G}[+] #{C}#{vendor} Status : #{W}#{resp.status}")
+            else
+              st = resp.status || 'ERR'
+              reason = resp.error_message
+              puts("#{R}[-] #{C}#{vendor} Status : #{W}#{st} (#{reason})")
+            end
+          else
+            # Legacy handling
+            st = status_label(resp)
+            reason = failure_reason(resp)
+            suffix = reason.empty? ? '' : " (#{reason})"
+            puts("#{R}[-] #{C}#{vendor} Status : #{W}#{st}#{suffix}")
+          end
         end
 
         def status_label(resp)
@@ -94,6 +117,28 @@ module Nokizaru
         # Centralized key lookup
         def ensure_key(name, _conf_path, env)
           KeyStore.fetch(name, env: env)
+        end
+
+        # Make HTTP request and return HttpResult
+        # Provides a consistent interface for all subdomain modules
+        def fetch_with_result(client, url, **options)
+          raw_response = client.get(url, **options)
+          HttpResult.new(raw_response)
+        rescue StandardError => e
+          # Create a fake error response for consistency
+          error_response = Object.new
+          error_response.define_singleton_method(:error) { e }
+          error_response.instance_variable_set(:@is_error, true)
+
+          class << error_response
+            def is_a?(klass)
+              return true if klass == HTTPX::ErrorResponse
+
+              super
+            end
+          end
+
+          HttpResult.new(error_response)
         end
       end
     end

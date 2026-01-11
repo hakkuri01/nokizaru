@@ -2,7 +2,7 @@
 
 require 'json'
 require_relative '../http_client'
-
+require_relative '../http_result'
 require 'date'
 require 'uri'
 require_relative '../log'
@@ -29,19 +29,6 @@ module Nokizaru
         target
       end
 
-      def safe_status(resp)
-        resp.respond_to?(:status) ? resp.status : nil
-      end
-
-      def safe_body(resp)
-        return '' unless resp
-        return resp.body.to_s if resp.respond_to?(:body) && resp.body
-
-        resp.to_s.to_s
-      rescue StandardError
-        ''
-      end
-
       def build_http_client(timeout_s, verify_ssl: true)
         Nokizaru::HTTPClient.build(
           timeout_s: timeout_s,
@@ -53,27 +40,35 @@ module Nokizaru
       end
 
       # Simple retry wrapper with exponential backoff.
+      # Now returns HttpResult for consistent error handling
       def get_with_retries(client, url, params:, attempts: 2)
-        (1..attempts).each do |i|
-          # Some HTTPX builds do not expose a stable per-request `verify:` option.
-          # Wayback endpoints have valid TLS, so rely on client defaults here.
-          resp = client.get(url, params: params)
-          st = safe_status(resp)
-          return resp if st && st < 500 && st != 429
+        last_error = nil
 
-          # Back off on rate-limits and transient upstream errors.
+        (1..attempts).each do |i|
+          raw_resp = client.get(url, params: params)
+          http_result = HttpResult.new(raw_resp)
+
+          # Return on success or client errors (4xx), but retry on 5xx/429
+          return http_result if http_result.success? && http_result.status < 500 && http_result.status != 429
+
+          # Back off on rate-limits and transient upstream errors
           sleep((0.6 * (2**(i - 1))) + rand * 0.25) if i < attempts
+          last_error = http_result
         rescue StandardError => e
+          last_error = e
           raise e if i == attempts
 
           sleep((0.6 * (2**(i - 1))) + rand * 0.25)
         end
+
+        # If all retries failed, return the last error result
+        last_error.is_a?(HttpResult) ? last_error : HttpResult.new(OpenStruct.new(error: last_error))
       end
 
       def call(target, ctx, timeout_s: 10.0)
         puts("\n#{Y}[!] Starting WayBack Machine...#{W}\n\n")
 
-        # Keep Wayback strict: upstream uses a hard 10s timeout; long waits here hurt full-scan UX.
+        # Keep Wayback strict: long waits here hurt full-scan UX.
         hard_timeout = [[timeout_s.to_f, 10.0].min, 5.0].max
         client = build_http_client(hard_timeout)
 
@@ -83,13 +78,16 @@ module Nokizaru
 
         avail = false
         begin
-          chk = get_with_retries(client, AVAIL_URL, params: { url: target }, attempts: 2)
-          if safe_status(chk) == 200
-            json = JSON.parse(safe_body(chk))
+          http_result = get_with_retries(client, AVAIL_URL, params: { url: target }, attempts: 2)
+
+          if http_result.success? && http_result.status == 200
+            json = JSON.parse(http_result.body)
             avail = !json.fetch('archived_snapshots', {}).empty?
             puts("....[ #{avail ? "#{G}Available#{W}" : "#{R}N/A#{W}"} ]")
           else
-            puts("....[ #{safe_status(chk) || 'Error'} ]")
+            status_msg = http_result.status || http_result.error_message || 'Error'
+            puts("....[ #{status_msg} ]")
+            Log.write("[wayback] availability check failed: #{http_result.error_message}") if http_result.error?
           end
         rescue StandardError => e
           puts('....[ Error ]')
@@ -118,17 +116,20 @@ module Nokizaru
         }
 
         begin
-          cache_key = ctx.cache&.key_for(['wayback', domain_query, last_yr,
-                                          curr_yr]) || "wayback:#{domain_query}:#{last_yr}:#{curr_yr}"
-          urls = ctx.cache_fetch(cache_key, ttl_s: 43_200) do
-            resp = get_with_retries(client, CDX_URL, params: params, attempts: 2)
-            st = safe_status(resp)
+          cache_key = ctx.cache&.key_for(['wayback', domain_query, last_yr, curr_yr]) ||
+                      "wayback:#{domain_query}:#{last_yr}:#{curr_yr}"
 
-            if st != 200
-              Log.write("[wayback] CDX status=#{st.inspect}")
+          urls = ctx.cache_fetch(cache_key, ttl_s: 43_200) do
+            http_result = get_with_retries(client, CDX_URL, params: params, attempts: 2)
+
+            if http_result.error?
+              Log.write("[wayback] CDX request failed: #{http_result.error_message}")
+              []
+            elsif http_result.status != 200
+              Log.write("[wayback] CDX status=#{http_result.status}")
               []
             else
-              lines = safe_body(resp).to_s.split("\n").map(&:strip).reject(&:empty?)
+              lines = http_result.body.to_s.split("\n").map(&:strip).reject(&:empty?)
               lines.uniq
             end
           end
