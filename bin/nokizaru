@@ -1,9 +1,49 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Ruby's OptionParser (used by Thor) does not support multi-letter *short* flags,
-# so we normalize them into equivalent long options before Thor parses ARGV.
+# ============================================================================
+# Signal Handling - MUST be set up before requiring gems
+# This prevents Bundler's signal handlers from interfering with clean exits
+# ============================================================================
 
+$stdout.sync = true # Ensure output is flushed immediately
+$interrupted = false
+
+# Set up clean interrupt handling for Ctrl+C
+Signal.trap('INT') do
+  if $interrupted
+    # Second Ctrl+C = hard exit
+    puts "\n\e[31m[!] Force quit\e[0m"
+    exit!(1)
+  else
+    # First Ctrl+C = graceful shutdown
+    $interrupted = true
+    puts "\n\e[33m[!] Scan interrupted by user\e[0m"
+    puts "\e[2m    Press Ctrl+C again to force quit\e[0m"
+
+    # Kill all threads except main
+    Thread.list.each do |thread|
+      thread.exit unless thread == Thread.main
+    end
+
+    puts "\e[2mCleaning up...\e[0m"
+    exit(130)
+  end
+end
+
+# Handle SIGTERM
+Signal.trap('TERM') do
+  puts "\n\e[33m[!] Received termination signal\e[0m"
+  Thread.list.each { |t| t.exit unless t == Thread.main }
+  exit(143)
+end
+
+# ============================================================================
+# Argument Normalization
+# ============================================================================
+
+# Ruby's OptionParser (used by Thor) does not support multi-letter *short* flags,
+# so normalize them into equivalent long options before Thor parses ARGV.
 def normalize_argv!(argv)
   replacements = {}
   replacements['-nb'] = '--nb'
@@ -47,9 +87,39 @@ def normalize_help_invocation!(argv)
   nil
 end
 
-normalize_help_invocation!(ARGV)
-normalize_argv!(ARGV)
+# ============================================================================
+# Main Entry Point
+# ============================================================================
 
-require_relative '../lib/nokizaru'
+begin
+  # Normalize arguments before Thor processes them
+  normalize_help_invocation!(ARGV)
+  normalize_argv!(ARGV)
 
-Nokizaru::CLI.start(ARGV)
+  # Load the application
+  require_relative '../lib/nokizaru'
+
+  # Start the CLI
+  Nokizaru::CLI.start(ARGV)
+rescue Interrupt
+  # Catch any Interrupt that bubbles up (shouldn't happen with trap above)
+  puts "\n\e[2mExited.\e[0m" unless $interrupted
+  exit(130)
+rescue SystemExit
+  # Allow normal exits to propagate
+  raise
+rescue StandardError => e
+  # Catch any unexpected errors and display them cleanly
+  puts "\n\e[31m[ERROR] Unexpected error: #{e.class}\e[0m"
+  puts "\e[2m#{e.message}\e[0m"
+
+  # Show backtrace only if in development/debug mode
+  if ENV['NOKIZARU_DEBUG'] || ENV['DEBUG']
+    puts "\n\e[2mBacktrace:\e[0m"
+    puts e.backtrace.map { |line| "  #{line}" }.join("\n")
+  else
+    puts "\e[2mRun with NOKIZARU_DEBUG=1 for full backtrace\e[0m"
+  end
+
+  exit(1)
+end

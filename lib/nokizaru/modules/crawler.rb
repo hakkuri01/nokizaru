@@ -4,6 +4,7 @@ require 'httpx'
 require 'nokogiri'
 require 'public_suffix'
 require_relative '../log'
+require_relative '../http_result'
 
 module Nokizaru
   module Modules
@@ -38,9 +39,27 @@ module Nokizaru
 
         puts("\n#{Y}[!] Starting Crawler...#{W}\n\n")
 
-        rqst = nil
+        # Fetch the main page
         begin
-          rqst = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(target, verify: false)
+          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(target,
+                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
+          http_result = HttpResult.new(raw_response)
+
+          unless http_result.success?
+            puts("#{R}[-] Failed to fetch target: #{C}#{http_result.error_message}#{W}")
+            Log.write("[crawler] Error = #{http_result.error_message}")
+            result['error'] = http_result.error_message
+            ctx.run['modules']['crawler'] = result
+            return
+          end
+
+          if http_result.status != 200
+            puts("#{R}[-] #{C}Status : #{W}#{http_result.status}")
+            Log.write("[crawler] Status code = #{http_result.status}, expected 200")
+            result['error'] = "HTTP status #{http_result.status}"
+            ctx.run['modules']['crawler'] = result
+            return
+          end
         rescue StandardError => e
           puts("#{R}[-] Exception : #{C}#{e}#{W}")
           Log.write("[crawler] Exception = #{e}")
@@ -49,16 +68,7 @@ module Nokizaru
           return
         end
 
-        status = rqst.status
-        if status != 200
-          puts("#{R}[-] #{C}Status : #{W}#{status}")
-          Log.write("[crawler] Status code = #{status}, expected 200")
-          result['error'] = "HTTP status #{status}"
-          ctx.run['modules']['crawler'] = result
-          return
-        end
-
-        page = rqst.to_s
+        page = http_result.body
         soup = Nokogiri::HTML(page)
 
         base_url = "#{protocol}://#{netloc}"
@@ -113,13 +123,22 @@ module Nokizaru
         print("#{G}[+] #{C}Looking for robots.txt#{W}")
 
         begin
-          r_rqst = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(robo_url, verify: false)
-          r_sc = r_rqst.status
+          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(robo_url,
+                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
+          http_result = HttpResult.new(raw_response)
+
+          unless http_result.success?
+            puts("#{R}#{'['.rjust(9, '.')} Error: #{http_result.error_message} ]#{W}")
+            Log.write("[crawler.robots] Error = #{http_result.error_message}")
+            return [r_total, sm_total]
+          end
+
+          r_sc = http_result.status
           if r_sc == 200
             puts("#{G}#{'['.rjust(9, '.')} Found ]#{W}")
             print("#{G}[+] #{C}Extracting robots Links#{W}")
 
-            r_page = r_rqst.to_s
+            r_page = http_result.body
             r_page.split("\n").each do |entry|
               next unless entry.start_with?('Disallow', 'Allow', 'Sitemap')
 
@@ -152,8 +171,17 @@ module Nokizaru
         print("#{G}[+] #{C}Looking for sitemap.xml#{W}")
 
         begin
-          sm_rqst = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(target_url, verify: false)
-          sm_sc = sm_rqst.status
+          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(target_url,
+                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
+          http_result = HttpResult.new(raw_response)
+
+          unless http_result.success?
+            puts("#{R}#{'['.rjust(8, '.')} Error: #{http_result.error_message} ]#{W}")
+            Log.write("[crawler.sitemap] Error = #{http_result.error_message}")
+            return sm_total
+          end
+
+          sm_sc = http_result.status
           if sm_sc == 200
             puts("#{G}#{'['.rjust(8, '.')} Found ]#{W}")
             sm_total << target_url
@@ -257,10 +285,13 @@ module Nokizaru
 
         print("#{G}[+] #{C}Crawling Sitemaps#{W}")
         sm_total.each do |sm|
-          resp = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(sm, verify: false)
-          next unless resp.status == 200
+          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(sm,
+                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
+          http_result = HttpResult.new(raw_response)
 
-          xml = resp.to_s
+          next unless http_result.success? && http_result.status == 200
+
+          xml = http_result.body
           doc = Nokogiri::XML(xml)
           doc.remove_namespaces!
           doc.xpath('//url/loc').each do |loc|
@@ -288,10 +319,13 @@ module Nokizaru
 
         print("#{G}[+] #{C}Crawling JS#{W}")
         js_total.each do |js|
-          resp = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(js, verify: false)
-          next unless resp.status == 200
+          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(js,
+                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
+          http_result = HttpResult.new(raw_response)
 
-          body = resp.to_s
+          next unless http_result.success? && http_result.status == 200
+
+          body = http_result.body
           body.scan(%r{https?://[\w\-._~:/?#\[\]@!$&'()*+,;=%]+}) do |m|
             urls << m
           end
