@@ -213,6 +213,23 @@ If you specify `--project <name>`, Nokizaru can create a persistent workspace fo
 - enables caching (speeding up repeated runs)
 - enables diffing between runs: `--diff last` (or `--diff <run_ID>`)
 
+## Roadmap
+
+### Distribution / Installation
+- **Homebrew Formula:** Finalize the Homebrew tap installation method for seamless deployment on Linux and macOS. This includes deciding between a single executable, bundled runtime folder, or leveraging Homebrew's Ruby dependency management.
+
+### Provider Expansion
+
+The following providers are planned for integration to enhance recon coverage and signal quality:
+
+- **Censys:** IPv4/certificate data for comprehensive asset discovery and enumeration
+- **Chaos (ProjectDiscovery):** Community-curated subdomain dataset for expanded subdomain enumeration
+- **urlscan.io:** Live URL scanning and historical scan data for web asset intelligence
+- **GreyNoise:** Internet noise classification to filter out mass-scanning activity and focus on targeted reconnaissance
+- **Wappalyzer:** Technology stack identification to surface frameworks, CMS platforms, and server-side technologies
+
+All providers will follow Nokizaru's existing integration pattern: optional API keys, graceful degradation on failure, and consistent error reporting. These additions prioritize breadth of coverage and actionable intelligence to support the bug bounty/pentest recon workflow.
+
 ## Responsible Use / Disclaimers
 
 * **Nokizaru is intended for authorized security testing and research. Always ensure you have explicit permission to scan targets you do not own.**
