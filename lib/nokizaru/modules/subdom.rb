@@ -65,7 +65,7 @@ module Nokizaru
 
       def enumerate(hostname, timeout, conf_path)
         # Query passive sources concurrently under a single overall timeout budget.
-        # This prevents a single vendor from stalling the whole scan.
+        # Prevents a single vendor from stalling the whole scan.
         # Also caps per-vendor timeouts to keep performance consistent across runs.
         require 'concurrent'
         found = Concurrent::Array.new
@@ -83,6 +83,9 @@ module Nokizaru
           'AlienVault' => [vendor_default, 8.0].min
         }.freeze
 
+        # Build a base HTTP client with connection pooling.
+        # Each vendor module will get a client derived from this base.
+        # Ensures all requests share persistent connections where possible.
         base_http = Nokizaru::HTTPClient.build(
           timeout_s: vendor_default,
           headers: { 'User-Agent' => DEFAULT_UA },
