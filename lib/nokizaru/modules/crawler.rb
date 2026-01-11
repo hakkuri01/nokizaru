@@ -1,82 +1,40 @@
 # frozen_string_literal: true
 
-require 'httpx'
+require 'net/http'
+require 'uri'
+require 'openssl'
 require 'nokogiri'
 require 'public_suffix'
 require_relative '../log'
-require_relative '../http_result'
 
 module Nokizaru
   module Modules
-    # Lightweight on-page crawler:
-    # - robots.txt + sitemap.xml discovery
-    # - CSS/JS/internal/external/img extraction
-    # - URL harvesting from sitemap + JS
     module Crawler
       module_function
 
-      R = "\e[31m"  # red
-      G = "\e[32m"  # green
-      C = "\e[36m"  # cyan
-      W = "\e[0m"   # white
-      Y = "\e[33m"  # yellow
+      R = "\e[31m"
+      G = "\e[32m"
+      C = "\e[36m"
+      W = "\e[0m"
+      Y = "\e[33m"
 
-      USER_AGENT = { 'User-Agent' => 'Nokizaru' }.freeze
+      TIMEOUT = 10
+      USER_AGENT = 'Nokizaru'
 
       def call(target, protocol, netloc, ctx)
-        result = {
-          'robots_links' => [],
-          'sitemap_links' => [],
-          'css_links' => [],
-          'js_links' => [],
-          'internal_links' => [],
-          'external_links' => [],
-          'images' => [],
-          'urls_inside_sitemap' => [],
-          'urls_inside_js' => [],
-          'stats' => {}
-        }
+        result = initialize_result
 
         puts("\n#{Y}[!] Starting Crawler...#{W}\n\n")
 
-        # Fetch the main page
-        begin
-          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(target,
-                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
-          http_result = HttpResult.new(raw_response)
-
-          unless http_result.success?
-            puts("#{R}[-] Failed to fetch target: #{C}#{http_result.error_message}#{W}")
-            Log.write("[crawler] Error = #{http_result.error_message}")
-            result['error'] = http_result.error_message
-            ctx.run['modules']['crawler'] = result
-            return
-          end
-
-          if http_result.status != 200
-            puts("#{R}[-] #{C}Status : #{W}#{http_result.status}")
-            Log.write("[crawler] Status code = #{http_result.status}, expected 200")
-            result['error'] = "HTTP status #{http_result.status}"
-            ctx.run['modules']['crawler'] = result
-            return
-          end
-        rescue StandardError => e
-          puts("#{R}[-] Exception : #{C}#{e}#{W}")
-          Log.write("[crawler] Exception = #{e}")
-          result['error'] = e.to_s
-          ctx.run['modules']['crawler'] = result
-          return
-        end
-
-        page = http_result.body
-        soup = Nokogiri::HTML(page)
-
         base_url = "#{protocol}://#{netloc}"
-        robots_url = "#{base_url}/robots.txt"
-        sitemap_url = "#{base_url}/sitemap.xml"
 
-        result['robots_links'], discovered_sitemaps = robots(robots_url, base_url)
-        result['sitemap_links'] = sitemap(sitemap_url, discovered_sitemaps)
+        # Fetch main page
+        soup = fetch_main_page(target, result, ctx)
+        return if soup.nil?
+
+        # Crawl resources
+        result['robots_links'], discovered_sitemaps = robots("#{base_url}/robots.txt", base_url)
+        result['sitemap_links'] = sitemap("#{base_url}/sitemap.xml", discovered_sitemaps)
         result['css_links'] = css(target, soup)
         result['js_links'] = js_scan(target, soup)
         result['internal_links'] = internal_links(target, soup)
@@ -86,7 +44,7 @@ module Nokizaru
         result['urls_inside_sitemap'] = sm_crawl(result['sitemap_links'])
         result['urls_inside_js'] = js_crawl(result['js_links'])
 
-        result['stats'] = stats(result)
+        result['stats'] = calculate_stats(result)
 
         ctx.run['modules']['crawler'] = result
         ctx.add_artifact('urls', result['stats']['total_urls'])
@@ -94,26 +52,75 @@ module Nokizaru
         Log.write('[crawler] Completed')
       end
 
+      def initialize_result
+        {
+          'robots_links' => [], 'sitemap_links' => [], 'css_links' => [],
+          'js_links' => [], 'internal_links' => [], 'external_links' => [],
+          'images' => [], 'urls_inside_sitemap' => [], 'urls_inside_js' => [],
+          'stats' => {}
+        }
+      end
+
+      def fetch_main_page(target, result, ctx)
+        response = http_get(target)
+
+        unless response
+          puts("#{R}[-] Failed to fetch target#{W}")
+          result['error'] = 'Failed to fetch target'
+          ctx.run['modules']['crawler'] = result
+          return nil
+        end
+
+        unless response.is_a?(Net::HTTPSuccess)
+          puts("#{R}[-] #{C}Status : #{W}#{response.code}")
+          Log.write("[crawler] Status = #{response.code}, expected 200")
+          result['error'] = "HTTP status #{response.code}"
+          ctx.run['modules']['crawler'] = result
+          return nil
+        end
+
+        Nokogiri::HTML(response.body)
+      rescue StandardError => e
+        puts("#{R}[-] Exception : #{C}#{e}#{W}")
+        Log.write("[crawler] Exception = #{e}")
+        result['error'] = e.to_s
+        ctx.run['modules']['crawler'] = result
+        nil
+      end
+
+      def http_get(url)
+        uri = URI.parse(url)
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.open_timeout = TIMEOUT
+        http.read_timeout = TIMEOUT
+
+        if uri.scheme == 'https'
+          http.use_ssl = true
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+        end
+
+        request = Net::HTTP::Get.new(uri)
+        request['User-Agent'] = USER_AGENT
+        request['Accept'] = '*/*'
+
+        http.request(request)
+      rescue StandardError => e
+        Log.write("[crawler] HTTP error for #{url}: #{e.message}")
+        nil
+      end
+
       def url_filter(target, link)
-        return nil if link.nil?
+        return nil if link.nil? || link.empty?
 
-        return target + link if link.start_with?('/') && !link.start_with?('//')
-
-        return link.sub('//', 'http://') if link.start_with?('//')
-
-        if link !~ %r{//} && link !~ %r{\.\./} && link !~ %r{\./} &&
-           !link.start_with?('http://') && !link.start_with?('https://')
-          return "#{target}/#{link}"
+        if link.start_with?('/') && !link.start_with?('//')
+          target + link
+        elsif link.start_with?('//')
+          'http:' + link
+        elsif !link.include?('://') && !link.start_with?('#')
+          "#{target}/#{link}"
+        else
+          link
         end
-
-        if !link.start_with?('http://') && !link.start_with?('https://')
-          ret = link.sub('//', 'http://')
-          ret = ret.sub('../', "#{target}/")
-          ret = ret.sub('./', "#{target}/")
-          return ret
-        end
-
-        link
       end
 
       def robots(robo_url, base_url)
@@ -122,108 +129,80 @@ module Nokizaru
 
         print("#{G}[+] #{C}Looking for robots.txt#{W}")
 
-        begin
-          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(robo_url,
-                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
-          http_result = HttpResult.new(raw_response)
+        response = http_get(robo_url)
 
-          unless http_result.success?
-            puts("#{R}#{'['.rjust(9, '.')} Error: #{http_result.error_message} ]#{W}")
-            Log.write("[crawler.robots] Error = #{http_result.error_message}")
-            return [r_total, sm_total]
+        if response&.is_a?(Net::HTTPSuccess)
+          puts("#{G}#{'['.rjust(9, '.')} Found ]#{W}")
+          print("#{G}[+] #{C}Extracting robots Links#{W}")
+
+          response.body.each_line do |line|
+            next unless line.start_with?('Disallow', 'Allow', 'Sitemap')
+
+            url = line.split(': ', 2)[1]&.strip
+            next if url.nil? || url.empty?
+
+            filtered = url_filter(base_url, url)
+            r_total << filtered if filtered
+            sm_total << url if url.end_with?('xml')
           end
 
-          r_sc = http_result.status
-          if r_sc == 200
-            puts("#{G}#{'['.rjust(9, '.')} Found ]#{W}")
-            print("#{G}[+] #{C}Extracting robots Links#{W}")
-
-            r_page = http_result.body
-            r_page.split("\n").each do |entry|
-              next unless entry.start_with?('Disallow', 'Allow', 'Sitemap')
-
-              url = entry.split(': ', 2)[1]&.strip
-              next if url.nil?
-
-              tmp = url_filter(base_url, url)
-              r_total << tmp if tmp
-              sm_total << url if url.end_with?('xml')
-            end
-
-            r_total.uniq!
-            sm_total.uniq!
-            puts("#{G}#{'['.rjust(8, '.')} #{r_total.length} ]")
-          elsif r_sc == 404
-            puts("#{R}#{'['.rjust(9, '.')} Not Found ]#{W}")
-          else
-            puts("#{R}#{'['.rjust(9, '.')} #{r_sc} ]#{W}")
-          end
-        rescue StandardError => e
-          puts("\n#{R}[-] Exception : #{C}#{e}#{W}")
-          Log.write("[crawler.robots] Exception = #{e}")
+          puts("#{G}#{'['.rjust(8, '.')} #{r_total.uniq.length} ]")
+        elsif response&.code == '404'
+          puts("#{R}#{'['.rjust(9, '.')} Not Found ]#{W}")
+        else
+          puts("#{R}#{'['.rjust(9, '.')} #{response&.code || 'Error'} ]#{W}")
         end
 
-        [r_total, sm_total]
+        [r_total.uniq, sm_total.uniq]
       end
 
-      def sitemap(target_url, sm_total)
+      def sitemap(sm_url, sm_total)
         sm_total = Array(sm_total).dup
+
         print("#{G}[+] #{C}Looking for sitemap.xml#{W}")
 
-        begin
-          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(target_url,
-                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
-          http_result = HttpResult.new(raw_response)
+        response = http_get(sm_url)
 
-          unless http_result.success?
-            puts("#{R}#{'['.rjust(8, '.')} Error: #{http_result.error_message} ]#{W}")
-            Log.write("[crawler.sitemap] Error = #{http_result.error_message}")
-            return sm_total
-          end
-
-          sm_sc = http_result.status
-          if sm_sc == 200
-            puts("#{G}#{'['.rjust(8, '.')} Found ]#{W}")
-            sm_total << target_url
-          elsif sm_sc == 404
-            puts("#{R}#{'['.rjust(8, '.')} Not Found ]#{W}")
-          else
-            puts("#{R}#{'['.rjust(8, '.')} #{sm_sc} ]#{W}")
-          end
-        rescue StandardError => e
-          puts("\n#{R}[-] Exception : #{C}#{e}#{W}")
-          Log.write("[crawler.sitemap] Exception = #{e}")
+        if response&.is_a?(Net::HTTPSuccess)
+          puts("#{G}#{'['.rjust(8, '.')} Found ]#{W}")
+          sm_total << sm_url
+        elsif response&.code == '404'
+          puts("#{R}#{'['.rjust(8, '.')} Not Found ]#{W}")
+        else
+          puts("#{R}#{'['.rjust(8, '.')} #{response&.code || 'Error'} ]#{W}")
         end
 
         sm_total.uniq
       end
 
       def css(target, soup)
-        css_total = []
+        links = []
         print("#{G}[+] #{C}Extracting CSS Links#{W}")
+
         soup.css('link[rel="stylesheet"]').each do |tag|
           href = url_filter(target, tag['href'])
-          css_total << href if href
+          links << href if href
         end
-        css_total.uniq!
-        puts("#{G}#{'['.rjust(13, '.')} #{css_total.length} ]")
-        css_total
+
+        puts("#{G}#{'['.rjust(13, '.')} #{links.uniq.length} ]")
+        links.uniq
       end
 
       def js_scan(target, soup)
-        js_total = []
+        links = []
         print("#{G}[+] #{C}Extracting JavaScript Links#{W}")
+
         soup.css('script[src]').each do |tag|
           src = url_filter(target, tag['src'])
-          js_total << src if src
+          links << src if src
         end
-        js_total.uniq!
-        puts("#{G}#{'['.rjust(5, '.')} #{js_total.length} ]")
-        js_total
+
+        puts("#{G}#{'['.rjust(5, '.')} #{links.uniq.length} ]")
+        links.uniq
       end
 
       def internal_links(target, soup)
-        int_total = []
+        links = []
         print("#{G}[+] #{C}Extracting Internal Links#{W}")
 
         host = begin
@@ -237,45 +216,44 @@ module Nokizaru
           next unless href
 
           begin
-            u = URI(href)
-            next unless u.host
-            next if host && PublicSuffix.domain(u.host) != host
+            uri = URI(href)
+            next unless uri.host
+            next if host && PublicSuffix.domain(uri.host) != host
           rescue StandardError
             next
           end
-          int_total << href
+
+          links << href
         end
 
-        int_total.uniq!
-        puts("#{G}#{'['.rjust(11, '.')} #{int_total.length} ]")
-        int_total
+        puts("#{G}#{'['.rjust(11, '.')} #{links.uniq.length} ]")
+        links.uniq
       end
 
       def external_links(soup)
-        ext_total = []
+        links = []
         print("#{G}[+] #{C}Extracting External Links#{W}")
+
         soup.css('a[href]').each do |tag|
           href = tag['href']
-          next unless href
-          next unless href.start_with?('http://', 'https://')
-
-          ext_total << href
+          links << href if href&.start_with?('http://', 'https://')
         end
-        ext_total.uniq!
-        puts("#{G}#{'['.rjust(11, '.')} #{ext_total.length} ]")
-        ext_total
+
+        puts("#{G}#{'['.rjust(11, '.')} #{links.uniq.length} ]")
+        links.uniq
       end
 
       def images(target, soup)
-        img_total = []
+        links = []
         print("#{G}[+] #{C}Extracting Image Links#{W}")
+
         soup.css('img[src]').each do |tag|
           src = url_filter(target, tag['src'])
-          img_total << src if src
+          links << src if src
         end
-        img_total.uniq!
-        puts("#{G}#{'['.rjust(14, '.')} #{img_total.length} ]")
-        img_total
+
+        puts("#{G}#{'['.rjust(14, '.')} #{links.uniq.length} ]")
+        links.uniq
       end
 
       def sm_crawl(sm_total)
@@ -284,32 +262,22 @@ module Nokizaru
         return links if sm_total.empty?
 
         print("#{G}[+] #{C}Crawling Sitemaps#{W}")
+
         sm_total.each do |sm|
-          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(sm,
-                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
-          http_result = HttpResult.new(raw_response)
+          response = http_get(sm)
+          next unless response&.is_a?(Net::HTTPSuccess)
 
-          next unless http_result.success? && http_result.status == 200
-
-          xml = http_result.body
-          doc = Nokogiri::XML(xml)
+          doc = Nokogiri::XML(response.body)
           doc.remove_namespaces!
-          doc.xpath('//url/loc').each do |loc|
-            u = loc.text.to_s.strip
-            links << u unless u.empty?
-          end
-          # sitemap index
-          doc.xpath('//sitemap/loc').each do |loc|
-            u = loc.text.to_s.strip
-            sm_total << u unless u.empty?
-          end
+
+          doc.xpath('//url/loc').each { |loc| links << loc.text.strip }
+          doc.xpath('//sitemap/loc').each { |loc| sm_total << loc.text.strip }
         rescue StandardError => e
           Log.write("[crawler.sm_crawl] Exception = #{e}")
         end
 
-        links.uniq!
-        puts("#{G}#{'['.rjust(16, '.')} #{links.length} ]")
-        links
+        puts("#{G}#{'['.rjust(16, '.')} #{links.uniq.length} ]")
+        links.uniq
       end
 
       def js_crawl(js_total)
@@ -318,43 +286,38 @@ module Nokizaru
         return urls if js_total.empty?
 
         print("#{G}[+] #{C}Crawling JS#{W}")
+
         js_total.each do |js|
-          raw_response = HTTPX.with(headers: USER_AGENT, timeout: { operation_timeout: 10 }).get(js,
-                                                                                                 ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
-          http_result = HttpResult.new(raw_response)
+          response = http_get(js)
+          next unless response&.is_a?(Net::HTTPSuccess)
 
-          next unless http_result.success? && http_result.status == 200
-
-          body = http_result.body
-          body.scan(%r{https?://[\w\-._~:/?#\[\]@!$&'()*+,;=%]+}) do |m|
+          response.body.scan(%r{https?://[\w\-.~:/?#\[\]@!$&'()*+,;=%]+}) do |m|
             urls << m
           end
         rescue StandardError => e
           Log.write("[crawler.js_crawl] Exception = #{e}")
         end
-        urls.uniq!
-        puts("#{G}#{'['.rjust(22, '.')} #{urls.length} ]")
-        urls
+
+        puts("#{G}#{'['.rjust(22, '.')} #{urls.uniq.length} ]")
+        urls.uniq
       end
 
-      def stats(result)
-        all = []
-        %w[robots_links sitemap_links css_links js_links internal_links external_links images urls_inside_sitemap
-           urls_inside_js].each do |k|
-          all.concat(Array(result[k]))
-        end
-        all.uniq!
+      def calculate_stats(result)
+        all = %w[robots_links sitemap_links css_links js_links internal_links
+                 external_links images urls_inside_sitemap urls_inside_js]
+              .flat_map { |k| Array(result[k]) }
+              .uniq
 
         {
-          'robots_count' => Array(result['robots_links']).length,
-          'sitemap_count' => Array(result['sitemap_links']).length,
-          'css_count' => Array(result['css_links']).length,
-          'js_count' => Array(result['js_links']).length,
-          'internal_count' => Array(result['internal_links']).length,
-          'external_count' => Array(result['external_links']).length,
-          'images_count' => Array(result['images']).length,
-          'sitemap_url_count' => Array(result['urls_inside_sitemap']).length,
-          'js_url_count' => Array(result['urls_inside_js']).length,
+          'robots_count' => result['robots_links'].length,
+          'sitemap_count' => result['sitemap_links'].length,
+          'css_count' => result['css_links'].length,
+          'js_count' => result['js_links'].length,
+          'internal_count' => result['internal_links'].length,
+          'external_count' => result['external_links'].length,
+          'images_count' => result['images'].length,
+          'sitemap_url_count' => result['urls_inside_sitemap'].length,
+          'js_url_count' => result['urls_inside_js'].length,
           'total_unique' => all.length,
           'total_urls' => all
         }

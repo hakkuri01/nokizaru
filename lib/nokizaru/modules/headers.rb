@@ -1,73 +1,85 @@
 # frozen_string_literal: true
 
-require 'httpx'
+require 'net/http'
+require 'uri'
+require 'openssl'
 require_relative '../log'
-require_relative '../http_result'
 
 module Nokizaru
   module Modules
     module Headers
       module_function
 
-      R = "\e[31m"  # red
-      G = "\e[32m"  # green
-      C = "\e[36m"  # cyan
-      W = "\e[0m"   # white
-      Y = "\e[33m"  # yellow
+      R = "\e[31m"
+      G = "\e[32m"
+      C = "\e[36m"
+      W = "\e[0m"
+      Y = "\e[33m"
+
+      TIMEOUT = 10
 
       def call(target, ctx)
         result = { 'headers' => {} }
         puts("\n#{Y}[!] Headers :#{W}\n\n")
 
         begin
-          # Make the HTTP request
-          raw_response = HTTPX.with(timeout: { operation_timeout: 10 }).get(target,
-                                                                            ssl: { verify_mode: OpenSSL::SSL::VERIFY_NONE })
+          uri = URI.parse(target)
+          response = fetch(uri)
 
-          # Wrap it in our HttpResult wrapper for safe handling
-          http_result = HttpResult.new(raw_response)
-
-          if http_result.success?
-            # Success - display headers
-            http_result.headers.each do |key, val|
+          if response
+            response.each_header do |key, val|
               puts("#{C}#{key} : #{W}#{val}")
-              result['headers'][key.to_s] = val.to_s
+              result['headers'][key] = val
             end
           else
-            # Error - display user-friendly message
-            display_http_error(http_result, target)
-            result['error'] = http_result.error_message
-            result['error_type'] = http_result.error.class.name
-            Log.write("[headers] #{http_result.error.class}: #{http_result.error_message}")
+            puts("#{R}[-] #{C}Failed to retrieve headers#{W}\n")
+            result['error'] = 'Failed to retrieve headers'
           end
+        rescue OpenSSL::SSL::SSLError => e
+          display_ssl_error(e, target)
+          result['error'] = e.message
+          result['error_type'] = 'SSLError'
+          Log.write("[headers] SSL error: #{e.message}")
         rescue StandardError => e
-          # Catch any unexpected errors
-          puts("\n#{R}[-] #{C}Unexpected error: #{W}#{e.class}")
-          puts("#{R}[-] #{W}#{e.message}\n")
-          result['error'] = e.to_s
+          puts("#{R}[-] #{C}Error: #{W}#{e.class} - #{e.message}\n")
+          result['error'] = e.message
           result['error_type'] = e.class.name
-          Log.write("[headers] Unexpected exception = #{e.class}: #{e}")
+          Log.write("[headers] Exception: #{e.class} - #{e.message}")
         end
 
         ctx.run['modules']['headers'] = result
         Log.write('[headers] Completed')
       end
 
-      # Display a user-friendly error message with helpful suggestions
-      def display_http_error(http_result, target)
-        puts("#{R}[-] #{C}Connection Failed#{W}")
-        puts("#{R}[-] #{W}#{http_result.error_message}\n")
+      def fetch(uri)
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.open_timeout = TIMEOUT
+        http.read_timeout = TIMEOUT
 
-        # Show hint if available
-        puts("#{Y}[!] #{C}Suggestion: #{W}#{http_result.error_hint}") if http_result.error_hint
-
-        # For SSL errors specifically, show the HTTP alternative
-        if http_result.error.is_a?(OpenSSL::SSL::SSLError) && target.start_with?('https://')
-          http_url = target.sub('https://', 'http://')
-          puts("#{Y}[!] #{C}Try: #{W}nokizaru --url #{http_url} [options]")
+        if uri.scheme == 'https'
+          http.use_ssl = true
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE
         end
 
-        puts('')
+        request = Net::HTTP::Get.new(uri)
+        request['User-Agent'] = 'Nokizaru'
+        request['Accept'] = '*/*'
+
+        http.request(request)
+      rescue StandardError => e
+        Log.write("[headers] HTTP error: #{e.message}")
+        nil
+      end
+
+      def display_ssl_error(error, target)
+        puts("#{R}[-] #{C}SSL Error#{W}")
+        puts("#{R}[-] #{W}#{error.message}\n")
+
+        return unless target.start_with?('https://')
+
+        http_url = target.sub('https://', 'http://')
+        puts("#{Y}[!] #{C}Suggestion: #{W}Try using HTTP instead of HTTPS")
+        puts("#{Y}[!] #{C}Try: #{W}nokizaru --url #{http_url} [options]\n")
       end
     end
   end
