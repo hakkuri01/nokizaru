@@ -126,8 +126,9 @@ nokizaru --help
 curl -L -o nokizaru.tar.gz https://github.com/hakkuri01/nokizaru/archive/refs/heads/main.tar.gz
 tar -xzf nokizaru.tar.gz
 cd nokizaru
-bundle install
-bundle exec nokizaru --help
+gem build nokizaru.gemspec
+gem install nokizaru-*.gem
+nokizaru --help
 ```
 
 ## Usage
