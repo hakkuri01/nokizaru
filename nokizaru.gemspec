@@ -45,10 +45,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'httpx', '~> 1.3'
   spec.add_dependency 'nokogiri', '~> 1.16'
   spec.add_dependency 'public_suffix', '~> 5.0'
-  spec.add_dependency 'ronin-support', '>= 1.0'
+  spec.add_dependency 'ronin-support', '~> 1.0'
   spec.add_dependency 'whois', '~> 5.0'
 
   # Persistent workspaces + diffing built on the Ronin Database.
-  spec.add_dependency 'ronin-db', '>= 0.2'
-  spec.add_dependency 'sqlite3', '>= 1.6'
+  spec.add_dependency 'ronin-db', '~> 0.2'
+  spec.add_dependency 'sqlite3', '~> 1.6'
 end
