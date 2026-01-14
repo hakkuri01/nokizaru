@@ -123,8 +123,9 @@ module Nokizaru
         ['-d D', 'Custom DNS Servers [ Default : 1.1.1.1 ]'],
         ['-e E', 'File Extensions [ Example : txt, xml, php, etc. ]'],
         ['-o O', 'Export Formats (comma-separated) [ Default : txt,json,html ]'],
-        ['-cd CD', 'Change export directory (requires --export) [ Default : ~/.local/share/nokizaru ]'],
-        ['-of OF', 'Change export folder name (requires --export) [ Default : nk_<host>_<DD-MM-YYYY>_<HH:MM:SS> ]'],
+        ['-cd CD',
+         'Change export directory (requires --export) [ Default : ~/.local/share/nokizaru/dumps/nk_<domain> ]'],
+        ['-of OF', 'Change export folder name (requires --export) [ Default : YYYY-MM-DD_HH-MM-SS ]'],
         ['-k K', 'Add API key [ Example : shodan@key ]']
       ]
       print_aligned_rows(shell, extra_rows)
@@ -178,8 +179,9 @@ module Nokizaru
     option :e,  type: :string,  default: nil, aliases: '-e', desc: 'File Extensions [ Example : txt, xml, php ]'
     option :o,  type: :string,  default: nil, aliases: '-o',
                 desc: 'Export Formats (comma-separated) [ Default : txt,json,html ]'
-    option :cd, type: :string,  default: nil, desc: 'Change export directory [ Default : ~/.local/share/nokizaru ]'
-    option :of, type: :string,  default: nil, desc: 'Change export folder name [ Default :<path>nk_<hostname>_<date> ]'
+    option :cd, type: :string,  default: nil,
+                desc: 'Change export directory [ Default : ~/.local/share/nokizaru/dumps/nk_<domain> ]'
+    option :of, type: :string,  default: nil, desc: 'Change export folder name [ Default : YYYY-MM-DD_HH-MM-SS ]'
     option :k,  type: :string,  default: nil, aliases: '-k', desc: 'Add API key [ Example : shodan@key ]'
     def scan(*args)
       if args && !args.empty?
@@ -448,18 +450,19 @@ module Nokizaru
 
         export_dir = nil
         if @opts[:export]
-          export_dir =
-            if @opts[:cd]
-              @opts[:cd]
-            elsif workspace && run_id
-              workspace.run_dir(run_id)
-            end
-
-          _legacy, export_dir = build_output_settings(info[:hostname]) unless export_dir
-
           formats = export_formats
+          custom_dir = resolve_custom_export_directory(workspace, run_id)
+          custom_basename = @opts[:of].to_s.strip.empty? ? nil : @opts[:of].to_s.strip
+
           begin
-            Nokizaru::ExportManager.new.export(run, formats: formats, directory: export_dir, basename: 'nokizaru')
+            export_paths = Nokizaru::ExportManager.new.export(
+              run,
+              domain: info[:hostname],
+              formats: formats,
+              custom_directory: custom_dir,
+              custom_basename: custom_basename
+            )
+            export_dir = File.dirname(export_paths.values.first) if export_paths.any?
           rescue ArgumentError => e
             puts("\n#{CLI::R}[-] #{CLI::C}Export failed: #{CLI::W}#{e.message}")
             puts("#{CLI::G}[+] #{CLI::C}Supported formats: #{CLI::W}txt,json,html#{CLI::W}")
@@ -527,31 +530,13 @@ module Nokizaru
         s.empty? ? nil : s
       end
 
-      def build_output_settings(hostname)
-        return [nil, nil] unless @opts[:export]
+      # Resolves a custom export directory if specified via CLI options
+      # Returns nil if default behavior should be used
+      def resolve_custom_export_directory(workspace, run_id)
+        return @opts[:cd] if @opts[:cd] && !@opts[:cd].to_s.strip.empty?
+        return workspace.run_dir(run_id) if workspace && run_id
 
-        output_format = (@opts[:o] || Settings.export_format).to_s
-        base = (@opts[:cd] || Paths.user_data_dir).to_s
-        base = base.end_with?('/') ? base : (base + '/')
-
-        folder_name = @opts[:of].to_s
-        respath =
-          if !folder_name.empty?
-            base + folder_name
-          else
-            dt_now = Time.now.strftime('%d-%m-%Y_%H:%M:%S')
-            base + "nk_#{hostname}_#{dt_now}"
-          end
-
-        FileUtils.mkdir_p(respath)
-
-        output = {
-          format: output_format,
-          directory: respath,
-          file: File.join(respath, "nokizaru.#{output_format}")
-        }
-
-        [output, respath]
+        nil
       end
 
       def parse_target(target)

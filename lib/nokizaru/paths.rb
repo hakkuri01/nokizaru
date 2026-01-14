@@ -79,6 +79,44 @@ module Nokizaru
       end
     end
 
+    # ~/.local/share/nokizaru/dumps
+    def self.dumps_dir
+      @dumps_dir ||= begin
+        base = File.join(user_data_dir, 'dumps')
+        FileUtils.mkdir_p(base)
+        base
+      end
+    end
+
+    # ~/.local/share/nokizaru/dumps/nk_<domain>
+    def self.target_dump_dir(domain)
+      sanitized = sanitize_domain_for_path(domain)
+      dir = File.join(dumps_dir, "nk_#{sanitized}")
+      FileUtils.mkdir_p(dir)
+      dir
+    end
+
+    # Generates a filesystem-safe, sortable timestamp string
+    # Format: YYYY-MM-DD_HH-MM-SS
+    def self.export_timestamp(time = Time.now)
+      time.strftime('%Y-%m-%d_%H-%M-%S')
+    end
+
+    # Removes or replaces characters that could cause issues
+    def self.sanitize_domain_for_path(domain)
+      return 'unknown' if domain.nil? || domain.to_s.strip.empty?
+
+      # Replace path separators and problematic characters
+      sanitized = domain.to_s.strip.downcase
+      sanitized = sanitized.gsub(%r{[/\\:*?"<>|]}, '_')
+      sanitized = sanitized.gsub(/\.+/, '.')
+      sanitized = sanitized.gsub(/\A\.+|\.+\z/, '')
+      sanitized = sanitized.slice(0, 128) # Limit length for filesystem compatibility
+      sanitized.empty? ? 'unknown' : sanitized
+    end
+
+    private_class_method :sanitize_domain_for_path
+
     # --- files Nokizaru expects under user dirs ---
     def self.metadata_file
       File.join(user_data_dir, 'metadata.json')

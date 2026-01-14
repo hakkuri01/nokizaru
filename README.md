@@ -115,8 +115,9 @@ nokizaru --help
 ```bash
 git clone https://github.com/hakkuri01/nokizaru.git
 cd nokizaru
-bundle install
-bundle exec nokizaru --help
+gem build nokizaru.gemspec
+gem install nokizaru-*.gem
+nokizaru --help
 ```
 
 ### Tarball
@@ -168,8 +169,8 @@ Extra Options:
   -d D        Custom DNS Servers [ Default : 1.1.1.1 ]
   -e E        File Extension(s) (comma separated) [ Example : txt,xml,php,etc. ]
   -o O        Export Format(s) (comma-separated) [ Default : txt,json,html ]
-  -cd CD      Change export directory [ Default : ~/.local/share/nokizaru ]
-  -of OF      Change export folder name [ Default : nk_<host>_<DD-MM-YYYY>_<HH:MM:SS> ]
+  -cd CD      Change export directory [ Default : ~/.local/share/nokizaru/dumps/nk_<domain> ]
+  -of OF      Change export folder name [ Default : YYYY-MM-DD_HH-MM-SS ]
   -k K        Add API key [ Example : shodan@key ]
 ```
 
@@ -216,7 +217,10 @@ If you specify `--project <name>`, Nokizaru can create a persistent workspace fo
 ## Roadmap
 
 ### Distribution / Installation
-- **Homebrew Formula:** Finalize the Homebrew tap installation method for seamless deployment on Linux and macOS. This includes deciding between a single executable, bundled runtime folder, or leveraging Homebrew's Ruby dependency management.
+
+**Homebrew Formula:** Finalize the Homebrew tap installation method for seamless deployment on Linux and macOS. This will involve deciding between a single executable, bundled runtime folder, or leveraging Homebrew's Ruby dependency management, based on user feedback.
+
+Currently there are no other install methods planned officially, however depending on popularity I would consider various Linux distro package managers down the road. If this materializes, I would most likely start with Debian's apt for Security distros (ParrotOS, Kali etc.) followed by Fedora's RPM because I personally use Fedora.
 
 ### Provider Expansion
 
@@ -229,6 +233,10 @@ The following providers are planned for integration to enhance recon coverage an
 - **Wappalyzer:** Technology stack identification to surface frameworks, CMS platforms, and server-side technologies
 
 All providers will follow Nokizaru's existing integration pattern: optional API keys, graceful degradation on failure, and consistent error reporting. These additions prioritize breadth of coverage and actionable intelligence to support the bug bounty/pentest recon workflow.
+
+### Integrate Man Pages
+
+Currently Man Pages are prepared/included and can be called with `man man/nokizaru.1`, but they are not integrated to run natively yet. This will serve as the in-depth CLI documentation for end users long-term once they are integrated.
 
 ## Responsible Use / Disclaimers
 
