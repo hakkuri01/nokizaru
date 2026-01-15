@@ -158,6 +158,7 @@ Nokizaru - Recon Refined
 
 Arguments:
   -h, --help       Show this help message and exit
+  -v, --version    Show version number and exit
   --url URL        Target URL
   --headers        Header Information
   --sslinfo        SSL Certificate Information
@@ -217,15 +218,20 @@ Nokizaru is **ephemeral by default** (stdout). If you specify `--export`, it wil
 
 By default, exports are written to:
 
-* `~/.local/share/nokizaru/dumps/`
+```bash
+~/.local/share/nokizaru/dumps/nk_<domain>/
+├── YYYY-MM-DD_HH-MM-SS.txt
+├── YYYY-MM-DD_HH-MM-SS.json
+└── YYYY-MM-DD_HH-MM-SS.html
+```
 
-You can change the export directory with `-cd`.
+Each target gets its own directory, and each run is timestamped for easy organization and sorting. You can override the directory with `-cd` or the basename with `-of.`
 
 ## Workspaces / Caching / Diffing
 
-If you specify `--project <name>`, Nokizaru can create a persistent workspace for a target using RoninDB:
+If you specify `--project <name>`, Nokizaru can create a persistent workspace for a target using the Ronin Framework:
 
-- stores each run as `results.json` (so you can build a target profile over time)
+- stores run metadata and results internally (so you can build a target profile over time) 
 - enables caching (speeding up repeated runs)
 - enables diffing between runs: `--diff last` (or `--diff <Run ID>`)
 

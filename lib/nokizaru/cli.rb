@@ -41,6 +41,11 @@ module Nokizaru
     def self.start(given_args = ARGV, config = {})
       args = Array(given_args).dup
 
+      if args.length == 1 && ['--version', '-v'].include?(args[0])
+        puts "nokizaru #{VERSION}"
+        exit(0)
+      end
+
       wants_flag_help = args.include?('--help') || args.include?('-h')
       wants_cmd_help  = (args[0] == 'help')
 
@@ -80,7 +85,7 @@ module Nokizaru
 
     def self.help(shell, _subcommand = false)
       usage = <<~USAGE
-        usage: nokizaru [--url URL] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--dir] [--wayback] [--ps]
+        usage: nokizaru [-h] [-v] [--url URL] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--dir] [--wayback] [--ps]
                         [--full] [--no-MODULE] [--export] [--project NAME] [--cache] [--no-cache] [--diff last or ID] [-nb] [-dt DT] [-pt PT] [-T T] [-w W] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
       USAGE
       shell.say(usage.rstrip)
@@ -90,6 +95,7 @@ module Nokizaru
       shell.say('Arguments:')
       opt_rows = [
         ['-h, --help', 'Show this help message and exit'],
+        ['-v, --version', 'Show version number and exit'],
         ['--url URL', 'Target URL'],
         ['--headers', 'Header Information'],
         ['--sslinfo', 'SSL Certificate Information'],
