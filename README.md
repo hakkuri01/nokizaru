@@ -1,4 +1,4 @@
-<p align="center"><img src="https://imgur.com/a/5hfmXgo"></p>
+<p align="center"><img src="https://imgur.com/7gBvBNU"></p>
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-3-red.svg?style=plastic">
