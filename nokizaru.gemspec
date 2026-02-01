@@ -7,17 +7,15 @@ Gem::Specification.new do |spec|
   spec.version     = Nokizaru::VERSION
   spec.authors     = ['hakkuri', 'Nokizaru contributors']
   spec.homepage    = 'https://github.com/hakkuri01/nokizaru'
-
+  spec.summary     = 'Nokizaru - Recon Refined'
+  spec.description = 'Fast, modular web recon CLI for bug bounty/pentest workflows the Ruby way.'
+  spec.license     = 'MIT'
   spec.metadata = {
     'homepage_uri' => spec.homepage,
     'source_code_uri' => spec.homepage,
     'bug_tracker_uri' => "#{spec.homepage}/issues",
     'rubygems_mfa_required' => 'true'
   }
-
-  spec.summary     = 'Nokizaru - Recon Refined'
-  spec.description = 'Fast, modular web recon CLI for bug bounty/pentest workflows the Ruby way.'
-  spec.license     = 'MIT'
 
   spec.required_ruby_version = '>= 3.1'
 
@@ -36,8 +34,6 @@ Gem::Specification.new do |spec|
   spec.executables   = ['nokizaru']
   spec.require_paths = ['lib']
 
-  spec.add_dependency 'thor', '~> 1.3'
-
   spec.add_dependency 'async', '~> 2.10'
   spec.add_dependency 'async-io', '~> 1.35'
   spec.add_dependency 'concurrent-ruby', '~> 1.3'
@@ -45,10 +41,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'httpx', '~> 1.3'
   spec.add_dependency 'nokogiri', '~> 1.16'
   spec.add_dependency 'public_suffix', '~> 5.0'
-  spec.add_dependency 'ronin-support', '~> 1.0'
+  spec.add_dependency 'thor', '~> 1.3'
   spec.add_dependency 'whois', '~> 5.0'
-
-  # Persistent workspaces + diffing built on the Ronin Database.
+  # Persistent workspaces + diffing built on the Ronin Database
   spec.add_dependency 'ronin-db', '~> 0.2'
+  spec.add_dependency 'ronin-support', '~> 1.0'
   spec.add_dependency 'sqlite3', '~> 1.6'
 end
