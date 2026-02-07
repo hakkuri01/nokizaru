@@ -1,16 +1,18 @@
-<p align="center"><img src="https://i.imgur.com/OLPIy8N.png"></p>
-
 <p align="center">
-<img src="https://img.shields.io/badge/Ruby-3-red.svg?style=plastic">
-<img src="https://img.shields.io/badge/All%20In%20One-red.svg?style=plastic">
-<img src="https://img.shields.io/badge/Web%20Recon-red.svg?style=plastic">
+<img src="https://i.imgur.com/OLPIy8N.png">
 </p>
 
-Nokizaru is an all-in-one web recon CLI tool written in Ruby. Its goal is to provide a sufficiently expansive, high-signal overview of a target quickly, subverting the need to reach for heavier OSINT suites. Instead of running several tools in sequence, Nokizaru aims to produce comparable recon results with a single full-scan command. The ideal use case is collecting relevant information on a web target during the recon phase of a bug bounty/web app pentest engagement. As such, the primary audience is security researchers (not CTI analysts who may still prefer larger, more comprehensive OSINT suites).
+<p align="center">
+<img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
+<img src="https://img.shields.io/badge/v1.3.2-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=intigriti&logoColor=red">
+</p>
+
+Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface. Its goal is to provide a sufficiently expansive, high-signal overview of a target quickly, subverting the need to reach for heavier OSINT suites. Instead of running several tools in sequence, Nokizaru aims to produce comparable recon results with a single full-scan command. The ideal use case is collecting relevant information on a web target during the recon phase of a bug bounty/web app pentest engagement. As such, the primary audience is security researchers (not CTI analysts who may still prefer larger, more comprehensive OSINT suites).
 
 ## Inspiration & Background
 
-Nokizaru began as an experiment: taking a beloved tool—[FinalRecon](https://github.com/thewhiteh4t/FinalRecon) by [thewhiteh4t](https://github.com/thewhiteh4t)—and translating the concept from Python into Ruby.
+Nokizaru began as an experiment: taking a recon tool—[FinalRecon](https://github.com/thewhiteh4t/FinalRecon) by [thewhiteh4t](https://github.com/thewhiteh4t)—and translating the concept from Python into Ruby.
 
 The motivation was simple:
 - I prefer Ruby, and I wanted the functionality of FinalRecon written in Ruby.
