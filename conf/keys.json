@@ -6,5 +6,9 @@
 	"binedge": null,
 	"netlas": null,
 	"zoomeye": null,
-	"hunter": null
+	"hunter": null,
+	"chaos": null,
+	"censys_api_id": null,
+	"censys_api_secret": null,
+	"wappalyzer": null
 }

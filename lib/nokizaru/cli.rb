@@ -18,6 +18,7 @@ require_relative 'modules/sslinfo'
 require_relative 'modules/whois'
 require_relative 'modules/dns'
 require_relative 'modules/subdom'
+require_relative 'modules/arch'
 require_relative 'modules/portscan'
 require_relative 'modules/crawler'
 require_relative 'modules/dirrec'
@@ -85,7 +86,7 @@ module Nokizaru
 
     def self.help(shell, _subcommand = false)
       usage = <<~USAGE
-        usage: nokizaru [-h] [-v] [--url URL] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--dir] [--wayback] [--wb-raw] [--ps]
+        usage: nokizaru [-h] [-v] [--url URL] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--wb-raw] [--ps]
                         [--full] [--no-MODULE] [--export] [--project NAME] [--cache] [--no-cache] [--diff last or ID] [-nb] [-dt DT] [-pt PT] [-T T] [-w W] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
       USAGE
       shell.say(usage.rstrip)
@@ -103,6 +104,7 @@ module Nokizaru
         ['--crawl', 'Crawl Target'],
         ['--dns', 'DNS Enumeration'],
         ['--sub', 'Sub-Domain Enumeration'],
+        ['--arch', 'Architecture Fingerprinting'],
         ['--dir', 'Directory Search'],
         ['--wayback', 'Wayback URLs'],
         ['--wb-raw', 'Wayback raw URL output (no quality filtering)'],
@@ -162,6 +164,7 @@ module Nokizaru
     option :crawl, type: :boolean, default: false, desc: 'Crawl Target'
     option :dns, type: :boolean, default: false, desc: 'DNS Enumeration'
     option :sub, type: :boolean, default: false, desc: 'Sub-Domain Enumeration'
+    option :arch, type: :boolean, default: false, desc: 'Architecture Fingerprinting'
     option :dir, type: :boolean, default: false, desc: 'Directory Search'
     option :wayback, type: :boolean, default: false, desc: 'Wayback URLs'
     option :wb_raw, type: :boolean, default: false, desc: 'Wayback raw URL output (no quality filtering)'
@@ -213,7 +216,7 @@ module Nokizaru
 
       def parse_skip_flags(argv)
         skip = {}
-        %w[headers sslinfo whois crawl dns sub dir wayback ps].each do |name|
+        %w[headers sslinfo whois crawl dns sub arch dir wayback ps].each do |name|
           skip[name.to_sym] = argv.include?("--skip-#{name}") || argv.include?("--no-#{name}")
         end
         skip
@@ -252,7 +255,8 @@ module Nokizaru
       end
 
       def save_key(key_string)
-        valid_keys = %w[bevigil binedge facebook netlas shodan virustotal zoomeye hunter]
+        valid_keys = %w[bevigil binedge facebook netlas shodan virustotal zoomeye hunter chaos censys_api_id
+                        censys_api_secret wappalyzer]
 
         key_string = key_string.to_s.strip
         key_name, key_str = key_string.split('@', 2)
@@ -359,7 +363,7 @@ module Nokizaru
 
         ctx = Nokizaru::Context.new(run: run, options: @opts, workspace: workspace, cache: cache)
 
-        order = %i[headers sslinfo whois dns sub ps crawl dir wayback]
+        order = %i[headers sslinfo whois dns sub arch ps crawl dir wayback]
 
         enabled = {}
         if @opts[:full]
@@ -388,6 +392,11 @@ module Nokizaru
           elsif !info[:private_ip]
             Nokizaru::Modules::Subdomains.call(info[:hostname], info[:timeout], ctx, info[:conf_path])
           end
+        end
+
+        if enabled[:arch]
+          Nokizaru::Modules::ArchitectureFingerprinting.call(target, info[:timeout], ctx,
+                                                             info[:conf_path])
         end
 
         Nokizaru::Modules::PortScan.call(info[:ip], info[:pscan_threads], ctx) if enabled[:ps]
@@ -521,7 +530,7 @@ module Nokizaru
       end
 
       def ensure_modules_selected!
-        module_flags = %i[full headers sslinfo whois crawl dns sub wayback ps dir]
+        module_flags = %i[full headers sslinfo whois crawl dns sub arch wayback ps dir]
         return if module_flags.any? { |k| @opts[k] }
 
         puts("\n#{CLI::R}[-] Error : #{CLI::C}At least one argument is required. Try using --help#{CLI::W}")

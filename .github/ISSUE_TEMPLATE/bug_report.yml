@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible problem in Nokizaru
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Keep details reproducible and redact secrets/private target data.
+        Maintainer policy note: accepted changes are merged into `main` using squash merges only.
+  - type: input
+    id: version
+    attributes:
+      label: Nokizaru version
+      placeholder: e.g. 1.x.x
+    validations:
+      required: true
+  - type: input
+    id: ruby
+    attributes:
+      label: Ruby version
+      placeholder: e.g. ruby 3.x.x
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / distro
+      placeholder: e.g. Arch
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command used (redacted)
+      placeholder: nokizaru --sub --url https://example.com -T 10
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output/logs (redacted)
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label: I redacted secrets and private target data.
+          required: true

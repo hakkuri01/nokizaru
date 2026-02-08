@@ -1,0 +1,59 @@
+name: Provider request
+description: Request a new provider integration or changes to an existing provider
+title: "[Provider]: "
+labels: [enhancement, provider]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Maintainer policy note: accepted changes are merged into `main` using squash merges only.
+  - type: input
+    id: provider
+    attributes:
+      label: Provider name
+      placeholder: e.g. GreyNoise, Flare, etc.
+    validations:
+      required: true
+  - type: dropdown
+    id: module_type
+    attributes:
+      label: Module category
+      options:
+        - Subdomain Enumeration
+        - Architecture Fingerprinting
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: api_docs
+    attributes:
+      label: API documentation links
+      placeholder: Include official API docs and auth model details.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this provider matters
+      placeholder: Explain the recon value and expected signal quality.
+    validations:
+      required: true
+  - type: textarea
+    id: schema
+    attributes:
+      label: Example request/response (redacted)
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: rate_limits
+    attributes:
+      label: Rate limits / quota notes
+      placeholder: Include practical limits and backoff expectations.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label: I provided official docs and sample response shape.
+          required: true

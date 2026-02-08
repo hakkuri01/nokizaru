@@ -25,9 +25,9 @@ Nokizaru \- Recon Refined
 ▀▀ █▪ ▀█▄▀▪·▀  ▀▀▀▀·▀▀▀ • ▀  ▀ .▀  ▀ ▀▀▀
 
 .fi
-Nokizaru is an all-in-one web recon CLI intended for bug bounty/web app pentesting engagements.
+Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface.
 It can collect common recon signals from a target such as HTTP headers, SSL/TLS certificate details, WHOIS, DNS records, subdomains,
-crawler link extraction, directory enumeration, Wayback URLs, and also features a fast port scan.
+architecture fingerprinting, crawler link extraction, directory enumeration, Wayback URLs, and also features a fast port scan.
 .SH REQUIRED OPTIONS
 .TS
 box, allbox;
@@ -47,8 +47,10 @@ OPTION	MODULE
 --crawl	Crawl Target
 --dns	DNS Enumeration
 --sub	Sub-Domain Enumeration
+--arch	Architecture Fingerprinting
 --dir	Directory Search
 --wayback	Wayback URLs
+--wb-raw	Wayback raw URL output (no quality filtering)
 --ps	Fast Port Scan
 --full	Full Recon
 --no-[MODULE]	Skip specified modules above during full scan (e.g. --no-dir)
@@ -66,7 +68,7 @@ OPTION	MEANING	DEFAULT / NOTES
 -h, --help	Show help and exit	-
 -v, --version	Show version number and exit	-
 -nb	Hide Banner	-
--dt DT	Directory enum threads	50
+-dt DT	Directory enum threads	30
 -pt PT	Port scan threads	50
 -T T	Request timeout (seconds)	30.0
 -w W	Path to wordlist	wordlists/dirb_common.txt
@@ -83,7 +85,7 @@ OPTION	MEANING	DEFAULT / NOTES
 .SH API KEYS
 Some subdomain sources require API keys.
 Keys may be provided via environment variables (NK_*) or saved to:
-.IR ~/.config/nokizaru/keys.json .
+.IR ~/.local/share/nokizaru/keys.json .
 .PP
 .TS
 box, allbox;
@@ -91,11 +93,15 @@ l l.
 ENV VAR	PROVIDER
 NK_BEVIGIL_KEY	BeVigil
 NK_BINEDGE_KEY	BinaryEdge
+NK_CENSYS_API_ID	Censys API ID
+NK_CENSYS_API_SECRET	Censys API Secret
+NK_CHAOS_KEY	Chaos
 NK_FB_KEY	Facebook
 NK_HUNTER_KEY	Hunter
 NK_NETLAS_KEY	Netlas
 NK_SHODAN_KEY	Shodan
 NK_VT_KEY	VirusTotal
+NK_WAPPALYZER_KEY	Wappalyzer
 NK_ZOOMEYE_KEY	ZoomEye
 .TE
 .PP
@@ -110,7 +116,7 @@ box, allbox;
 l l.
 PATH	PURPOSE
 ~/.config/nokizaru/config.json	Main configuration file
-~/.config/nokizaru/keys.json	API keys file (optional)
+~/.local/share/nokizaru/keys.json	API keys file (optional)
 ~/.local/share/nokizaru/dumps/	Export directory for run outputs
 ~/.local/share/nokizaru/nokizaru.log	Runtime log file
 .TE
@@ -121,6 +127,7 @@ l l.
 COMMAND	DESCRIPTION
 nokizaru --full --url https://example.com	Full recon
 nokizaru --headers --url https://example.com	Header inspection
+nokizaru --arch --url https://example.com	Architecture fingerprinting
 nokizaru --dir --url https://example.com -e php,xml	Directory enum with extensions
 nokizaru --wayback --url https://example.com	Wayback URLs
 nokizaru --ps --url https://example.com -pt 80	Port scan with more threads
@@ -137,4 +144,3 @@ CODE	MEANING
 .SH SECURITY NOTES
 Run ONLY against targets you have explicit permission to test.
 Nokizaru is intended for authorized security testing and OSINT workflows ONLY.
-

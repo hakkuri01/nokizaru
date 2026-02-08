@@ -21,6 +21,8 @@ require_relative 'subdomain_modules/netlas_subs'
 require_relative 'subdomain_modules/hunter_subs'
 require_relative 'subdomain_modules/urlscan_subs'
 require_relative 'subdomain_modules/alienvault_subs'
+require_relative 'subdomain_modules/chaos_subs'
+require_relative 'subdomain_modules/censys_subs'
 
 module Nokizaru
   module Modules
@@ -80,7 +82,9 @@ module Nokizaru
           'HackerTarget' => vendor_default,
           'CertSpotter' => vendor_default,
           'UrlScan' => vendor_default,
-          'AlienVault' => [vendor_default, 8.0].min
+          'AlienVault' => [vendor_default, 8.0].min,
+          'Chaos' => [vendor_default, 8.0].min,
+          'Censys' => vendor_default
         }.freeze
 
         # Build a base HTTP client with connection pooling.
@@ -110,6 +114,8 @@ module Nokizaru
         jobs << ['Hunter', proc { |h| SubdomainModules::Hunter.call(hostname, conf_path, h, found) }]
         jobs << ['UrlScan', proc { |h| SubdomainModules::UrlScan.call(hostname, h, found) }]
         jobs << ['AlienVault', proc { |h| SubdomainModules::AlienVault.call(hostname, h, found) }]
+        jobs << ['Chaos', proc { |h| SubdomainModules::Chaos.call(hostname, conf_path, h, found) }]
+        jobs << ['Censys', proc { |h| SubdomainModules::Censys.call(hostname, conf_path, h, found) }]
 
         # Small pool avoids hammering providers.
         pool_size = [6, jobs.length].min

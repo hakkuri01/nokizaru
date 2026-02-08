@@ -4,19 +4,17 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v1.4.2-black.svg?style=plastic&logo=git&logoColor=red">
-<img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=intigriti&logoColor=red">
+<img src="https://img.shields.io/badge/v1.5.2-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
 Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface. Its goal is to provide a sufficiently expansive, high-signal overview of a target quickly, subverting the need to reach for heavier OSINT suites. Instead of running several tools in sequence, Nokizaru aims to produce comparable recon results with a single full-scan command. The ideal use case is collecting relevant information on a web target during the recon phase of a bug bounty/web app pentest engagement. As such, the primary audience is security researchers (not CTI analysts who may still prefer larger, more comprehensive OSINT suites).
 
 ## Inspiration & Background
 
-Nokizaru began as an experiment: taking a recon tool—[FinalRecon](https://github.com/thewhiteh4t/FinalRecon) by [thewhiteh4t](https://github.com/thewhiteh4t)—and translating the concept from Python into Ruby.
+Nokizaru started as a Ruby reimplementation of [FinalRecon](https://github.com/thewhiteh4t/FinalRecon) by [thewhiteh4t](https://github.com/thewhiteh4t). The original goal was straightforward: keep the familiar reconnaissance workflow while rebuilding it with Ruby-first design choices.
 
-The motivation was simple:
-- I prefer Ruby, and I wanted the functionality of FinalRecon written in Ruby.
-- I also wanted to refine a few architectural and UX choices to better match my personal preferences (while keeping the spirit and workflow of FinalRecon intact).
+Over time, the project expanded beyond a direct rewrite. Nokizaru now includes structured findings output, broader provider coverage (with additional integrations planned), Ronin-powered workspaces for persistent target profiling, and targeted performance improvements oriented around stable runtime behavior.
 
 ## Architecture
 
@@ -35,11 +33,12 @@ Some modules use API keys to fetch data from different resources. These are opti
 
 #### Environment Variables
 
-Keys are read from environment variables if they are set; otherwise they are loaded from the config directory.
+Keys are read from environment variables if they are set; otherwise they are loaded from the user data directory (`~/.local/share/nokizaru/keys.json`).
 
 ```bash
-NK_BEVIGIL_KEY, NK_BINEDGE_KEY, NK_FB_KEY, NK_HUNTER_KEY,
-NK_NETLAS_KEY, NK_SHODAN_KEY, NK_VT_KEY, NK_ZOOMEYE_KEY
+NK_BEVIGIL_KEY, NK_BINEDGE_KEY, NK_CENSYS_API_ID, NK_CENSYS_API_SECRET,
+NK_CHAOS_KEY, NK_FB_KEY, NK_HUNTER_KEY, NK_NETLAS_KEY,
+NK_SHODAN_KEY, NK_VT_KEY, NK_WAPPALYZER_KEY, NK_ZOOMEYE_KEY
 
 # Example :
 export NK_SHODAN_KEY="kl32lcdqwcdfv"
@@ -53,13 +52,13 @@ You can use **`-k`** to add keys which will be saved automatically in the config
 # Usage
 nokizaru -k '<API NAME>@<API KEY>'
 
-Valid Keys : 'bevigil', 'binedge', 'facebook', 'hunter', 'netlas', 'shodan', 'virustotal', 'zoomeye'
+Valid Keys : 'bevigil', 'binedge', 'censys_api_id', 'censys_api_secret', 'chaos', 'facebook', 'hunter', 'netlas', 'shodan', 'virustotal', 'wappalyzer', 'zoomeye'
 
 # Example :
 nokizaru -k 'shodan@kl32lcdqwcdfv'
 ```
 
-`Path = $HOME/.config/nokizaru/keys.json`
+`Path = $HOME/.local/share/nokizaru/keys.json`
 
 | Source     | Module          | Link                                                                                                                                   |
 | ---------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -71,6 +70,9 @@ nokizaru -k 'shodan@kl32lcdqwcdfv'
 | Netlas     | Sub Domain Enum | [https://docs.netlas.io/getting_started/](https://docs.netlas.io/getting_started/)                                                     |
 | ZoomEye    | Sub Domain Enum | [https://www.zoomeye.hk/](https://www.zoomeye.hk/)                                                                                     |
 | Hunter     | Sub Domain Enum | [https://hunter.how/search-api](https://hunter.how/search-api)                                                                         |
+| Chaos      | Sub Domain Enum | [https://docs.projectdiscovery.io/tools/chaos](https://docs.projectdiscovery.io/tools/chaos)                                           |
+| Censys     | Sub Domain Enum | [https://search.censys.io/api](https://search.censys.io/api)                                                                           |
+| Wappalyzer | Architecture Fingerprinting | [https://www.wappalyzer.com/api/](https://www.wappalyzer.com/api/)                                                         |
 
 ### JSON Config File
 
@@ -148,8 +150,10 @@ Arguments:
   --crawl          Crawl Target
   --dns            DNS Enumeration
   --sub            Sub-Domain Enumeration
+  --arch           Architecture Fingerprinting
   --dir            Directory Search
   --wayback        Wayback URLs
+  --wb-raw         Wayback raw URL output (no quality filtering)
   --ps             Fast Port Scan
   --full           Full Recon
   --no-[MODULE]    Skip specified modules above during full scan (eg. --no-dir)
@@ -163,7 +167,7 @@ Persistence / Enrichment:
 
 Extra Options:
   -nb         Hide Banner
-  -dt DT      Number of threads for directory enum [ Default : 50 ]
+  -dt DT      Number of threads for directory enum [ Default : 30 ]
   -pt PT      Number of threads for port scan [ Default : 50 ]
   -T T        Request Timeout [ Default : 30.0 ]
   -w W        Path to Wordlist [ Default : wordlists/dirb_common.txt ]
@@ -229,11 +233,7 @@ Currently there are no other install methods planned officially, however dependi
 
 The following providers are planned for integration to enhance recon coverage and signal quality:
 
-- **Censys:** IPv4/certificate data for comprehensive asset discovery and enumeration
-- **Chaos (ProjectDiscovery):** Community-curated subdomain dataset for expanded subdomain enumeration
-- **urlscan.io:** Live URL scanning and historical scan data for web asset intelligence
 - **GreyNoise:** Internet noise classification to filter out mass-scanning activity and focus on targeted reconnaissance
-- **Wappalyzer:** Technology stack identification to surface frameworks, CMS platforms, and server-side technologies
 
 All providers will follow Nokizaru's existing integration pattern: optional API keys, graceful degradation on failure, and consistent error reporting. These additions prioritize breadth of coverage and actionable intelligence to support the bug bounty/pentest recon workflow.
 
