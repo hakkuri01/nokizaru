@@ -5,6 +5,7 @@ require 'uri'
 require 'openssl'
 require 'nokogiri'
 require 'public_suffix'
+require 'set'
 require_relative '../log'
 
 module Nokizaru
@@ -20,6 +21,9 @@ module Nokizaru
 
       TIMEOUT = 10
       USER_AGENT = 'Nokizaru'
+      PREVIEW_LIMIT = 8
+      MAX_FETCH_WORKERS = 8
+      MAX_SITEMAPS = 200
 
       def call(target, protocol, netloc, ctx)
         result = initialize_result
@@ -38,13 +42,17 @@ module Nokizaru
         result['css_links'] = css(target, soup)
         result['js_links'] = js_scan(target, soup)
         result['internal_links'] = internal_links(target, soup)
-        result['external_links'] = external_links(soup)
+        result['external_links'] = external_links(target, soup)
         result['images'] = images(target, soup)
 
         result['urls_inside_sitemap'] = sm_crawl(result['sitemap_links'])
         result['urls_inside_js'] = js_crawl(result['js_links'])
 
         result['stats'] = calculate_stats(result)
+
+        print_links_preview('JavaScript Links', result['js_links'])
+        print_links_preview('URLs inside JavaScript', result['urls_inside_js'])
+        print_links_preview('URLs inside Sitemaps', result['urls_inside_sitemap'])
 
         ctx.run['modules']['crawler'] = result
         ctx.add_artifact('urls', result['stats']['total_urls'])
@@ -111,16 +119,12 @@ module Nokizaru
 
       def url_filter(target, link)
         return nil if link.nil? || link.empty?
+        return nil if link.start_with?('#', 'javascript:', 'mailto:')
 
-        if link.start_with?('/') && !link.start_with?('//')
-          target + link
-        elsif link.start_with?('//')
-          'http:' + link
-        elsif !link.include?('://') && !link.start_with?('#')
-          "#{target}/#{link}"
-        else
-          link
-        end
+        base = target.end_with?('/') ? target : "#{target}/"
+        URI.join(base, link).to_s
+      rescue StandardError
+        nil
       end
 
       def robots(robo_url, base_url)
@@ -230,13 +234,29 @@ module Nokizaru
         links.uniq
       end
 
-      def external_links(soup)
+      def external_links(target, soup)
         links = []
         print("#{G}[+] #{C}Extracting External Links#{W}")
 
+        host = begin
+          PublicSuffix.domain(URI(target).host)
+        rescue StandardError
+          nil
+        end
+
         soup.css('a[href]').each do |tag|
           href = tag['href']
-          links << href if href&.start_with?('http://', 'https://')
+          next unless href&.start_with?('http://', 'https://')
+
+          begin
+            uri = URI(href)
+            next unless uri.host
+            next if host && PublicSuffix.domain(uri.host) == host
+          rescue StandardError
+            next
+          end
+
+          links << href
         end
 
         puts("#{G}#{'['.rjust(11, '.')} #{links.uniq.length} ]")
@@ -258,22 +278,46 @@ module Nokizaru
 
       def sm_crawl(sm_total)
         links = []
-        sm_total = Array(sm_total).compact.uniq
+        sm_total = Array(sm_total).compact.map(&:strip).uniq
         return links if sm_total.empty?
 
         print("#{G}[+] #{C}Crawling Sitemaps#{W}")
 
-        sm_total.each do |sm|
-          response = http_get(sm)
-          next unless response&.is_a?(Net::HTTPSuccess)
+        seen_sitemaps = Set.new
+        pending = sm_total.select { |url| url.downcase.end_with?('.xml') }
 
-          doc = Nokogiri::XML(response.body)
-          doc.remove_namespaces!
+        while pending.any? && seen_sitemaps.length < MAX_SITEMAPS
+          batch = pending.reject { |url| seen_sitemaps.include?(url) }
+          break if batch.empty?
 
-          doc.xpath('//url/loc').each { |loc| links << loc.text.strip }
-          doc.xpath('//sitemap/loc').each { |loc| sm_total << loc.text.strip }
-        rescue StandardError => e
-          Log.write("[crawler.sm_crawl] Exception = #{e}")
+          batch = batch.first(MAX_SITEMAPS - seen_sitemaps.length)
+          batch.each { |url| seen_sitemaps.add(url) }
+
+          discovered_sitemaps = []
+          mutex = Mutex.new
+
+          each_in_threads(batch) do |sm|
+            response = http_get(sm)
+            next unless response&.is_a?(Net::HTTPSuccess)
+
+            begin
+              doc = Nokogiri::XML(response.body)
+              doc.remove_namespaces!
+
+              page_links = doc.xpath('//url/loc').map { |loc| loc.text.to_s.strip }.reject(&:empty?)
+              child_sitemaps = doc.xpath('//sitemap/loc').map { |loc| loc.text.to_s.strip }
+                                  .select { |url| !url.empty? && url.downcase.end_with?('.xml') }
+
+              mutex.synchronize do
+                links.concat(page_links)
+                discovered_sitemaps.concat(child_sitemaps)
+              end
+            rescue StandardError => e
+              Log.write("[crawler.sm_crawl] Exception = #{e}")
+            end
+          end
+
+          pending = discovered_sitemaps.uniq
         end
 
         puts("#{G}#{'['.rjust(16, '.')} #{links.uniq.length} ]")
@@ -287,13 +331,15 @@ module Nokizaru
 
         print("#{G}[+] #{C}Crawling JS#{W}")
 
-        js_total.each do |js|
+        mutex = Mutex.new
+        each_in_threads(js_total) do |js|
           response = http_get(js)
           next unless response&.is_a?(Net::HTTPSuccess)
 
-          response.body.scan(%r{https?://[\w\-.~:/?#\[\]@!$&'()*+,;=%]+}) do |m|
-            urls << m
-          end
+          found = response.body.scan(%r{https?://[\w\-.~:/?#\[\]@!$&'()*+,;=%]+})
+          found.map! { |url| sanitize_extracted_url(url) }
+          found.reject!(&:empty?)
+          mutex.synchronize { urls.concat(found) }
         rescue StandardError => e
           Log.write("[crawler.js_crawl] Exception = #{e}")
         end
@@ -321,6 +367,44 @@ module Nokizaru
           'total_unique' => all.length,
           'total_urls' => all
         }
+      end
+
+      def each_in_threads(items)
+        queue = Queue.new
+        items.each { |item| queue << item }
+
+        workers = [items.length, MAX_FETCH_WORKERS].min
+        threads = Array.new(workers) do
+          Thread.new do
+            loop do
+              item = begin
+                queue.pop(true)
+              rescue ThreadError
+                nil
+              end
+
+              break if item.nil?
+
+              yield(item)
+            end
+          end
+        end
+
+        threads.each(&:join)
+      end
+
+      def print_links_preview(label, links)
+        links = Array(links).compact.uniq
+        return if links.empty?
+
+        puts("#{G}[+] #{C}#{label} Preview#{W}")
+        links.first(PREVIEW_LIMIT).each { |link| puts("    #{W}#{link}") }
+        remaining = links.length - PREVIEW_LIMIT
+        puts("    #{Y}... #{remaining} more#{W}") if remaining.positive?
+      end
+
+      def sanitize_extracted_url(url)
+        url.to_s.sub(/["'`,;\])]+\z/, '')
       end
     end
   end

@@ -85,7 +85,7 @@ module Nokizaru
 
     def self.help(shell, _subcommand = false)
       usage = <<~USAGE
-        usage: nokizaru [-h] [-v] [--url URL] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--dir] [--wayback] [--ps]
+        usage: nokizaru [-h] [-v] [--url URL] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--dir] [--wayback] [--wb-raw] [--ps]
                         [--full] [--no-MODULE] [--export] [--project NAME] [--cache] [--no-cache] [--diff last or ID] [-nb] [-dt DT] [-pt PT] [-T T] [-w W] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
       USAGE
       shell.say(usage.rstrip)
@@ -105,6 +105,7 @@ module Nokizaru
         ['--sub', 'Sub-Domain Enumeration'],
         ['--dir', 'Directory Search'],
         ['--wayback', 'Wayback URLs'],
+        ['--wb-raw', 'Wayback raw URL output (no quality filtering)'],
         ['--ps', 'Fast Port Scan'],
         ['--full', 'Full Recon'],
         ['--no-[MODULE]', 'Skip specified modules above during full scan (eg. --no-dir)'],
@@ -163,6 +164,7 @@ module Nokizaru
     option :sub, type: :boolean, default: false, desc: 'Sub-Domain Enumeration'
     option :dir, type: :boolean, default: false, desc: 'Directory Search'
     option :wayback, type: :boolean, default: false, desc: 'Wayback URLs'
+    option :wb_raw, type: :boolean, default: false, desc: 'Wayback raw URL output (no quality filtering)'
     option :ps, type: :boolean, default: false, desc: 'Fast Port Scan'
     option :full, type: :boolean, default: false, desc: 'Full Recon'
     option :export, type: :boolean, default: false, desc: 'Export results to files (txt,json,html)'
@@ -404,7 +406,14 @@ module Nokizaru
           )
         end
 
-        Nokizaru::Modules::Wayback.call(target, ctx, timeout_s: [info[:timeout].to_f, 10.0].min) if enabled[:wayback]
+        if enabled[:wayback]
+          Nokizaru::Modules::Wayback.call(
+            target,
+            ctx,
+            timeout_s: [info[:timeout].to_f, 12.0].min,
+            raw: @opts[:wb_raw]
+          )
+        end
 
         elapsed = Time.now - start_time
         run['meta']['ended_at'] = Time.now.utc.iso8601

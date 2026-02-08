@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require 'set'
+require 'uri'
+
 require_relative '../http_client'
 require_relative '../http_result'
 require_relative '../log'
@@ -20,13 +23,12 @@ module Nokizaru
       INTERESTING_STATUSES = Set[200, 301, 302, 303, 307, 308, 403].freeze
 
       def call(target, threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext, ctx)
-        print_banner(threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext)
-
-        words = File.readlines(wdlist, chomp: true).reject(&:empty?)
+        word_data = load_words(wdlist)
+        words = word_data[:words]
         urls = build_urls(target, words, filext)
         total = urls.length
 
-        puts("#{G}[+] #{C}Total URLs       : #{W}#{total}\n\n")
+        print_banner(threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext, word_data, total)
 
         # Thread-safe result storage
         mutex = Mutex.new
@@ -37,12 +39,13 @@ module Nokizaru
 
         # Build one shared client - all workers use this same client
         # Connection pooling happens automatically inside HTTPX
-        client = Nokizaru::HTTPClient.for_host(
+        client = Nokizaru::HTTPClient.for_bulk_requests(
           target,
           timeout_s: timeout_s.to_f,
           headers: { 'User-Agent' => DEFAULT_UA },
-          follow_redirects: !!allow_redirects,
-          verify_ssl: !!verify_ssl
+          follow_redirects: allow_redirects,
+          verify_ssl: verify_ssl,
+          max_concurrent: [threads.to_i, 1].max
         )
 
         # Queue-based work distribution
@@ -83,7 +86,6 @@ module Nokizaru
                       print_finding(target, url, status, found)
                     end
 
-                    # Progress update every 50 requests
                     print_progress(count, total) if (count % 50).zero?
                   end
                 else
@@ -91,6 +93,7 @@ module Nokizaru
                     stats[:errors] += 1
                     count += 1
                     log_error(url, http_result, stats[:errors])
+                    print_progress(count, total) if (count % 50).zero?
                   end
                 end
               rescue StandardError => e
@@ -98,6 +101,7 @@ module Nokizaru
                   stats[:errors] += 1
                   count += 1
                   Log.write("[dirrec] Exception for #{url}: #{e.class}") if stats[:errors] <= 5
+                  print_progress(count, total) if (count % 50).zero?
                 end
               end
             end
@@ -139,7 +143,7 @@ module Nokizaru
         end
       end
 
-      def print_banner(threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext)
+      def print_banner(threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext, word_data, total_urls)
         puts("\n#{Y}[!] Starting Directory Enum...#{W}\n\n")
         puts("#{G}[+] #{C}Threads          : #{W}#{threads}")
         puts("#{G}[+] #{C}Timeout          : #{W}#{timeout_s}")
@@ -147,9 +151,10 @@ module Nokizaru
         puts("#{G}[+] #{C}Allow Redirects  : #{W}#{allow_redirects}")
         puts("#{G}[+] #{C}SSL Verification : #{W}#{verify_ssl}")
 
-        num_words = File.foreach(wdlist).count
-        puts("#{G}[+] #{C}Wordlist Size    : #{W}#{num_words}")
+        puts("#{G}[+] #{C}Wordlist Lines   : #{W}#{word_data[:total_lines]}")
+        puts("#{G}[+] #{C}Usable Entries   : #{W}#{word_data[:unique_lines]}")
         puts("#{G}[+] #{C}File Extensions  : #{W}#{filext}")
+        puts("#{G}[+] #{C}Total URLs       : #{W}#{total_urls}\n\n")
       end
 
       def print_progress(current, total)
@@ -157,18 +162,53 @@ module Nokizaru
         $stdout.flush
       end
 
+      def load_words(wdlist)
+        lines = File.readlines(wdlist, chomp: true)
+        normalized = lines.map(&:strip).reject(&:empty?)
+        unique = normalized.uniq
+        {
+          words: unique,
+          total_lines: lines.length,
+          unique_lines: unique.length
+        }
+      rescue Errno::ENOENT
+        puts("#{R}[-] #{C}Wordlist not found: #{W}#{wdlist}")
+        Log.write("[dirrec] Wordlist not found: #{wdlist}")
+        {
+          words: [],
+          total_lines: 0,
+          unique_lines: 0
+        }
+      rescue StandardError => e
+        puts("#{R}[-] #{C}Failed to read wordlist: #{W}#{e.message}")
+        Log.write("[dirrec] Failed to read wordlist: #{e.class} - #{e.message}")
+        {
+          words: [],
+          total_lines: 0,
+          unique_lines: 0
+        }
+      end
+
       def build_urls(target, words, filext)
+        return [] if words.empty?
+
         exts = filext.to_s.strip.empty? ? [] : filext.split(',').map(&:strip)
 
-        if exts.empty?
-          words.map { |w| "#{target}/#{w}" }
-        else
-          # Bare path + each extension
-          all_exts = [''] + exts
-          words.flat_map do |word|
-            all_exts.map { |ext| ext.empty? ? "#{target}/#{word}" : "#{target}/#{word}.#{ext}" }
-          end
-        end
+        urls = if exts.empty?
+                 words.map { |w| "#{target}/#{encode_path_word(w)}" }
+               else
+                 all_exts = [''] + exts
+                 words.flat_map do |word|
+                   encoded_word = encode_path_word(word)
+                   all_exts.map { |ext| ext.empty? ? "#{target}/#{encoded_word}" : "#{target}/#{encoded_word}.#{ext}" }
+                 end
+               end
+
+        urls.uniq
+      end
+
+      def encode_path_word(word)
+        word.to_s.split('/').map { |segment| URI.encode_uri_component(segment) }.join('/')
       end
 
       def dir_output(responses, found, stats, ctx)
