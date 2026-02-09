@@ -4,6 +4,7 @@ require 'fileutils'
 require 'json'
 require 'securerandom'
 require 'set'
+require 'tempfile'
 require 'time'
 
 begin
@@ -24,11 +25,13 @@ module Nokizaru
   # - Ronin::DB database (ronin.db)
   # - db snapshots + db diffing (diff_db)
   class Workspace
-    attr_reader :project_name, :target_host, :base_dir
+    attr_reader :project_name, :target_host, :base_dir, :last_db_error
 
     def initialize(project_name, target_host)
       @project_name = sanitize(project_name)
       @target_host  = sanitize(target_host)
+      @last_db_error = nil
+      @db_migrated = false
 
       @base_dir = File.join(Paths.workspace_dir, @project_name, @target_host)
       FileUtils.mkdir_p(@base_dir)
@@ -60,7 +63,7 @@ module Nokizaru
       meta = (meta || {}).dup
       meta['run_id'] = run_id
 
-      File.write(File.join(dir, 'meta.json'), JSON.pretty_generate(meta))
+      write_json_atomic(File.join(dir, 'meta.json'), meta)
       [run_id, dir]
     end
 
@@ -74,7 +77,7 @@ module Nokizaru
 
     def save_run(run_id, run_hash)
       FileUtils.mkdir_p(run_dir(run_id))
-      File.write(results_path(run_id), JSON.pretty_generate(run_hash))
+      write_json_atomic(results_path(run_id), run_hash)
       true
     end
 
@@ -109,15 +112,26 @@ module Nokizaru
     end
 
     def connect_db!(migrate: true)
-      return false unless db_available?
-
-      with_quiet_db_output do
-        Ronin::DB.connect(db_uri, migrate: migrate)
+      unless db_available?
+        @last_db_error = 'ronin-db is unavailable'
+        return false
       end
 
+      return true if connected_to_workspace_db?
+
+      migrate_now = migrate && !@db_migrated
+
+      with_quiet_db_output do
+        Ronin::DB.connect(db_connect_config, migrate: migrate_now)
+      end
+
+      @db_migrated ||= migrate_now
+      @last_db_error = nil
       true
     rescue StandardError => e
+      @last_db_error = "#{e.class}: #{e.message}"
       Log.write("[workspace.db] connect failed: #{e.class}: #{e}")
+      Log.write("[workspace.db] first backtrace: #{e.backtrace&.first}") if e.backtrace&.first
       false
     end
 
@@ -159,8 +173,10 @@ module Nokizaru
         import_open_port(ip_obj, port_num)
       end
 
+      @last_db_error = nil
       true
     rescue StandardError => e
+      @last_db_error = "#{e.class}: #{e.message}"
       Log.write("[workspace.db] ingest failed: #{e.class}: #{e}")
       false
     end
@@ -177,11 +193,29 @@ module Nokizaru
       snap['urls'] = Ronin::DB::URL.all.map(&:to_s).uniq.sort if defined?(Ronin::DB::URL)
 
       if defined?(Ronin::DB::OpenPort)
-        snap['open_ports'] = Ronin::DB::OpenPort.all.map(&:number).compact.map(&:to_i).uniq.sort
+        snap['open_ports'] = Ronin::DB::OpenPort.all.filter_map do |op|
+          number = op.respond_to?(:number) ? op.number : nil
+          next unless number
+
+          ip_str = begin
+            ip_obj = op.respond_to?(:ip_address) ? op.ip_address : nil
+            ip_obj&.respond_to?(:address) ? ip_obj.address.to_s : nil
+          rescue StandardError
+            nil
+          end
+
+          if ip_str && !ip_str.empty?
+            "#{ip_str}:#{number.to_i}"
+          else
+            number.to_i.to_s
+          end
+        end.uniq.sort
       end
 
+      @last_db_error = nil
       snap
     rescue StandardError => e
+      @last_db_error = "#{e.class}: #{e.message}"
       Log.write("[workspace.db] snapshot failed: #{e.class}: #{e}")
       {}
     end
@@ -211,6 +245,36 @@ module Nokizaru
 
     def sanitize(s)
       s.to_s.strip.gsub(%r{[\s/\\]+}, '_').gsub(/[^a-zA-Z0-9_.-]/, '_')
+    end
+
+    def db_connect_config
+      {
+        adapter: 'sqlite3',
+        database: db_path
+      }
+    end
+
+    def connected_to_workspace_db?
+      return false unless db_connected?
+      return true unless defined?(ActiveRecord::Base)
+
+      cfg = (ActiveRecord::Base.connection_db_config if ActiveRecord::Base.respond_to?(:connection_db_config))
+      return true unless cfg && cfg.respond_to?(:database)
+
+      File.expand_path(cfg.database.to_s) == File.expand_path(db_path)
+    rescue StandardError
+      false
+    end
+
+    def db_connected?
+      return false unless defined?(ActiveRecord::Base)
+
+      return ActiveRecord::Base.connected? if ActiveRecord::Base.respond_to?(:connected?)
+
+      ActiveRecord::Base.connection
+      true
+    rescue StandardError
+      false
     end
 
     def import_hostname(hostname)
@@ -255,8 +319,9 @@ module Nokizaru
       # Also try to quiet ActiveRecord/ActiveSupport if loaded.
       old_migration_verbose = nil
       old_ar_logger = nil
-      old_depr_silenced = nil
-      old_depr_behavior = nil
+      sentinel = Object.new
+      old_depr_silenced = sentinel
+      old_depr_behavior = sentinel
 
       begin
         if defined?(ActiveRecord::Migration)
@@ -270,17 +335,31 @@ module Nokizaru
         end
 
         if defined?(ActiveSupport::Deprecation)
-          old_depr_silenced = ActiveSupport::Deprecation.silenced
-          old_depr_behavior = ActiveSupport::Deprecation.behavior
-          ActiveSupport::Deprecation.silenced = true
-          ActiveSupport::Deprecation.behavior = :silence
+          deprecation = ActiveSupport::Deprecation
+
+          if deprecation.respond_to?(:silenced) && deprecation.respond_to?(:silenced=)
+            old_depr_silenced = deprecation.silenced
+            deprecation.silenced = true
+          end
+
+          if deprecation.respond_to?(:behavior) && deprecation.respond_to?(:behavior=)
+            old_depr_behavior = deprecation.behavior
+            deprecation.behavior = :silence
+          end
         end
 
         yield
       ensure
         if defined?(ActiveSupport::Deprecation)
-          ActiveSupport::Deprecation.silenced = old_depr_silenced unless old_depr_silenced.nil?
-          ActiveSupport::Deprecation.behavior = old_depr_behavior unless old_depr_behavior.nil?
+          deprecation = ActiveSupport::Deprecation
+
+          if old_depr_silenced != sentinel && deprecation.respond_to?(:silenced=)
+            deprecation.silenced = old_depr_silenced
+          end
+
+          if old_depr_behavior != sentinel && deprecation.respond_to?(:behavior=)
+            deprecation.behavior = old_depr_behavior
+          end
         end
 
         ActiveRecord::Base.logger = old_ar_logger if defined?(ActiveRecord::Base) && !old_ar_logger.nil?
@@ -305,6 +384,30 @@ module Nokizaru
         end
 
       Ronin::DB::OpenPort.find_or_create_by(ip_address: ip_obj, port: port)
+    end
+
+    def write_json_atomic(path, obj)
+      dir = File.dirname(path)
+      FileUtils.mkdir_p(dir)
+
+      temp = Tempfile.new(['.nokizaru', '.json'], dir)
+      moved = false
+
+      begin
+        temp.binmode
+        temp.write(JSON.pretty_generate(obj))
+        temp.flush
+        temp.fsync
+        temp.close
+
+        File.rename(temp.path, path)
+        moved = true
+      ensure
+        unless moved
+          temp.close unless temp.closed?
+          FileUtils.rm_f(temp.path)
+        end
+      end
     end
   end
 end

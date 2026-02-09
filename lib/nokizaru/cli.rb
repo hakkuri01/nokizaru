@@ -437,23 +437,30 @@ module Nokizaru
         end
 
         if workspace
-          workspace.ingest_run!(run)
+          db_ingest_ok = workspace.ingest_run!(run)
           run['db_snapshot'] = workspace.db_snapshot
-        end
 
-        workspace.save_run(run_id, run) if workspace && run_id
+          db_status = build_workspace_db_status(
+            workspace: workspace,
+            ingest_ok: db_ingest_ok,
+            snapshot: run['db_snapshot']
+          )
+          run['meta']['workspace']['db'] = db_status
+          print_workspace_db_status(db_status)
+        end
 
         diff_target = resolve_diff_target
         if diff_target && !workspace
-          puts("\n#{CLI::R}[-] #{CLI::C}Diff requested but no workspace is enabled.#{CLI::W}")
-          puts("#{CLI::G}[+] #{CLI::C}Re-run with: #{CLI::W}--project <name>#{CLI::W}")
+          puts("\n#{CLI::R}[-] #{CLI::C}Diff requested without an active workspace.#{CLI::W}")
+          puts("#{CLI::G}[+] #{CLI::C}Enable a workspace with: #{CLI::W}--project <name>#{CLI::W}")
           puts("#{CLI::G}[+] #{CLI::C}Workspace base: #{CLI::W}#{Paths.workspace_dir}#{CLI::W}")
           Log.write('Diff requested without workspace; skipping')
         end
 
         if workspace && diff_target
-          prev_id = diff_target == 'last' ? workspace.previous_run_id(run_id) : diff_target
-          if prev_id && File.exist?(workspace.results_path(prev_id))
+          diff_ref = resolve_diff_reference(workspace, run_id, diff_target)
+          if diff_ref[:ok]
+            prev_id = diff_ref[:run_id]
             old_run = workspace.load_run(prev_id)
             run['diff'] = Nokizaru::Diff.compute(old_run, run)
 
@@ -466,7 +473,7 @@ module Nokizaru
             puts("\n#{CLI::G}[+] #{CLI::C}Diffed against run #{CLI::W}#{prev_id}")
             print_db_diff(run['diff_db'], label: 'Ronin DB diff')
           else
-            puts("\n#{CLI::R}[-] #{CLI::C}No previous run to diff against.#{CLI::W}")
+            puts("\n#{CLI::R}[-] #{CLI::C}#{diff_ref[:message]}#{CLI::W}")
           end
         end
 
@@ -527,6 +534,71 @@ module Nokizaru
           removed = Array(change['removed']).length
           puts("  #{CLI::C}#{kind}#{CLI::W}  +#{added} / -#{removed}")
         end
+      end
+
+      def build_workspace_db_status(workspace:, ingest_ok:, snapshot:)
+        available = workspace.db_available?
+        error = workspace.last_db_error.to_s.strip
+        collections = snapshot.is_a?(Hash) ? snapshot.keys.length : 0
+
+        state = if !available
+                  'unavailable'
+                elsif error.empty? && ingest_ok
+                  'enabled'
+                else
+                  'degraded'
+                end
+
+        {
+          'state' => state,
+          'available' => available,
+          'ingest_ok' => !!ingest_ok,
+          'snapshot_collections' => collections,
+          'error' => error
+        }
+      end
+
+      def print_workspace_db_status(db_status)
+        state = db_status['state'].to_s
+        error = db_status['error'].to_s
+        collections = db_status['snapshot_collections']
+
+        case state
+        when 'enabled'
+          puts("#{CLI::G}[+] #{CLI::C}Workspace DB : #{CLI::W}enabled#{CLI::C} (collections: #{CLI::W}#{collections}#{CLI::C})#{CLI::W}")
+        when 'unavailable'
+          msg = error.empty? ? 'ronin-db not installed' : error
+          puts("#{CLI::G}[!] #{CLI::C}Workspace DB : #{CLI::W}unavailable#{CLI::C} (#{msg})#{CLI::W}")
+        else
+          msg = error.empty? ? 'partial ingest/snapshot failure' : error
+          puts("#{CLI::G}[!] #{CLI::C}Workspace DB : #{CLI::W}degraded#{CLI::C} (#{msg})#{CLI::W}")
+        end
+      end
+
+      def resolve_diff_reference(workspace, run_id, diff_target)
+        all_run_ids = workspace.run_ids
+
+        if diff_target == 'last'
+          prev_id = workspace.previous_run_id(run_id)
+          return { ok: false, message: 'No prior run found in this workspace.' } unless prev_id
+
+          unless File.exist?(workspace.results_path(prev_id))
+            return { ok: false, message: "Run #{prev_id} is missing results.json; cannot diff." }
+          end
+
+          return { ok: true, run_id: prev_id }
+        end
+
+        requested_id = diff_target.to_s
+        unless all_run_ids.include?(requested_id)
+          return { ok: false, message: "Diff run ID not found: #{requested_id}" }
+        end
+
+        unless File.exist?(workspace.results_path(requested_id))
+          return { ok: false, message: "Run #{requested_id} is missing results.json; cannot diff." }
+        end
+
+        { ok: true, run_id: requested_id }
       end
 
       def ensure_modules_selected!
