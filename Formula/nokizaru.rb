@@ -4,6 +4,7 @@ class Nokizaru < Formula
   url 'https://github.com/hakkuri01/nokizaru/archive/refs/tags/v1.6.2.tar.gz'
   sha256 '3917594863cded9a5838a4c57e9b9cc629fe14246e84377ee881d1c3f950ca6b'
   license 'MIT'
+  revision 1
   head 'https://github.com/hakkuri01/nokizaru.git', branch: 'main'
 
   depends_on 'ruby'
@@ -12,7 +13,6 @@ class Nokizaru < Formula
     ENV['GEM_HOME'] = libexec
     ENV['GEM_PATH'] = libexec
 
-    system 'bundle', 'config', 'set', '--local', 'path', libexec
     system 'bundle', 'config', 'set', '--local', 'without', 'development test'
     system 'bundle', 'install'
 
