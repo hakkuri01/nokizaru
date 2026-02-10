@@ -25,6 +25,49 @@ FinalRecon’s Python implementation achieves speed through an async-first appro
 - **Error UX:** Provider failures are reported cleanly and consistently, but Nokizaru also aims to make errors more actionable and less noisy.
 - **Performance consistency:** Timeouts and budgets are designed to produce consistent runtimes between executions, rather than “sometimes fast, sometimes stuck.”
 
+## Installation
+
+### Linux / macOS (Homebrew)
+
+Homebrew is the primary install method for Linux/macOS:
+
+```bash
+brew tap hakkuri01/nokizaru https://github.com/hakkuri01/nokizaru
+brew install nokizaru
+nokizaru --help
+man nokizaru
+```
+
+For updates:
+
+```bash
+brew update
+brew upgrade nokizaru
+```
+
+Nokizaru Homebrew releases are pinned to stable git tags. `brew upgrade nokizaru` will update your install whenever a newer stable formula version is published.
+
+### Build From Source (Git Clone)
+
+```bash
+git clone https://github.com/hakkuri01/nokizaru.git
+cd nokizaru
+gem build nokizaru.gemspec
+gem install nokizaru-*.gem
+nokizaru --help
+```
+
+### Tarball
+
+```bash
+curl -L -o nokizaru.tar.gz https://github.com/hakkuri01/nokizaru/archive/refs/heads/main.tar.gz
+tar -xzf nokizaru.tar.gz
+cd nokizaru
+gem build nokizaru.gemspec
+gem install nokizaru-*.gem
+nokizaru --help
+```
+
 ## Configuration
 
 ### API Keys
@@ -100,39 +143,6 @@ Default config file is available at `~/.config/nokizaru/config.json`
     "format": "txt"
   }
 }
-```
-
-## Installation
-
-### Linux / macOS (Homebrew)
-
-* Homebrew is planned as the primary install method for future releases, as it can be used on both Linux or macOS comfortably, and will be pulled down as such:
-
-```bash
-brew install hakkuri01/tap/nokizaru
-nokizaru --help
-```
-* However, before implementing this install method officially, I would like to know if people would prefer a single executable, bundled runtime folder, or simply making use of `depends_on "ruby"` to let the tap rely on Homebrew Ruby.
-
-### Build From Source (Git Clone)
-
-```bash
-git clone https://github.com/hakkuri01/nokizaru.git
-cd nokizaru
-gem build nokizaru.gemspec
-gem install nokizaru-*.gem
-nokizaru --help
-```
-
-### Tarball
-
-```bash
-curl -L -o nokizaru.tar.gz https://github.com/hakkuri01/nokizaru/archive/refs/heads/main.tar.gz
-tar -xzf nokizaru.tar.gz
-cd nokizaru
-gem build nokizaru.gemspec
-gem install nokizaru-*.gem
-nokizaru --help
 ```
 
 ## Usage
@@ -225,7 +235,9 @@ If you specify `--project <name>`, Nokizaru can create a persistent workspace fo
 
 ### Distribution / Installation
 
-**Homebrew Formula:** Finalize the Homebrew tap installation method for seamless deployment on Linux and macOS. This will involve deciding between a single executable, bundled runtime folder, or leveraging Homebrew's Ruby dependency management, based on user feedback.
+**Homebrew Formula:** In-repo Homebrew formula is now shipped and uses stable tagged releases for reproducible installs and upgrades.
+
+A dedicated multi-project tap repository may still be added later if distribution scope expands.
 
 Currently there are no other install methods planned officially, however depending on popularity I would consider various Linux distro package managers down the road. If this materializes, I would most likely start with Debian's apt for Security distros (ParrotOS, Kali etc.) followed by Fedora's RPM because I personally use Fedora.
 
@@ -239,7 +251,7 @@ All providers will follow Nokizaru's existing integration pattern: optional API 
 
 ### Integrate Man Pages
 
-Currently Man Pages are prepared/included and can be called with `man man/nokizaru.1`, but they are not integrated to run natively yet. This will serve as the in-depth CLI documentation for end users long-term once they are integrated.
+Man pages are now installed natively through the Homebrew formula and can be accessed with `man nokizaru` after installation.
 
 ## Responsible Use / Disclaimers
 
