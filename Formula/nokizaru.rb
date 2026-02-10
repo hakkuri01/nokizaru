@@ -1,18 +1,20 @@
 class Nokizaru < Formula
   desc 'Fast modular web recon CLI for bug bounty workflows'
   homepage 'https://github.com/hakkuri01/nokizaru'
-  url 'https://github.com/hakkuri01/nokizaru/archive/refs/tags/v1.6.3.tar.gz'
-  sha256 '45ddc1f576b786ed0e5e39f61a1c72c55cf637f602e4088979a649c726ffcba8'
+  url 'https://github.com/hakkuri01/nokizaru/archive/refs/tags/v1.6.4.tar.gz'
+  sha256 'b7823570e9c809568496d77b9139c8428ed1154278074164c3a5f9068bb750c7'
   license 'MIT'
   head 'https://github.com/hakkuri01/nokizaru.git', branch: 'main'
 
-  depends_on 'ruby'
+  depends_on 'ruby@3.3'
 
   def install
+    ENV.prepend_path 'PATH', Formula['ruby@3.3'].opt_bin
     ENV['GEM_HOME'] = libexec
     ENV['GEM_PATH'] = libexec
 
     system 'bundle', 'config', 'set', '--local', 'without', 'development test'
+    system 'bundle', 'config', 'set', '--local', 'deployment', 'true' if (buildpath / 'Gemfile.lock').exist?
     system 'bundle', 'install'
 
     system 'gem', 'build', 'nokizaru.gemspec'

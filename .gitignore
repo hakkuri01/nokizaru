@@ -30,7 +30,6 @@ pkg/
 doc/
 coverage/
 *.rbc
-Gemfile.lock
 
 # =========================
 # Nokizaru runtime outputs
@@ -58,4 +57,3 @@ keys.json.old
 *.p12
 *.pfx
 *.crt
-
