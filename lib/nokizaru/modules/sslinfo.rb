@@ -15,6 +15,7 @@ module Nokizaru
       W = "\e[0m"   # white
       Y = "\e[33m"  # yellow
 
+      # Run this module and store normalized results in the run context
       def call(hostname, ssl_port, ctx)
         result = {}
         presence = false
@@ -82,6 +83,7 @@ module Nokizaru
         Log.write('[sslinfo] Completed')
       end
 
+      # Convert certificate name objects into a stable key value hash
       def x509_name_to_hash(name)
         h = {}
         name.to_a.each do |(oid, val, _type)|
@@ -90,6 +92,7 @@ module Nokizaru
         h
       end
 
+      # Extract SAN entries used for host and wildcard visibility
       def extract_san(cert)
         ext = cert.extensions.find { |e| e.oid == 'subjectAltName' }
         return [] unless ext
@@ -99,6 +102,7 @@ module Nokizaru
         end
       end
 
+      # Normalize certificate metadata for module output and exports
       def process_cert(info, result)
         info.each do |key, val|
           case val

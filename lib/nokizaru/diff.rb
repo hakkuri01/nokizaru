@@ -6,8 +6,9 @@ module Nokizaru
   module Diff
     module_function
 
-    # Compute a diff between two run objects (old_run, new_run).
-    # Returns a hash with added/removed for key artifact sets.
+    # Compute a diff between two run objects (old_run, new_run)
+    # Returns a hash with added/removed for key artifact sets
+    # Compare artifact sets between runs and keep only added or removed values
     def compute(old_run, new_run)
       old_art = old_run.fetch('artifacts', {})
       new_art = new_run.fetch('artifacts', {})

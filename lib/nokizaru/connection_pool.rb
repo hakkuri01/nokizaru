@@ -38,22 +38,26 @@ module Nokizaru
     }.freeze
 
     class << self
+      # Return a shared pool instance so modules reuse persistent connections
       def instance
         @instance ||= new
       end
 
+      # Reset the shared pool instance for tests and controlled reinitialization
       def reset!
         @instance&.shutdown
         @instance = nil
       end
     end
 
+    # Capture constructor arguments and initialize internal state
     def initialize
       super()
       @pools = {}
       @config = DEFAULT_CONFIG.dup
     end
 
+    # Build pool settings with safe defaults for scanner workloads
     def configure(**options)
       synchronize do
         @config.merge!(options)
@@ -61,7 +65,7 @@ module Nokizaru
       end
     end
 
-    # Get a persistent client for the given origin.
+    # Get a persistent client for the given origin
     def for_host(origin, headers: {}, verify_ssl: true, follow_redirects: true)
       uri = URI.parse(origin)
       port = uri.port || (uri.scheme == 'https' ? 443 : 80)
@@ -76,7 +80,7 @@ module Nokizaru
       end
     end
 
-    # Get a fresh client (not cached).
+    # Get a fresh client (not cached)
     def client(headers: {}, verify_ssl: true, follow_redirects: true, timeout_s: nil)
       build_client(
         headers: headers,
@@ -86,6 +90,7 @@ module Nokizaru
       )
     end
 
+    # Close pooled clients cleanly so scans exit without leaked resources
     def shutdown
       synchronize do
         @pools.each_value do |c|
@@ -97,12 +102,14 @@ module Nokizaru
       end
     end
 
+    # Return lightweight pool metrics for diagnostics and troubleshooting
     def stats
       synchronize { { pool_count: @pools.size, pools: @pools.keys } }
     end
 
     private
 
+    # Build an HTTP client with pooling and safe defaults for scanner modules
     def build_client(headers: {}, verify_ssl: true, follow_redirects: true, timeout_s: nil)
       http = HTTPX
 
@@ -140,7 +147,7 @@ module Nokizaru
         max_retries: @config[:retries]
       }
 
-      # Force HTTP/1.1 via ALPN to avoid HTTP/2 protocol errors.
+      # Force HTTP/1.1 via ALPN to avoid HTTP/2 protocol errors
       ssl_opts = { alpn_protocols: %w[http/1.1] }
       ssl_opts[:verify_mode] = OpenSSL::SSL::VERIFY_NONE unless verify_ssl
       opts[:ssl] = ssl_opts
@@ -151,6 +158,7 @@ module Nokizaru
       fallback_client(headers, timeout_s)
     end
 
+    # Build a minimal fallback client when advanced pooling is unavailable
     def fallback_client(headers, timeout_s)
       HTTPX.with(
         headers: DEFAULT_HEADERS.merge(headers),

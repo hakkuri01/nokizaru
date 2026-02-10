@@ -5,6 +5,7 @@ module Nokizaru
     module Export
       module_function
 
+      # Run this module and store normalized results in the run context
       def call(output, data)
         if output[:format] != 'txt'
           warn("\e[31m[-] \e[36mInvalid Output Format, Valid Formats : \e[0mtxt")
@@ -17,6 +18,7 @@ module Nokizaru
         end
       end
 
+      # Extract plain text output from module payloads for terminal rendering
       def txt_unpack(outfile, val)
         write_item = lambda do |item|
           if item.is_a?(Array)
@@ -41,6 +43,7 @@ module Nokizaru
         end
       end
 
+      # Render a concise text export from collected module results
       def txt_export(data, outfile)
         data.each do |key, val|
           key = key.to_s

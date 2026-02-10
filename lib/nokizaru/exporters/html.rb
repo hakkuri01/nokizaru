@@ -96,6 +96,7 @@ module Nokizaru
         </html>
       HTML
 
+      # Append log entries with timestamps for troubleshooting and auditability
       def write(run, path)
         meta = run.fetch('meta', {})
         findings = Array(run['findings'])
@@ -109,10 +110,12 @@ module Nokizaru
 
       private
 
+      # Escape HTML content before embedding it in generated reports
       def h(str)
         CGI.escapeHTML(str.to_s)
       end
 
+      # Pretty print JSON for readable HTML sections
       def pretty(obj)
         case obj
         when String

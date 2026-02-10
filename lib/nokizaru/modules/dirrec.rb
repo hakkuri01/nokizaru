@@ -22,6 +22,7 @@ module Nokizaru
 
       INTERESTING_STATUSES = Set[200, 301, 302, 303, 307, 308, 403].freeze
 
+      # Run this module and store normalized results in the run context
       def call(target, threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext, ctx)
         word_data = load_words(wdlist)
         words = word_data[:words]
@@ -118,6 +119,7 @@ module Nokizaru
         Log.write('[dirrec] Completed')
       end
 
+      # Print a discovered directory finding with status and context
       def print_finding(target, url, status, found)
         return if url == "#{target}/"
 
@@ -133,6 +135,7 @@ module Nokizaru
         end
       end
 
+      # Log directory scan errors without interrupting worker progress
       def log_error(_url, http_result, error_count)
         return if error_count > 5
 
@@ -143,6 +146,7 @@ module Nokizaru
         end
       end
 
+      # Print directory scan banner and run configuration details
       def print_banner(threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext, word_data, total_urls)
         puts("\n#{Y}[!] Starting Directory Enum...#{W}\n\n")
         puts("#{G}[+] #{C}Threads          : #{W}#{threads}")
@@ -157,11 +161,13 @@ module Nokizaru
         puts("#{G}[+] #{C}Total URLs       : #{W}#{total_urls}\n\n")
       end
 
+      # Print periodic directory scan progress updates
       def print_progress(current, total)
         print("#{Y}[!] #{C}Requests : #{W}#{current}/#{total}\r")
         $stdout.flush
       end
 
+      # Load and normalize wordlist entries used for directory enumeration
       def load_words(wdlist)
         lines = File.readlines(wdlist, chomp: true)
         normalized = lines.map(&:strip).reject(&:empty?)
@@ -189,6 +195,7 @@ module Nokizaru
         }
       end
 
+      # Build candidate paths from words and optional extensions
       def build_urls(target, words, filext)
         return [] if words.empty?
 
@@ -207,10 +214,12 @@ module Nokizaru
         urls.uniq
       end
 
+      # Encode path words safely before constructing request URLs
       def encode_path_word(word)
         word.to_s.split('/').map { |segment| URI.encode_uri_component(segment) }.join('/')
       end
 
+      # Print directory scan totals and representative findings
       def dir_output(responses, found, stats, ctx)
         elapsed = stats[:elapsed] || 1
         rps = ((stats[:success] + stats[:errors]) / elapsed).round(1)

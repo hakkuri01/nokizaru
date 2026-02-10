@@ -11,6 +11,7 @@ module Nokizaru
       module Hunter
         module_function
 
+        # Run this module and store normalized results in the run context
         def call(hostname, conf_path, http, found)
           hunter_key = Base.ensure_key('hunter', conf_path, 'NK_HUNTER_KEY')
 

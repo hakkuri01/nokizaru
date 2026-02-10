@@ -9,6 +9,7 @@ module Nokizaru
       module Shodan
         module_function
 
+        # Run this module and store normalized results in the run context
         def call(hostname, conf_path, http, found)
           sho_key = Base.ensure_key('shodan', conf_path, 'NK_SHODAN_KEY')
 

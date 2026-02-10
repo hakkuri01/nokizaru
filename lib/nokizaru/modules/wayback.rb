@@ -38,6 +38,7 @@ module Nokizaru
         unknown: 'Unknown'
       }.freeze
 
+      # Run this module and store normalized results in the run context
       def call(target, ctx, timeout_s: 10.0, raw: false)
         puts("\n#{Y}[!] Starting WayBack Machine...#{W}\n")
 
@@ -98,12 +99,14 @@ module Nokizaru
         Timeout.timeout(seconds, &block)
       end
 
+      # Fetch Wayback availability metadata for the target URL
       def availability_status(target, timeout_s)
         with_timeout(timeout_s) { check_availability_status(target) }
       rescue Timeout::Error
         { state: :unknown, snapshots: nil, reason: 'timeout' }
       end
 
+      # Fetch CDX results and fall back when primary query returns nothing
       def fetch_cdx_with_fallback(payload, timeout_s, snapshots)
         urls = with_timeout(timeout_s) { fetch_urls(payload) }
         [urls, 'found']
@@ -120,6 +123,7 @@ module Nokizaru
         [[], 'timeout']
       end
 
+      # Check archive availability state before applying fallback logic
       def check_availability_status(target)
         uri = URI(AVAIL_URL)
         uri.query = URI.encode_www_form(url: target)
@@ -140,6 +144,7 @@ module Nokizaru
         { state: :unknown, snapshots: nil, reason: 'exception' }
       end
 
+      # Fetch candidate archive URLs from Wayback endpoints
       def fetch_urls(payload)
         uri = URI(CDX_URL)
         uri.query = URI.encode_www_form(payload)
@@ -158,6 +163,7 @@ module Nokizaru
         []
       end
 
+      # Fetch Wayback endpoints with retry and timeout controls
       def http_get(uri)
         attempts = 0
 
@@ -192,10 +198,12 @@ module Nokizaru
         nil
       end
 
+      # Decide whether an HTTP status should trigger a retry attempt
       def retryable_status?(status)
         status == 429 || status >= 500
       end
 
+      # Print a short URL preview so large sets stay readable
       def print_urls_preview(urls)
         urls = Array(urls).compact
         return if urls.empty?
@@ -206,6 +214,7 @@ module Nokizaru
         puts("    #{Y}... #{remaining} more#{W}") if remaining.positive?
       end
 
+      # Build fallback URLs from availability metadata when CDX is sparse
       def fallback_urls_from_availability(avail_data)
         return [] unless avail_data.is_a?(Hash)
 
@@ -216,6 +225,7 @@ module Nokizaru
         url.empty? ? [] : [url]
       end
 
+      # Filter Wayback URLs to reduce low value and duplicate noise
       def filter_urls(urls)
         Array(urls)
           .map { |u| sanitize_url(u) }
@@ -223,6 +233,7 @@ module Nokizaru
           .uniq
       end
 
+      # Normalize URL values before deduplication and output
       def sanitize_url(url)
         cleaned = url.to_s.strip
         cleaned = cleaned.sub(/["'`,;\])]+\z/, '')
@@ -241,6 +252,7 @@ module Nokizaru
         cleaned
       end
 
+      # Print Wayback availability status with useful context
       def print_availability_status(state)
         label = AVAIL_LABELS.fetch(state, AVAIL_LABELS[:unknown])
         color = if state == :available

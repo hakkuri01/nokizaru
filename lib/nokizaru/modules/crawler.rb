@@ -25,6 +25,7 @@ module Nokizaru
       MAX_FETCH_WORKERS = 8
       MAX_SITEMAPS = 200
 
+      # Run this module and store normalized results in the run context
       def call(target, protocol, netloc, ctx)
         result = initialize_result
 
@@ -60,6 +61,7 @@ module Nokizaru
         Log.write('[crawler] Completed')
       end
 
+      # Initialize crawler result buckets before extraction starts
       def initialize_result
         {
           'robots_links' => [], 'sitemap_links' => [], 'css_links' => [],
@@ -69,6 +71,7 @@ module Nokizaru
         }
       end
 
+      # Fetch and parse the target document used by crawler extractors
       def fetch_main_page(target, result, ctx)
         response = http_get(target)
 
@@ -96,6 +99,7 @@ module Nokizaru
         nil
       end
 
+      # Fetch a URL with timeouts and headers used by crawler helpers
       def http_get(url)
         uri = URI.parse(url)
         http = Net::HTTP.new(uri.host, uri.port)
@@ -117,6 +121,7 @@ module Nokizaru
         nil
       end
 
+      # Normalize discovered links to absolute URLs and drop unsupported schemes
       def url_filter(target, link)
         return nil if link.nil? || link.empty?
         return nil if link.start_with?('#', 'javascript:', 'mailto:')
@@ -127,6 +132,7 @@ module Nokizaru
         nil
       end
 
+      # Read robots directives and collect crawl paths plus sitemap hints
       def robots(robo_url, base_url)
         r_total = []
         sm_total = []
@@ -160,6 +166,7 @@ module Nokizaru
         [r_total.uniq, sm_total.uniq]
       end
 
+      # Check default sitemap path and merge discovered sitemap locations
       def sitemap(sm_url, sm_total)
         sm_total = Array(sm_total).dup
 
@@ -179,6 +186,7 @@ module Nokizaru
         sm_total.uniq
       end
 
+      # Collect stylesheet URLs referenced by the initial response document
       def css(target, soup)
         links = []
         print("#{G}[+] #{C}Extracting CSS Links#{W}")
@@ -192,6 +200,7 @@ module Nokizaru
         links.uniq
       end
 
+      # Collect JavaScript asset URLs for later endpoint extraction
       def js_scan(target, soup)
         links = []
         print("#{G}[+] #{C}Extracting JavaScript Links#{W}")
@@ -205,6 +214,7 @@ module Nokizaru
         links.uniq
       end
 
+      # Collect links that remain within the target scope
       def internal_links(target, soup)
         links = []
         print("#{G}[+] #{C}Extracting Internal Links#{W}")
@@ -234,6 +244,7 @@ module Nokizaru
         links.uniq
       end
 
+      # Collect links that point outside the target scope
       def external_links(target, soup)
         links = []
         print("#{G}[+] #{C}Extracting External Links#{W}")
@@ -263,6 +274,7 @@ module Nokizaru
         links.uniq
       end
 
+      # Collect image asset URLs that can reveal hidden application paths
       def images(target, soup)
         links = []
         print("#{G}[+] #{C}Extracting Image Links#{W}")
@@ -276,6 +288,7 @@ module Nokizaru
         links.uniq
       end
 
+      # Fetch sitemap documents and extract URL entries for recon coverage
       def sm_crawl(sm_total)
         links = []
         sm_total = Array(sm_total).compact.map(&:strip).uniq
@@ -324,6 +337,7 @@ module Nokizaru
         links.uniq
       end
 
+      # Fetch JavaScript assets and extract embedded URL candidates
       def js_crawl(js_total)
         urls = []
         js_total = Array(js_total).compact.uniq
@@ -348,6 +362,7 @@ module Nokizaru
         urls.uniq
       end
 
+      # Aggregate crawler outputs into summary statistics for reporting
       def calculate_stats(result)
         all = %w[robots_links sitemap_links css_links js_links internal_links
                  external_links images urls_inside_sitemap urls_inside_js]
@@ -369,6 +384,7 @@ module Nokizaru
         }
       end
 
+      # Run queued tasks across a bounded worker pool
       def each_in_threads(items)
         queue = Queue.new
         items.each { |item| queue << item }
@@ -393,6 +409,7 @@ module Nokizaru
         threads.each(&:join)
       end
 
+      # Print a short preview so large result sets stay readable
       def print_links_preview(label, links)
         links = Array(links).compact.uniq
         return if links.empty?
@@ -403,6 +420,7 @@ module Nokizaru
         puts("    #{Y}... #{remaining} more#{W}") if remaining.positive?
       end
 
+      # Normalize extracted URLs before adding them to results
       def sanitize_extracted_url(url)
         url.to_s.sub(/["'`,;\])]+\z/, '')
       end

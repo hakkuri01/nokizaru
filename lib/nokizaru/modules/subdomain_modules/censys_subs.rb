@@ -12,6 +12,7 @@ module Nokizaru
         MAX_PAGES = 3
         PER_PAGE = 100
 
+        # Run this module and store normalized results in the run context
         def call(hostname, conf_path, http, found)
           api_id = Base.ensure_key('censys_api_id', conf_path, 'NK_CENSYS_API_ID')
           api_secret = Base.ensure_key('censys_api_secret', conf_path, 'NK_CENSYS_API_SECRET')
@@ -35,6 +36,7 @@ module Nokizaru
           Log.write('[censys_subs] Completed')
         end
 
+        # Paginate provider responses and merge subdomains across result pages
         def fetch_all_subdomains(hostname, http, api_id, api_secret)
           query = "names: #{hostname}"
           cursor = nil
@@ -63,6 +65,7 @@ module Nokizaru
           out.uniq
         end
 
+        # Request one provider page using authenticated search payload settings
         def search_page(query, cursor, http, api_id, api_secret)
           url = 'https://search.censys.io/api/v2/certificates/search'
           headers = {
@@ -78,10 +81,12 @@ module Nokizaru
           http.post(url, headers: headers, body: JSON.generate(payload))
         end
 
+        # Encode API credentials for provider basic authentication headers
         def pack_basic_auth(api_id, api_secret)
           ["#{api_id}:#{api_secret}"].pack('m0')
         end
 
+        # Extract and normalize hostnames from provider records for this target
         def extract_subdomains(hostname, data)
           hits = Array(data.dig('result', 'hits'))
           return [] if hits.empty?

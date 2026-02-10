@@ -18,6 +18,7 @@ module Nokizaru
 
       TIMEOUT = 10
 
+      # Run this module and store normalized results in the run context
       def call(target, ctx)
         result = { 'headers' => {} }
         puts("\n#{Y}[!] Headers :#{W}\n\n")
@@ -51,6 +52,7 @@ module Nokizaru
         Log.write('[headers] Completed')
       end
 
+      # Read key values from env first, then keys file, and seed missing key slots
       def fetch(uri)
         http = Net::HTTP.new(uri.host, uri.port)
         http.open_timeout = TIMEOUT
@@ -71,6 +73,7 @@ module Nokizaru
         nil
       end
 
+      # Print SSL errors with guidance for certificate validation failures
       def display_ssl_error(error, target)
         puts("#{R}[-] #{C}SSL Error#{W}")
         puts("#{R}[-] #{W}#{error.message}\n")

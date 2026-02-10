@@ -44,6 +44,18 @@ bundle exec ruby bin/nokizaru --help
 - Handle provider/network failures gracefully.
 - Never log API keys or sensitive values.
 
+## Style Guide
+
+This section defines repository style expectations and may expand over time.
+
+### Comments
+
+- Add comments for cohesive logic blocks where intent or design tradeoffs are not obvious.
+- Keep comments concise and practical, typically 1 line and at most 2-3 lines for complex blocks.
+- Start comments with a capital letter.
+- Do not end comments with a period.
+- Explain what the block is doing and why that approach is used in this codebase context.
+
 ## Provider Integration Checklist
 
 When adding or modifying providers:

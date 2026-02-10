@@ -8,6 +8,7 @@ module Nokizaru
       module HackerTarget
         module_function
 
+        # Run this module and store normalized results in the run context
         def call(hostname, http, found)
           puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}HackerTarget#{Base::W}")
           url = 'https://api.hackertarget.com/hostsearch/'

@@ -3,6 +3,7 @@
 module Nokizaru
   module Exporters
     class Txt
+      # Append log entries with timestamps for troubleshooting and auditability
       def write(run, path)
         File.open(path, 'w') do |f|
           meta = run.fetch('meta', {})

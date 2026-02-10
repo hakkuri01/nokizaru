@@ -16,6 +16,7 @@ module Nokizaru
       W = "\e[0m"   # white
       Y = "\e[33m"  # yellow
 
+      # Run this module and store normalized results in the run context
       def call(domain, tld, ctx)
         result = {}
         begin
@@ -54,6 +55,7 @@ module Nokizaru
         Log.write('[whois] Completed')
       end
 
+      # Execute a low level whois query with bounded reads and timeout protection
       def raw_whois(query, server)
         resp = +''
         Socket.tcp(server, 43, connect_timeout: 5) do |sock|

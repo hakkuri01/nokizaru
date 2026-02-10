@@ -5,15 +5,16 @@ require_relative 'paths'
 require_relative 'log'
 
 module Nokizaru
-  # - Prefer environment variables
-  # - Fallback to ~/.config/nokizaru/keys.json
-  # - If the key name is missing from keys.json, add it with null
+  # Prefer environment variables
+  # Fallback to ~/.config/nokizaru/keys.json
+  # If the key name is missing from keys.json, add it with null
   module KeyStore
     module_function
 
-    # @param name [String, Symbol] logical key name used in keys.json
-    # @param env [String, nil] environment variable to check first
-    # @return [String, nil]
+    # Parameters describe inputs expected by this method
+    # Parameters describe inputs expected by this method
+    # Return value describes what callers can safely rely on
+    # Read key values from env first, then keys file, and seed missing key slots
     def fetch(name, env: nil)
       name = name.to_s
       env_val = env && ENV[env]

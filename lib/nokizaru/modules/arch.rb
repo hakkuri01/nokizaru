@@ -18,6 +18,7 @@ module Nokizaru
 
       DEFAULT_UA = "Nokizaru/#{Nokizaru::VERSION} (+https://github.com/hakkuri01)"
 
+      # Run this module and store normalized results in the run context
       def call(target, timeout, ctx, _conf_path)
         puts("\n#{Y}[!] Starting Architecture Fingerprinting...#{W}\n")
 
@@ -52,6 +53,7 @@ module Nokizaru
         ctx.run['modules']['architecture_fingerprinting'] = { 'technologies' => [], 'status' => 'error' }
       end
 
+      # Fetch detection data used for architecture fingerprinting output
       def fetch_technologies(http, target, api_key)
         url = 'https://api.wappalyzer.com/v2/lookup/'
         headers = { 'x-api-key' => api_key }
@@ -76,6 +78,7 @@ module Nokizaru
         []
       end
 
+      # Parse Wappalyzer response payload into technology candidates
       def parse_wappalyzer_body(body)
         data = JSON.parse(body)
         rows = data.is_a?(Array) ? data : [data]
@@ -95,6 +98,7 @@ module Nokizaru
         dedupe_technologies(tech)
       end
 
+      # Deduplicate technologies while keeping stable output ordering
       def dedupe_technologies(tech)
         out = {}
 
@@ -119,6 +123,7 @@ module Nokizaru
         out.values.sort_by { |e| e['name'].downcase }
       end
 
+      # Print detected technologies in a concise terminal format
       def print_technologies(tech)
         if tech.empty?
           puts("#{Y}[!] #{C}No technologies identified.#{W}")

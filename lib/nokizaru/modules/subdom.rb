@@ -39,6 +39,7 @@ module Nokizaru
 
       VALID = /^[A-Za-z0-9._~()'!*:@,;+?-]*$/
 
+      # Run this module and store normalized results in the run context
       def call(hostname, timeout, ctx, conf_path)
         puts("\n#{Y}[!] Starting Sub-Domain Enumeration...#{W}\n\n")
 
@@ -55,6 +56,7 @@ module Nokizaru
         Log.write('[subdom] Completed')
       end
 
+      # Print a concise subdomain preview and final unique count
       def print_results(found)
         if found.any?
           puts("\n#{G}[+] #{C}Results : #{W}\n\n")
@@ -65,10 +67,11 @@ module Nokizaru
         puts("\n#{G}[+] #{C}Total Unique Sub Domains Found : #{W}#{found.length}")
       end
 
+      # Query passive providers concurrently and merge normalized subdomain results
       def enumerate(hostname, timeout, conf_path)
-        # Query passive sources concurrently under a single overall timeout budget.
-        # Prevents a single vendor from stalling the whole scan.
-        # Also caps per-vendor timeouts to keep performance consistent across runs.
+        # Query passive sources concurrently under a single overall timeout budget
+        # Prevents a single vendor from stalling the whole scan
+        # Also caps per-vendor timeouts to keep performance consistent across runs
         require 'concurrent'
         found = Concurrent::Array.new
 
@@ -87,9 +90,9 @@ module Nokizaru
           'Censys' => vendor_default
         }.freeze
 
-        # Build a base HTTP client with connection pooling.
-        # Each vendor module will get a client derived from this base.
-        # Ensures all requests share persistent connections where possible.
+        # Build a base HTTP client with connection pooling
+        # Each vendor module will get a client derived from this base
+        # Ensures all requests share persistent connections where possible
         base_http = Nokizaru::HTTPClient.build(
           timeout_s: vendor_default,
           headers: { 'User-Agent' => DEFAULT_UA },
@@ -117,7 +120,7 @@ module Nokizaru
         jobs << ['Chaos', proc { |h| SubdomainModules::Chaos.call(hostname, conf_path, h, found) }]
         jobs << ['Censys', proc { |h| SubdomainModules::Censys.call(hostname, conf_path, h, found) }]
 
-        # Small pool avoids hammering providers.
+        # Small pool avoids hammering providers
         pool_size = [6, jobs.length].min
         q = Queue.new
         jobs.each { |j| q << j }
@@ -143,7 +146,7 @@ module Nokizaru
               begin
                 fn.call(http)
               rescue StandardError => e
-                # Vendor modules usually handle their own exceptions. This is a last resort.
+                # Vendor modules usually handle their own exceptions. This is a last resort
                 puts("#{R}[-] #{C}#{name} Exception : #{W}#{e}")
                 Log.write("[subdom.worker] #{name} unhandled exception = #{e}")
               end

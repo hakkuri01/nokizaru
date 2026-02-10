@@ -12,6 +12,7 @@ module Nokizaru
       'Accept-Encoding' => 'gzip'
     }.freeze
 
+    # Build HTTP clients with shared defaults for reliability and performance
     def build(timeout_s: 10.0, headers: {}, follow_redirects: true, persistent: true, verify_ssl: true)
       ConnectionPool.instance.client(
         headers: DEFAULT_HEADERS.merge(headers || {}),
@@ -21,7 +22,7 @@ module Nokizaru
       )
     end
 
-    # Get a persistent client optimized for a specific host.
+    # Get a persistent client optimized for a specific host
     def for_host(origin, timeout_s: 10.0, headers: {}, follow_redirects: true, verify_ssl: true)
       base_client = ConnectionPool.instance.for_host(
         origin,
@@ -61,19 +62,19 @@ module Nokizaru
       )
     end
 
-    # Convenience method to make a single GET request.
-    # Uses connection pooling automatically.
+    # Convenience method to make a single GET request
+    # Uses connection pooling automatically
     def get(url, headers: {}, timeout_s: 10.0, verify_ssl: true)
       client = for_host(url, timeout_s: timeout_s, headers: headers, verify_ssl: verify_ssl)
       client.get(url)
     end
 
-    # Shutdown all connections. Call this during application shutdown.
+    # Shutdown all connections. Call this during application shutdown
     def shutdown
       ConnectionPool.instance.shutdown
     end
 
-    # Get connection pool statistics for debugging.
+    # Get connection pool statistics for debugging
     def stats
       ConnectionPool.instance.stats
     end

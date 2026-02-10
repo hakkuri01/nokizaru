@@ -9,6 +9,7 @@ module Nokizaru
       module Chaos
         module_function
 
+        # Run this module and store normalized results in the run context
         def call(hostname, conf_path, http, found)
           key = Base.ensure_key('chaos', conf_path, 'NK_CHAOS_KEY')
 

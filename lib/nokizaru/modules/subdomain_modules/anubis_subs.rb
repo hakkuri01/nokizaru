@@ -9,6 +9,7 @@ module Nokizaru
       module AnubisDB
         module_function
 
+        # Run this module and store normalized results in the run context
         def call(hostname, http, found)
           puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}AnubisDB#{Base::W}")
           url = "https://jldc.me/anubis/subdomains/#{hostname}"

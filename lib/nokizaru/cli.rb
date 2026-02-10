@@ -39,6 +39,7 @@ module Nokizaru
 
     remove_command :help if respond_to?(:remove_command)
 
+    # Normalize high level CLI flags before handing control to Thor
     def self.start(given_args = ARGV, config = {})
       args = Array(given_args).dup
 
@@ -68,6 +69,7 @@ module Nokizaru
     end
 
     desc 'help', 'Show Nokizaru help'
+    # Print CLI help with strict syntax handling for predictable UX
     def help(*args)
       if args.any?
         puts("#{R}[-] #{C}Invalid help syntax.#{W}")
@@ -78,12 +80,14 @@ module Nokizaru
       self.class.help(shell)
     end
 
+    # Print unknown command guidance and exit with a nonzero status
     def self.handle_no_command_error(command, _has_namespace = false)
       warn("#{R}[-] #{C}Unknown command: #{W}#{command}#{W}")
       warn("#{G}[+] #{C}Use #{W}nokizaru --help#{C} to view valid flags and usage.#{W}")
       exit(1)
     end
 
+    # Print CLI help with strict syntax handling for predictable UX
     def self.help(shell, _subcommand = false)
       usage = <<~USAGE
         usage: nokizaru [-h] [-v] [--url URL] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--wb-raw] [--ps]
@@ -141,6 +145,7 @@ module Nokizaru
       shell.say('')
     end
 
+    # Render aligned option rows so CLI help remains readable
     def self.print_aligned_rows(shell, rows)
       left_width = rows.map { |(l, _)| l.length }.max || 0
       left_width = [left_width, 18].max
@@ -151,6 +156,7 @@ module Nokizaru
 
     default_task :scan
 
+    # Tell Thor to surface failures with nonzero exit codes
     def self.exit_on_failure?
       true
     end
@@ -194,6 +200,7 @@ module Nokizaru
                 desc: 'Change export directory [ Default : ~/.local/share/nokizaru/dumps/nk_<domain> ]'
     option :of, type: :string,  default: nil, desc: 'Change export folder name [ Default : YYYY-MM-DD_HH-MM-SS ]'
     option :k,  type: :string,  default: nil, aliases: '-k', desc: 'Add API key [ Example : shodan@key ]'
+    # Validate scan invocation and dispatch execution to the runner
     def scan(*args)
       if args && !args.empty?
         bad = args.join(' ')
@@ -208,12 +215,14 @@ module Nokizaru
     end
 
     class Runner
+      # Capture constructor arguments and initialize internal state
       def initialize(options, argv = [])
         @opts = options
         @argv = argv || []
         @skip = parse_skip_flags(@argv)
       end
 
+      # Collect skip flags so full scans can disable specific modules
       def parse_skip_flags(argv)
         skip = {}
         %w[headers sslinfo whois crawl dns sub arch dir wayback ps].each do |name|
@@ -222,6 +231,7 @@ module Nokizaru
         skip
       end
 
+      # Render startup branding and metadata shown during interactive scans
       def banner
         art = <<~'ART'
 
@@ -254,6 +264,7 @@ module Nokizaru
         puts("#{CLI::G}⟦+⟧#{CLI::C} Version      :#{CLI::W} #{Nokizaru::VERSION}")
       end
 
+      # Validate key syntax and persist supported provider keys safely
       def save_key(key_string)
         valid_keys = %w[bevigil binedge facebook netlas shodan virustotal zoomeye hunter chaos censys_api_id
                         censys_api_secret wappalyzer]
@@ -291,6 +302,7 @@ module Nokizaru
         exit(0)
       end
 
+      # Execute the full scan lifecycle from setup through reporting and export
       def run
         Log.write('Importing config...')
         Settings.load!
@@ -510,6 +522,7 @@ module Nokizaru
 
       private
 
+      # Print findings in a concise severity aware terminal view
       def print_findings(findings)
         findings = Array(findings)
         return if findings.empty?
@@ -524,6 +537,7 @@ module Nokizaru
         end
       end
 
+      # Print run to run database deltas grouped by artifact type
       def print_db_diff(diff_db, label:)
         diff_db = diff_db.is_a?(Hash) ? diff_db : {}
         return if diff_db.empty?
@@ -536,6 +550,7 @@ module Nokizaru
         end
       end
 
+      # Build workspace database health metadata for the run payload
       def build_workspace_db_status(workspace:, ingest_ok:, snapshot:)
         available = workspace.db_available?
         error = workspace.last_db_error.to_s.strip
@@ -558,6 +573,7 @@ module Nokizaru
         }
       end
 
+      # Print workspace database status with actionable diagnostics
       def print_workspace_db_status(db_status)
         state = db_status['state'].to_s
         error = db_status['error'].to_s
@@ -575,6 +591,7 @@ module Nokizaru
         end
       end
 
+      # Resolve diff target and fail clearly when prior run data is missing
       def resolve_diff_reference(workspace, run_id, diff_target)
         all_run_ids = workspace.run_ids
 
@@ -601,6 +618,7 @@ module Nokizaru
         { ok: true, run_id: requested_id }
       end
 
+      # Fail fast when no scan modules are selected
       def ensure_modules_selected!
         module_flags = %i[full headers sslinfo whois crawl dns sub arch wayback ps dir]
         return if module_flags.any? { |k| @opts[k] }
@@ -609,6 +627,7 @@ module Nokizaru
         exit(1)
       end
 
+      # Normalize export format flags and apply default formats
       def export_formats
         raw = @opts[:o].to_s.strip
         return %w[txt json html] if raw.empty?
@@ -616,6 +635,7 @@ module Nokizaru
         raw.split(',').map(&:strip).reject(&:empty?).map(&:downcase).uniq
       end
 
+      # Resolve requested diff target and map blank diff to last run
       def resolve_diff_target
         return 'last' if @argv.include?('--diff') && (@opts[:diff].nil? || @opts[:diff].to_s.strip.empty?)
 
@@ -635,6 +655,7 @@ module Nokizaru
         nil
       end
 
+      # Parse target URL and derive module settings from options and defaults
       def parse_target(target)
         uri = URI.parse(target)
         hostname = uri.host.to_s
@@ -689,6 +710,7 @@ module Nokizaru
         }
       end
 
+      # Detect whether the hostname is an IP literal
       def ip_literal?(hostname)
         IPAddr.new(hostname)
         true
@@ -696,6 +718,7 @@ module Nokizaru
         false
       end
 
+      # Extract registrable domain parts used by domain based modules
       def extract_domain_parts(hostname)
         return ['', ''] if ip_literal?(hostname)
 

@@ -21,13 +21,14 @@ module Nokizaru
         TLSA TSIG TXT URI ZONEMD
       ].freeze
 
+      # Format record data into printable output while preserving binary safety
       def format_rdata(rdata)
-        # Dnsruby returns simple rdata as strings/objects, but DNSSEC-ish records often return arrays with binary strings.
+        # Dnsruby returns simple rdata as strings/objects, but DNSSEC-ish records often return arrays with binary strings
         case rdata
         when Array
           rdata.map { |v| format_rdata(v) }.join(' ')
         when String
-          # If string contains non-printable bytes, encode it.
+          # If string contains non-printable bytes, encode it
           if rdata.bytes.any? { |b| b < 32 || b > 126 }
             require 'base64'
             Base64.strict_encode64(rdata)
@@ -39,17 +40,18 @@ module Nokizaru
         end
       end
 
+      # Run this module and store normalized results in the run context
       def call(domain, dns_servers, ctx)
         result = { 'records' => {} }
         puts("\n#{Y}[!] Starting DNS Enumeration...#{W}\n\n")
 
         full_ans = []
 
-        # Hard cap keeps full scans smooth even on flaky resolvers.
+        # Hard cap keeps full scans smooth even on flaky resolvers
         per_query_timeout = 2
         nameservers = (dns_servers.split(',').map(&:strip) if dns_servers && !dns_servers.to_s.empty?)
 
-        # Quick NXDOMAIN check (avoid spawning a pool for a dead domain).
+        # Quick NXDOMAIN check (avoid spawning a pool for a dead domain)
         begin
           check = Dnsruby::Resolver.new
           check.do_caching = false
@@ -64,7 +66,7 @@ module Nokizaru
           ctx.run['modules']['dns'] = result
           return
         rescue StandardError
-          # ignore; proceed to best-effort enumeration.
+          # Ignore; proceed to best-effort enumeration
         end
 
         q = Queue.new
@@ -95,9 +97,9 @@ module Nokizaru
                   out << [rr_type, format_rdata(rr.rdata)]
                 end
               rescue Dnsruby::ResolvError, Dnsruby::NXRRSet
-                # NODATA is common; treat as empty.
+                # NODATA is common; treat as empty
               rescue Dnsruby::NXDomain
-                # Domain disappeared mid-run; stop this worker.
+                # Domain disappeared mid-run; stop this worker
                 break
               rescue StandardError => e
                 Log.write("[dns] Exception = #{e}")
@@ -108,12 +110,12 @@ module Nokizaru
 
         workers.each(&:join)
 
-        # Drain results and preserve deterministic output order.
+        # Drain results and preserve deterministic output order
         temp = []
         begin
           loop { temp << out.pop(true) }
         rescue ThreadError
-          # queue empty
+          # Queue empty
         end
 
         order_idx = DNS_RECORDS.each_with_index.to_h
@@ -155,7 +157,7 @@ module Nokizaru
 
         ctx.run['modules']['dns'] = result
 
-        # artifacts
+        # Artifacts
         txt = Array(result.dig('records', 'TXT'))
         ctx.add_artifact('dns_txt', txt)
 

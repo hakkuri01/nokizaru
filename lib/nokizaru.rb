@@ -16,6 +16,7 @@ require_relative 'nokizaru/cli'
 
 module Nokizaru
   # Ensure connections are properly closed on exit
+  # Always attempt client pool shutdown so long-running scans exit cleanly
   at_exit do
     HTTPClient.shutdown
   rescue StandardError

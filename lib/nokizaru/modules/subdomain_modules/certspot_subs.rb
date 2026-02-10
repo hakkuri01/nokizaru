@@ -9,6 +9,7 @@ module Nokizaru
       module CertSpotter
         module_function
 
+        # Run this module and store normalized results in the run context
         def call(hostname, http, found)
           puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}CertSpotter#{Base::W}")
           url = 'https://api.certspotter.com/v1/issuances'

@@ -11,6 +11,7 @@ module Nokizaru
   module Settings
     module_function
 
+    # Load configuration from disk and keep defaults when values are missing
     def load!
       Paths.sync_default_conf!
 
@@ -36,8 +37,8 @@ module Nokizaru
         @dir_enum_wordlist = File.join(Paths.project_root, 'wordlists', 'dirb_common.txt')
         @export_format     = export.fetch('format')
       rescue JSON::ParserError, KeyError
-        # Config file is invalid JSON or missing required keys.
-        # Restore default config.json (backup existing) and retry.
+        # Config file is invalid JSON or missing required keys
+        # Restore default config.json (backup existing) and retry
         Paths.restore_default_config!(backup: true)
         retry
       end
@@ -45,15 +46,25 @@ module Nokizaru
       self
     end
 
+    # Return timeout setting with a safe numeric fallback
     def timeout = @timeout
+    # Return configured DNS resolver list for enumeration modules
     def custom_dns = @custom_dns
+    # Return configured SSL port used by certificate collection
     def ssl_port = @ssl_port
+    # Return thread count used by port scanning workers
     def port_scan_threads = @port_scan_threads
+    # Return thread count used by directory enumeration workers
     def dir_enum_threads = @dir_enum_threads
+    # Return redirect handling preference for directory enumeration
     def dir_enum_redirect = @dir_enum_redirect
+    # Return SSL verification preference for directory enumeration
     def dir_enum_verify_ssl = @dir_enum_verify_ssl
+    # Return configured extension list for directory enumeration variants
     def dir_enum_extension = @dir_enum_extension
+    # Return wordlist path used by directory enumeration
     def dir_enum_wordlist = @dir_enum_wordlist
+    # Return configured default export format list
     def export_format = @export_format
   end
 end

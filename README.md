@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v1.6.2-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v1.6.3-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -233,14 +233,6 @@ If you specify `--project <name>`, Nokizaru can create a persistent workspace fo
 
 ## Roadmap
 
-### Distribution / Installation
-
-**Homebrew Formula:** In-repo Homebrew formula is now shipped and uses stable tagged releases for reproducible installs and upgrades.
-
-A dedicated multi-project tap repository may still be added later if distribution scope expands.
-
-Currently there are no other install methods planned officially, however depending on popularity I would consider various Linux distro package managers down the road. If this materializes, I would most likely start with Debian's apt for Security distros (ParrotOS, Kali etc.) followed by Fedora's RPM because I personally use Fedora.
-
 ### Provider Expansion
 
 The following providers are planned for integration to enhance recon coverage and signal quality:
@@ -248,10 +240,6 @@ The following providers are planned for integration to enhance recon coverage an
 - **GreyNoise:** Internet noise classification to filter out mass-scanning activity and focus on targeted reconnaissance
 
 All providers will follow Nokizaru's existing integration pattern: optional API keys, graceful degradation on failure, and consistent error reporting. These additions prioritize breadth of coverage and actionable intelligence to support the bug bounty/pentest recon workflow.
-
-### Integrate Man Pages
-
-Man pages are now installed natively through the Homebrew formula and can be accessed with `man nokizaru` after installation.
 
 ## Responsible Use / Disclaimers
 

@@ -17,6 +17,7 @@ module Nokizaru
     }.freeze
 
     # Exports scan results to the specified formats
+    # Normalize formats, resolve output paths, and write each requested export file
     def export(run, domain:, formats:, timestamp: nil, custom_directory: nil, custom_basename: nil)
       normalized_formats = normalize_formats(formats)
       validate_formats!(normalized_formats)

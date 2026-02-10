@@ -1,10 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# ============================================================================
-# Signal Handling - MUST be set up before requiring gems
-# This prevents Bundler's signal handlers from interfering with clean exits
-# ============================================================================
+# Set up signal handling before requiring gems so shutdown behavior stays predictable
+# Install traps before Bundler can register its own handlers
 
 $stdout.sync = true # Ensure output is flushed immediately
 $interrupted = false
@@ -38,12 +36,9 @@ Signal.trap('TERM') do
   exit(143)
 end
 
-# ============================================================================
-# Argument Normalization
-# ============================================================================
-
-# Ruby's OptionParser (used by Thor) does not support multi-letter *short* flags,
-# so normalize them into equivalent long options before Thor parses ARGV.
+# Normalize CLI arguments before Thor parses them
+# Thor does not support multi letter short flags
+# Rewrite known short aliases into equivalent long options before parse time
 def normalize_argv!(argv)
   replacements = {}
   replacements['-nb'] = '--nb'
@@ -68,28 +63,27 @@ def normalize_argv!(argv)
   end
 end
 
+# Normalize common help flag patterns to Thor compatible syntax
 def normalize_help_invocation!(argv)
-  # Thor's canonical help form is: `nokizaru help scan`.
-  # Many users expect: `nokizaru scan --help`.
-  # Depending on Thor/version/config, `scan --help` may be treated as a positional argument.
-  # Normalize common help patterns into `help <command>`.
+  # Thor's canonical help form is: `nokizaru help scan`
+  # Many users expect: `nokizaru scan --help`
+  # Depending on Thor/version/config, `scan --help` may be treated as a positional argument
+  # Normalize common help patterns into `help <command>`
 
-  # `nokizaru scan --help` or `nokizaru run --help`
+  # Example usage: `nokizaru scan --help` or `nokizaru run --help`
   if argv[0] && %w[scan run].include?(argv[0]) && (argv.include?('--help') || argv.include?('-h'))
     argv.replace(%w[help scan])
     return
   end
 
-  # `nokizaru --help scan`
+  # Example usage: `nokizaru --help scan`
   return unless argv[0] && %w[--help -h].include?(argv[0]) && argv[1] == 'scan'
 
   argv.replace(%w[help scan])
   nil
 end
 
-# ============================================================================
-# Main Entry Point
-# ============================================================================
+# Run the main CLI entrypoint with guarded error handling
 
 begin
   # Normalize arguments before Thor processes them

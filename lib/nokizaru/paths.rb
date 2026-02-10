@@ -6,28 +6,30 @@ require 'json'
 begin
   require 'ronin/support/home'
 rescue LoadError
-  # ronin-support is optional at runtime; fall back to manual XDG paths.
+  # Ronin-support is optional at runtime; fall back to manual XDG paths
 end
 
 module Nokizaru
-  # Centralized paths for Nokizaru runtime state and shipped templates.
+  # Centralized paths for Nokizaru runtime state and shipped templates
   module Paths
     APP_DIR = 'nokizaru'
 
+    # Resolve the user home directory for all persistent Nokizaru paths
     def self.home
       @home ||= Dir.home
     end
 
+    # Resolve repository root used for bundled default assets
     def self.project_root
       @project_root ||= File.expand_path('../..', __dir__)
     end
 
-    # ~/.local/share/nokizaru
+    # ~/.Local/share/nokizaru
     def self.user_data_dir
       @user_data_dir ||= begin
         base =
           if defined?(Ronin::Support::Home)
-            # ronin-support expects ONE arg (app name) for XDG helpers
+            # Ronin-support expects ONE arg (app name) for XDG helpers
             Ronin::Support::Home.local_share_dir(APP_DIR)
           else
             File.join(home, '.local', 'share', APP_DIR)
@@ -38,7 +40,7 @@ module Nokizaru
       end
     end
 
-    # ~/.config/nokizaru
+    # ~/.Config/nokizaru
     def self.config_dir
       @config_dir ||= begin
         base =
@@ -54,7 +56,7 @@ module Nokizaru
       end
     end
 
-    # ~/.cache/nokizaru
+    # ~/.Cache/nokizaru
     def self.cache_dir
       @cache_dir ||= begin
         base =
@@ -70,7 +72,7 @@ module Nokizaru
       end
     end
 
-    # ~/.local/share/nokizaru/workspaces
+    # ~/.Local/share/nokizaru/workspaces
     def self.workspace_dir
       @workspace_dir ||= begin
         base = File.join(user_data_dir, 'workspaces')
@@ -79,7 +81,7 @@ module Nokizaru
       end
     end
 
-    # ~/.local/share/nokizaru/dumps
+    # ~/.Local/share/nokizaru/dumps
     def self.dumps_dir
       @dumps_dir ||= begin
         base = File.join(user_data_dir, 'dumps')
@@ -88,7 +90,7 @@ module Nokizaru
       end
     end
 
-    # ~/.local/share/nokizaru/dumps/nk_<domain>
+    # ~/.Local/share/nokizaru/dumps/nk_<domain>
     def self.target_dump_dir(domain)
       sanitized = sanitize_domain_for_path(domain)
       dir = File.join(dumps_dir, "nk_#{sanitized}")
@@ -117,28 +119,32 @@ module Nokizaru
 
     private_class_method :sanitize_domain_for_path
 
-    # --- files Nokizaru expects under user dirs ---
+    # --- Files Nokizaru expects under user dirs ---
     def self.metadata_file
       File.join(user_data_dir, 'metadata.json')
     end
 
+    # Resolve the active keys file path and ensure defaults are synced
     def self.keys_file
       File.join(user_data_dir, 'keys.json')
     end
 
+    # Resolve the active config file path and ensure defaults are synced
     def self.config_file
       File.join(config_dir, 'config.json')
     end
 
+    # Resolve the active log file path in the user data directory
     def self.log_file
       File.join(user_data_dir, 'nokizaru.log')
     end
 
+    # Resolve the whois servers data file path used by lookups
     def self.whois_servers_file
       File.join(user_data_dir, 'whois_servers.json')
     end
 
-    # --- defaults shipped with the repo ---
+    # --- Defaults shipped with the repo ---
     def self.default_config_template
       candidates = [
         File.join(project_root, 'conf', 'config.json'),
@@ -147,6 +153,7 @@ module Nokizaru
       candidates.find { |p| File.exist?(p) }
     end
 
+    # Build default keys template with all known provider names
     def self.default_keys_template
       candidates = [
         File.join(project_root, 'conf', 'keys.json'),
@@ -155,6 +162,7 @@ module Nokizaru
       candidates.find { |p| File.exist?(p) }
     end
 
+    # Build default metadata template for local runtime state
     def self.default_metadata_template
       candidates = [
         File.join(project_root, 'data', 'metadata.json'),
@@ -163,6 +171,7 @@ module Nokizaru
       candidates.find { |p| File.exist?(p) }
     end
 
+    # Build fallback whois server mappings for common TLDs
     def self.default_whois_servers_template
       candidates = [
         File.join(project_root, 'data', 'whois_servers.json'),
@@ -173,7 +182,7 @@ module Nokizaru
       candidates.find { |p| File.exist?(p) }
     end
 
-    # Ensure config + keys + supporting data exist under XDG dirs by copying from repo templates.
+    # Ensure config + keys + supporting data exist under XDG dirs by copying from repo templates
     # This is called by Settings.load!
     def self.sync_default_conf!
       FileUtils.mkdir_p(config_dir)
@@ -187,7 +196,7 @@ module Nokizaru
       true
     end
 
-    # Restores the default config.json from the shipped template.
+    # Restores the default config.json from the shipped template
     def self.restore_default_config!(backup: true)
       tmpl = default_config_template
       raise "Default config template not found under #{project_root}" unless tmpl
@@ -203,6 +212,7 @@ module Nokizaru
       true
     end
 
+    # Write file defaults only when missing to preserve user changes
     def self.ensure_file!(dest, template_path, &fallback_block)
       return if File.exist?(dest)
 

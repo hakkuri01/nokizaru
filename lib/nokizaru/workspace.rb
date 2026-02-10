@@ -10,23 +10,24 @@ require 'time'
 begin
   require 'ronin/db'
 rescue LoadError
-  # ronin-db is optional, but recommended for workspace DB enrichment.
+  # Ronin-db is optional, but recommended for workspace DB enrichment
 end
 
 require_relative 'paths'
 require_relative 'log'
 
 module Nokizaru
-  # File-based workspace + optional Ronin::DB sqlite database co-located in the workspace.
-  #
+  # File-based workspace + optional Ronin::DB sqlite database co-located in the workspace
+  # Explain this block so future maintainers understand its intent
   # When enabled, it supports:
-  # - run directories (results.json, exports)
-  # - caching directory
-  # - Ronin::DB database (ronin.db)
-  # - db snapshots + db diffing (diff_db)
+  # Run directories (results.json, exports)
+  # Caching directory
+  # Ronin::DB database (ronin.db)
+  # Db snapshots + db diffing (diff_db)
   class Workspace
     attr_reader :project_name, :target_host, :base_dir, :last_db_error
 
+    # Capture runtime options and prepare shared state used by this object
     def initialize(project_name, target_host)
       @project_name = sanitize(project_name)
       @target_host  = sanitize(target_host)
@@ -39,22 +40,27 @@ module Nokizaru
       FileUtils.mkdir_p(cache_dir)
     end
 
+    # Resolve the runs directory for this workspace
     def runs_dir
       File.join(@base_dir, 'runs')
     end
 
+    # Resolve the cache directory used by workspace scoped caching
     def cache_dir
       File.join(@base_dir, 'cache')
     end
 
+    # Resolve the workspace database path under the project directory
     def db_path
       File.join(@base_dir, 'ronin.db')
     end
 
+    # Build a database URI string for tooling and diagnostics
     def db_uri
       "sqlite3:#{db_path}"
     end
 
+    # Create run directory structure and initialize metadata for this execution
     def start_run(meta = {})
       run_id = "#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}_#{SecureRandom.hex(4)}"
       dir = run_dir(run_id)
@@ -67,30 +73,36 @@ module Nokizaru
       [run_id, dir]
     end
 
+    # Resolve run directory path for a specific run identifier
     def run_dir(run_id)
       File.join(runs_dir, run_id.to_s)
     end
 
+    # Resolve results file path for a specific run identifier
     def results_path(run_id)
       File.join(run_dir(run_id), 'results.json')
     end
 
+    # Persist final run output atomically to avoid partial result files
     def save_run(run_id, run_hash)
       FileUtils.mkdir_p(run_dir(run_id))
       write_json_atomic(results_path(run_id), run_hash)
       true
     end
 
+    # Load a prior run result for diffing and historical comparisons
     def load_run(run_id)
       JSON.parse(File.read(results_path(run_id)))
     end
 
+    # List known run identifiers in deterministic order for stable diffs
     def run_ids
       return [] unless Dir.exist?(runs_dir)
 
       Dir.children(runs_dir).select { |n| File.directory?(File.join(runs_dir, n)) }.sort
     end
 
+    # Resolve the prior run identifier used by default diff behavior
     def previous_run_id(current_run_id = nil)
       ids = run_ids
       return nil if ids.empty?
@@ -111,6 +123,7 @@ module Nokizaru
       defined?(Ronin::DB)
     end
 
+    # Establish workspace database connectivity with graceful degradation
     def connect_db!(migrate: true)
       unless db_available?
         @last_db_error = 'ronin-db is unavailable'
@@ -135,7 +148,7 @@ module Nokizaru
       false
     end
 
-    # Inserts a conservative subset of run outputs into Ronin::DB.
+    # Inserts a conservative subset of run outputs into Ronin::DB
     def ingest_run!(run_hash)
       return false unless connect_db!(migrate: true)
 
@@ -181,7 +194,7 @@ module Nokizaru
       false
     end
 
-    # Snapshot DB state for diffing.
+    # Snapshot DB state for diffing
     def db_snapshot
       return {} unless connect_db!(migrate: false)
 
@@ -220,6 +233,7 @@ module Nokizaru
       {}
     end
 
+    # Diff database snapshots by collection to highlight ingest changes
     def self.diff_snapshots(old_snap, new_snap)
       old_snap = old_snap.is_a?(Hash) ? old_snap : {}
       new_snap = new_snap.is_a?(Hash) ? new_snap : {}
@@ -243,10 +257,12 @@ module Nokizaru
 
     private
 
+    # Sanitize values before database ingestion to avoid malformed records
     def sanitize(s)
       s.to_s.strip.gsub(%r{[\s/\\]+}, '_').gsub(/[^a-zA-Z0-9_.-]/, '_')
     end
 
+    # Build database connection options from runtime environment and defaults
     def db_connect_config
       {
         adapter: 'sqlite3',
@@ -254,6 +270,7 @@ module Nokizaru
       }
     end
 
+    # Report workspace database connectivity state for diagnostics
     def connected_to_workspace_db?
       return false unless db_connected?
       return true unless defined?(ActiveRecord::Base)
@@ -266,6 +283,7 @@ module Nokizaru
       false
     end
 
+    # Return whether the database client is currently connected
     def db_connected?
       return false unless defined?(ActiveRecord::Base)
 
@@ -277,6 +295,7 @@ module Nokizaru
       false
     end
 
+    # Import hostname artifacts into the workspace database when available
     def import_hostname(hostname)
       h = hostname.to_s.strip
       return if h.empty?
@@ -285,6 +304,7 @@ module Nokizaru
       Ronin::DB::HostName.find_or_create_by(name: h)
     end
 
+    # Import IP artifacts into the workspace database when available
     def import_ip(ip_str)
       ip = ip_str.to_s.strip
       return nil if ip.empty?
@@ -293,20 +313,22 @@ module Nokizaru
       Ronin::DB::IPAddress.find_or_create_by(address: ip)
     end
 
+    # Import URL artifacts into the workspace database when available
     def import_url(url_str)
       u = url_str.to_s.strip
       return if u.empty?
       return unless defined?(Ronin::DB::URL)
 
-      # Use import helper if present; otherwise skip (don’t guess schema).
+      # Use import helper if present; otherwise skip (don’t guess schema)
       Ronin::DB::URL.find_or_import(u) if Ronin::DB::URL.respond_to?(:find_or_import)
     rescue StandardError
       nil
     end
 
+    # Run database imports with reduced console noise for clean UX
     def with_quiet_db_output
-      # Allow opt-in verbose mode for debugging:
-      # NOKIZARU_DB_VERBOSE=1 bundle exec nokizaru ...
+      # Allow opt-in verbose mode for debugging
+      # Example command: NOKIZARU_DB_VERBOSE=1 bundle exec nokizaru --full --url https://example.com
       return yield if ENV['NOKIZARU_DB_VERBOSE'] == '1'
 
       require 'stringio'
@@ -316,7 +338,7 @@ module Nokizaru
       $stdout = StringIO.new
       $stderr = StringIO.new
 
-      # Also try to quiet ActiveRecord/ActiveSupport if loaded.
+      # Also try to quiet ActiveRecord/ActiveSupport if loaded
       old_migration_verbose = nil
       old_ar_logger = nil
       sentinel = Object.new
@@ -373,6 +395,7 @@ module Nokizaru
       end
     end
 
+    # Import open port artifacts into the workspace database when available
     def import_open_port(ip_obj, port_num)
       return unless defined?(Ronin::DB::Port) && defined?(Ronin::DB::OpenPort)
 
@@ -386,6 +409,7 @@ module Nokizaru
       Ronin::DB::OpenPort.find_or_create_by(ip_address: ip_obj, port: port)
     end
 
+    # Write JSON using a temp file and rename to avoid partial writes
     def write_json_atomic(path, obj)
       dir = File.dirname(path)
       FileUtils.mkdir_p(dir)

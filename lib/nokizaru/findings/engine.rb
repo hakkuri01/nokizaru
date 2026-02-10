@@ -7,6 +7,7 @@ module Nokizaru
     class Engine
       DEFAULT_DAYS_TO_EXPIRY_WARN = 14
 
+      # Coordinate the end to end scan workflow from setup to final output
       def run(run)
         findings = []
         modules = run.fetch('modules', {})
@@ -17,7 +18,7 @@ module Nokizaru
         findings.concat(port_findings(modules['portscan']))
         findings.concat(dir_findings(modules['directory_enum']))
 
-        # normalize
+        # Normalize
         findings = findings.compact
         findings.each_with_index do |f, idx|
           f['id'] ||= "finding.#{idx}"
@@ -29,6 +30,7 @@ module Nokizaru
 
       private
 
+      # Generate findings from security header gaps and risky values
       def headers_findings(h)
         return [] unless h.is_a?(Hash)
 
@@ -90,6 +92,7 @@ module Nokizaru
         res
       end
 
+      # Generate findings from weak TLS configuration and certificate issues
       def tls_findings(ssl)
         return [] unless ssl.is_a?(Hash)
 
@@ -130,6 +133,7 @@ module Nokizaru
         end
       end
 
+      # Generate findings from DNS records that indicate risk or misconfiguration
       def dns_findings(dns)
         return [] unless dns.is_a?(Hash)
 
@@ -165,6 +169,7 @@ module Nokizaru
         res
       end
 
+      # Generate findings from exposed ports and high risk services
       def port_findings(ps)
         return [] unless ps.is_a?(Hash)
 
@@ -187,6 +192,7 @@ module Nokizaru
         }]
       end
 
+      # Generate findings from sensitive directories discovered during scans
       def dir_findings(dir)
         return [] unless dir.is_a?(Hash)
 

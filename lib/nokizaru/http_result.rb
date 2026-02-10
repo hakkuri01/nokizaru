@@ -6,28 +6,34 @@ module Nokizaru
   class HttpResult
     attr_reader :response, :error
 
+    # Capture runtime options and prepare shared state used by this object
     def initialize(response)
       @response = response
       @is_error = response.is_a?(HTTPX::ErrorResponse)
       @error = @is_error ? response.error : nil
     end
 
+    # Report whether the HTTP response is successful for module logic
     def success?
       !@is_error
     end
 
+    # Report whether the HTTP response represents an error case
     def error?
       @is_error
     end
 
+    # Expose response headers in a normalized hash shape
     def headers
       success? ? @response.headers : {}
     end
 
+    # Expose response body text for parsing and error diagnostics
     def body
       success? ? @response.body.to_s : nil
     end
 
+    # Expose response status code across success and error wrappers
     def status
       success? ? @response.status : nil
     end
@@ -87,6 +93,7 @@ module Nokizaru
 
     private
 
+    # Parse SSL exceptions into readable reasons for operators
     def parse_ssl_error(error)
       msg = error.message
 
@@ -103,6 +110,7 @@ module Nokizaru
       end
     end
 
+    # Detect common IO failures and classify them for clearer error reporting
     def handle_io_error(error)
       msg = error.message.to_s
       if msg.include?('closed stream') || msg.include?('descriptor')

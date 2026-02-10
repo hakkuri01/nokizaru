@@ -7,7 +7,7 @@ require_relative '../../http_result'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Shared helpers for subdomain source modules.
+      # Shared helpers for subdomain source modules
       module Base
         module_function
 
@@ -45,7 +45,7 @@ module Nokizaru
           return '' unless s
 
           s = s.to_s
-          # Heuristic: some HTTPX error responses stringify to an inspected object-like representation.
+          # Heuristic: some HTTPX error responses stringify to an inspected object-like representation
           return '' if s.include?('HTTPX::') || s.include?('headers=>') || s.start_with?('#<')
 
           s
@@ -53,6 +53,7 @@ module Nokizaru
           ''
         end
 
+        # Create a compact body preview for readable error messages
         def body_snippet(resp, max: 220)
           s = safe_body(resp).to_s.strip
           return '' if s.empty?
@@ -76,7 +77,7 @@ module Nokizaru
           # Legacy handling for raw HTTPX responses
           if resp.respond_to?(:error) && (err = resp.error)
             s = err.to_s.to_s
-            # Common pattern: "HTTP Error: 500 { ...headers hash... }".
+            # Common pattern: "HTTP Error: 500 { ...headers hash... }"
             s = s.split(' {', 2).first if s.include?(' {')
             s = s.split(' (', 2).first if s.start_with?('HTTP Error:') && s.include?(' (')
             s.strip
@@ -109,6 +110,7 @@ module Nokizaru
           end
         end
 
+        # Build a stable status label for provider logs and terminal output
         def status_label(resp)
           st = safe_status(resp)
           st ? st.to_s : 'ERR'
@@ -131,6 +133,7 @@ module Nokizaru
           error_response.instance_variable_set(:@is_error, true)
 
           class << error_response
+            # Mark the synthetic error object as compatible with HTTPX::ErrorResponse
             def is_a?(klass)
               return true if klass == HTTPX::ErrorResponse
 

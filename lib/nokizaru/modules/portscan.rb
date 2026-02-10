@@ -129,6 +129,7 @@ module Nokizaru
         50_070 => 'Hadoop'
       }.freeze
 
+      # Run this module and store normalized results in the run context
       def call(ip_addr, threads, ctx)
         result = { 'open_ports' => [] }
         puts("\n#{Y}[!] Starting Port Scan...#{W}\n\n")
@@ -149,7 +150,7 @@ module Nokizaru
               end
             end
           rescue StandardError
-            # ignore
+            # Ignore
           ensure
             current = counter.increment
             print("#{Y}[!] #{C}Scanning : #{W}#{current}/#{total}\r")
@@ -167,6 +168,7 @@ module Nokizaru
         Log.write('[portscan] Completed')
       end
 
+      # Probe a single port quickly and report only confirmed open sockets
       def open_port?(ip, port)
         Socket.tcp(ip, port, connect_timeout: 1) { |_s| }
         true

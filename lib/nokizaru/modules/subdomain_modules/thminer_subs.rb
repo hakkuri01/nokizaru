@@ -9,6 +9,7 @@ module Nokizaru
       module ThreatMiner
         module_function
 
+        # Run this module and store normalized results in the run context
         def call(hostname, http, found)
           puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}ThreatMiner#{Base::W}")
           url = 'https://api.threatminer.org/v2/domain.php'
