@@ -29,24 +29,19 @@ module Nokizaru
     module Subdomains
       module_function
 
-      R = "\e[31m"  # red
-      G = "\e[32m"  # green
-      C = "\e[36m"  # cyan
-      W = "\e[0m"   # white
-      Y = "\e[33m"  # yellow
-
       DEFAULT_UA = "Nokizaru/#{Nokizaru::VERSION} (+https://github.com/hakkuri01)"
 
       VALID = /^[A-Za-z0-9._~()'!*:@,;+?-]*$/
 
       # Run this module and store normalized results in the run context
       def call(hostname, timeout, ctx, conf_path)
-        puts("\n#{Y}[!] Starting Sub-Domain Enumeration...#{W}\n\n")
+        UI.module_header('Starting Sub-Domain Enumeration...')
 
         cache_key = ctx.cache&.key_for(['subdomains', hostname]) || "subdomains:#{hostname}"
         found = ctx.cache_fetch(cache_key, ttl_s: 43_200) do
           enumerate(hostname, timeout, conf_path)
         end
+        found = Array(found).sort
 
         print_results(found)
 
@@ -58,13 +53,17 @@ module Nokizaru
 
       # Print a concise subdomain preview and final unique count
       def print_results(found)
+        found = Array(found).sort
+
         if found.any?
-          puts("\n#{G}[+] #{C}Results : #{W}\n\n")
+          UI.line(:info, 'Results :')
+          puts
           found.first(20).each { |u| puts(u) }
-          puts("\n#{G}[+]#{C} Results truncated...#{W}") if found.length > 20
+          UI.line(:info, 'Results truncated...') if found.length > 20
         end
 
-        puts("\n#{G}[+] #{C}Total Unique Sub Domains Found : #{W}#{found.length}")
+        puts
+        UI.row(:info, 'Total Unique Sub Domains Found', found.length)
       end
 
       # Query passive providers concurrently and merge normalized subdomain results
@@ -147,7 +146,7 @@ module Nokizaru
                 fn.call(http)
               rescue StandardError => e
                 # Vendor modules usually handle their own exceptions. This is a last resort
-                puts("#{R}[-] #{C}#{name} Exception : #{W}#{e}")
+                UI.line(:error, "#{name} Exception : #{e}")
                 Log.write("[subdom.worker] #{name} unhandled exception = #{e}")
               end
             end

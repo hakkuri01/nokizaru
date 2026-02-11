@@ -11,7 +11,7 @@ module Nokizaru
 
         # Run this module and store normalized results in the run context
         def call(hostname, http, found)
-          puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}crt.sh#{Base::W}")
+          Base.requesting('crt.sh')
 
           url = "https://crt.sh/?dNSName=%25.#{hostname}&output=json"
 
@@ -33,17 +33,17 @@ module Nokizaru
 
               subs.reject!(&:empty?)
               subs.uniq!
-              puts("#{Base::G}[+] #{Base::Y}crt.sh #{Base::W}found #{Base::C}#{subs.length} #{Base::W}subdomains!")
+              Base.found('crt.sh', subs.length)
               found.concat(subs)
             else
               Base.print_status('crt.sh', resp)
               Log.write("[crtsh_subs] Status = #{status.inspect}, expected 200")
             end
           rescue JSON::ParserError => e
-            puts("#{Base::R}[-] #{Base::C}crt.sh Exception : #{Base::W}invalid JSON (#{e.message})")
+            Base.exception('crt.sh', "invalid JSON (#{e.message})")
             Log.write("[crtsh_subs] JSON parse exception = #{e}")
           rescue StandardError => e
-            puts("#{Base::R}[-] #{Base::C}crt.sh Exception : #{Base::W}#{e}")
+            Base.exception('crt.sh', e)
             Log.write("[crtsh_subs] Exception = #{e}")
           end
 

@@ -14,7 +14,7 @@ module Nokizaru
           vt_key = Base.ensure_key('virustotal', conf_path, 'NK_VT_KEY')
 
           if vt_key
-            puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}VirusTotal#{Base::W}")
+            Base.requesting('VirusTotal')
             url = "https://www.virustotal.com/api/v3/domains/#{hostname}/subdomains"
             headers = { 'x-apikey' => vt_key }
             begin
@@ -24,18 +24,18 @@ module Nokizaru
                 json_read = JSON.parse(Base.safe_body(resp))
                 domains = json_read['data'] || []
                 tmp = domains.map { |d| d['id'] }.compact
-                puts("#{Base::G}[+] #{Base::Y}VirusTotal #{Base::W}found #{Base::C}#{tmp.length} #{Base::W}subdomains!")
+                Base.found('VirusTotal', tmp.length)
                 found.concat(tmp)
               else
-                puts("#{Base::R}[-] #{Base::C}VirusTotal Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
+                Base.status_error('VirusTotal', Base.status_label(resp), Base.failure_reason(resp))
                 Log.write("[virustotal_subs] Status = #{status}")
               end
             rescue StandardError => e
-              puts("#{Base::R}[-] #{Base::C}VirusTotal Exception : #{Base::W}#{e}")
+              Base.exception('VirusTotal', e)
               Log.write("[virustotal_subs] Exception = #{e}")
             end
           else
-            puts("#{Base::Y}[!] Skipping VirusTotal : #{Base::W}API key not found!")
+            Base.skipping('VirusTotal', 'API key not found!')
             Log.write('[virustotal_subs] API key not found')
           end
 

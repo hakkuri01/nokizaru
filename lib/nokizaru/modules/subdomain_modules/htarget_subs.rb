@@ -10,7 +10,7 @@ module Nokizaru
 
         # Run this module and store normalized results in the run context
         def call(hostname, http, found)
-          puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}HackerTarget#{Base::W}")
+          Base.requesting('HackerTarget')
           url = 'https://api.hackertarget.com/hostsearch/'
 
           begin
@@ -20,14 +20,14 @@ module Nokizaru
             if status == 200
               data = Base.safe_body(resp)
               tmp = data.to_s.split("\n").map { |line| line.split(',', 2)[0] }.compact
-              puts("#{Base::G}[+] #{Base::Y}HackerTarget #{Base::W}found #{Base::C}#{tmp.length} #{Base::W}subdomains!")
+              Base.found('HackerTarget', tmp.length)
               found.concat(tmp)
             else
               Base.print_status('HackerTarget', resp)
               Log.write("[htarget_subs] Status = #{status.inspect}, expected 200")
             end
           rescue StandardError => e
-            puts("#{Base::R}[-] #{Base::C}HackerTarget Exception : #{Base::W}#{e}")
+            Base.exception('HackerTarget', e)
             Log.write("[htarget_subs] Exception = #{e}")
           end
 

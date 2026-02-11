@@ -11,12 +11,12 @@ $interrupted = false
 Signal.trap('INT') do
   if $interrupted
     # Second Ctrl+C = hard exit
-    puts "\n\e[31m[!] Force quit\e[0m"
+    puts "\n\e[31m⟦✘⟧ Force quit\e[0m"
     exit!(1)
   else
     # First Ctrl+C = graceful shutdown
     $interrupted = true
-    puts "\n\e[33m[!] Scan interrupted by user\e[0m"
+    puts "\n\e[33m⟦✘⟧ Scan interrupted by user\e[0m"
     puts "\e[2m    Press Ctrl+C again to force quit\e[0m"
 
     # Kill all threads except main
@@ -31,7 +31,7 @@ end
 
 # Handle SIGTERM
 Signal.trap('TERM') do
-  puts "\n\e[33m[!] Received termination signal\e[0m"
+  puts "\n\e[33m⟦✘⟧ Received termination signal\e[0m"
   Thread.list.each { |t| t.exit unless t == Thread.main }
   exit(143)
 end
@@ -104,7 +104,7 @@ rescue SystemExit
   raise
 rescue StandardError => e
   # Catch any unexpected errors and display them cleanly
-  puts "\n\e[31m[ERROR] Unexpected error: #{e.class}\e[0m"
+  puts "\n\e[31m⟦✘⟧ Unexpected error: #{e.class}\e[0m"
   puts "\e[2m#{e.message}\e[0m"
 
   # Show backtrace only if in development/debug mode

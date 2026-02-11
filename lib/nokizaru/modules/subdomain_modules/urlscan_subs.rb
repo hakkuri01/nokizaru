@@ -11,7 +11,7 @@ module Nokizaru
 
         # Run this module and store normalized results in the run context
         def call(hostname, http, found)
-          puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}UrlScan#{Base::W}")
+          Base.requesting('UrlScan')
 
           url = "https://urlscan.io/api/v1/search/?q=domain:#{hostname}"
 
@@ -24,13 +24,13 @@ module Nokizaru
               results = json_data['results'] || []
               subs = results.filter_map { |e| e.dig('task', 'domain') }.uniq
               found.concat(subs)
-              puts("#{Base::G}[+] #{Base::Y}UrlScan #{Base::W}found #{Base::C}#{subs.length} #{Base::W}subdomains!")
+              Base.found('UrlScan', subs.length)
             else
               Base.print_status('UrlScan', resp)
               Log.write("[urlscan_subs] Status = #{status.inspect}, expected 200")
             end
           rescue StandardError => e
-            puts("#{Base::R}[-] #{Base::C}UrlScan Exception : #{Base::W}#{e}")
+            Base.exception('UrlScan', e)
             Log.write("[urlscan_subs] Exception = #{e}")
           end
 

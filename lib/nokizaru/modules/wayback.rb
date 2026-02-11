@@ -12,12 +12,6 @@ module Nokizaru
     module Wayback
       module_function
 
-      R = "\e[31m"
-      G = "\e[32m"
-      C = "\e[36m"
-      W = "\e[0m"
-      Y = "\e[33m"
-
       AVAIL_URL = 'https://archive.org/wayback/available'
       CDX_URL   = 'https://web.archive.org/cdx/search/cdx'
 
@@ -32,6 +26,11 @@ module Nokizaru
       MAX_URLS = 5000
       RETRIES = 2
       PREVIEW_LIMIT = 10
+      WAYBACK_ROW_LABEL_WIDTH = [
+        'Checking Availability on Wayback Machine'.length,
+        'Fetching URLs from CDX'.length,
+        'Using availability snapshot fallback'.length
+      ].max
       AVAIL_LABELS = {
         available: 'Available',
         not_available: 'Not Available',
@@ -40,22 +39,17 @@ module Nokizaru
 
       # Run this module and store normalized results in the run context
       def call(target, ctx, timeout_s: 10.0, raw: false)
-        puts("\n#{Y}[!] Starting WayBack Machine...#{W}\n")
+        UI.module_header('Starting WayBack Machine...')
 
         domain_query = "#{target}/*"
         curr_yr = Date.today.year
         last_yr = curr_yr - 5
         timeout_s = timeout_s.to_f.positive? ? timeout_s.to_f : TOTAL_TIMEOUT
 
-        print("#{Y}[!] #{C}Checking Availability on Wayback Machine#{W}")
-        $stdout.flush
         availability = availability_status(target, timeout_s)
         print_availability_status(availability[:state])
 
-        puts("#{Y}[!] #{C}Proceeding with CDX search (best effort)#{W}") if availability[:state] != :available
-
-        print("#{Y}[!] #{C}Fetching URLs from CDX#{W}")
-        $stdout.flush
+        UI.line(:plus, 'Proceeding with CDX search (best effort)') if availability[:state] != :available
 
         payload = {
           'url' => domain_query,
@@ -73,9 +67,14 @@ module Nokizaru
         cdx_status = 'timeout' if urls.empty? && cdx_status == 'timeout_with_fallback'
 
         if urls.empty?
-          puts("#{R}#{'['.rjust(5, '.')} Not Found ]#{W}")
+          cdx_label = cdx_status == 'timeout' ? 'Timeout' : 'Not Found'
+          wayback_row(:error, 'Fetching URLs from CDX', cdx_label)
         else
-          puts("#{G}#{'['.rjust(5, '.')} #{urls.length} ]#{W}") unless cdx_status == 'timeout_with_fallback'
+          if cdx_status == 'timeout_with_fallback'
+            wayback_row(:error, 'Fetching URLs from CDX', 'Timeout')
+          else
+            wayback_row(:info, 'Fetching URLs from CDX', urls.length)
+          end
           print_urls_preview(urls)
           ctx.add_artifact('urls', urls)
           ctx.add_artifact('wayback_urls', urls)
@@ -89,7 +88,7 @@ module Nokizaru
 
         Log.write('[wayback] Completed')
       rescue StandardError => e
-        puts("\n#{R}[-] Exception : #{C}#{e}#{W}")
+        UI.line(:error, "Exception : #{e}")
         Log.write("[wayback] Exception = #{e}")
         ctx.run['modules']['wayback'] = { 'urls' => [] }
       end
@@ -111,12 +110,11 @@ module Nokizaru
         urls = with_timeout(timeout_s) { fetch_urls(payload) }
         [urls, 'found']
       rescue Timeout::Error
-        puts("#{R}#{'['.rjust(5, '.')} Timeout ]#{W}")
         Log.write('[wayback] CDX fetch timed out, using availability fallback')
 
         fallback = fallback_urls_from_availability(snapshots)
         unless fallback.empty?
-          puts("#{Y}[!] #{C}Using availability snapshot fallback#{W}#{G}#{'['.rjust(5, '.')} #{fallback.length} ]#{W}")
+          wayback_row(:plus, 'Using availability snapshot fallback', fallback.length)
           return [fallback, 'timeout_with_fallback']
         end
 
@@ -208,10 +206,10 @@ module Nokizaru
         urls = Array(urls).compact
         return if urls.empty?
 
-        puts("#{G}[+] #{C}Wayback URL Preview#{W}")
-        urls.first(PREVIEW_LIMIT).each { |url| puts("    #{W}#{url}") }
+        UI.line(:info, 'Wayback URL Preview')
+        urls.first(PREVIEW_LIMIT).each { |url| puts("    #{url}") }
         remaining = urls.length - PREVIEW_LIMIT
-        puts("    #{Y}... #{remaining} more#{W}") if remaining.positive?
+        puts("    ... #{remaining} more") if remaining.positive?
       end
 
       # Build fallback URLs from availability metadata when CDX is sparse
@@ -255,12 +253,18 @@ module Nokizaru
       # Print Wayback availability status with useful context
       def print_availability_status(state)
         label = AVAIL_LABELS.fetch(state, AVAIL_LABELS[:unknown])
-        color = if state == :available
-                  G
-                else
-                  (state == :not_available ? Y : R)
-                end
-        puts("#{color}#{'['.rjust(5, '.')} #{label} ]#{W}")
+        if state == :available
+          wayback_row(:plus, 'Checking Availability on Wayback Machine', label)
+        elsif state == :not_available
+          wayback_row(:error, 'Checking Availability on Wayback Machine', label)
+        else
+          wayback_row(:error, 'Checking Availability on Wayback Machine', label)
+        end
+      end
+
+      # Print aligned wayback rows using one shared group width
+      def wayback_row(type, label, value)
+        UI.row(type, label, value, label_width: WAYBACK_ROW_LABEL_WIDTH)
       end
     end
   end

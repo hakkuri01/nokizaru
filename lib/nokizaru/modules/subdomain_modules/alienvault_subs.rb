@@ -11,7 +11,7 @@ module Nokizaru
 
         # Run this module and store normalized results in the run context
         def call(hostname, http, found)
-          puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}AlienVault#{Base::W}")
+          Base.requesting('AlienVault')
 
           url = "https://otx.alienvault.com/api/v1/indicators/domain/#{hostname}/passive_dns"
 
@@ -24,13 +24,13 @@ module Nokizaru
               passive = json_data['passive_dns'] || []
               subs = passive.filter_map { |e| e['hostname'] }.uniq
               found.concat(subs)
-              puts("#{Base::G}[+] #{Base::Y}AlienVault #{Base::W}found #{Base::C}#{subs.length} #{Base::W}subdomains!")
+              Base.found('AlienVault', subs.length)
             else
               Base.print_status('AlienVault', resp)
               Log.write("[alienvault_subs] Status = #{status.inspect}, expected 200")
             end
           rescue StandardError => e
-            puts("#{Base::R}[-] #{Base::C}AlienVault Exception : #{Base::W}#{e}")
+            Base.exception('AlienVault', e)
             Log.write("[alienvault_subs] Exception = #{e}")
           end
 

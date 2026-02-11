@@ -14,7 +14,7 @@ module Nokizaru
           fb_key = Base.ensure_key('facebook', conf_path, 'NK_FB_KEY')
 
           if fb_key
-            puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}Facebook#{Base::W}")
+            Base.requesting('Facebook')
             url = 'https://graph.facebook.com/certificates'
             params = { query: hostname, fields: 'domains', access_token: fb_key }
             begin
@@ -23,20 +23,20 @@ module Nokizaru
               if status == 200
                 json_read = JSON.parse(Base.safe_body(resp))
                 domains = json_read['data'] || []
-                puts("#{Base::G}[+] #{Base::Y}Facebook #{Base::W}found #{Base::C}#{domains.length} #{Base::W}subdomains!")
+                Base.found('Facebook', domains.length)
                 domains.each do |entry|
                   found.concat(entry['domains'] || [])
                 end
               else
-                puts("#{Base::R}[-] #{Base::C}Facebook Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
+                Base.status_error('Facebook', Base.status_label(resp), Base.failure_reason(resp))
                 Log.write("[fb_subs] Status = #{status}, expected 200")
               end
             rescue StandardError => e
-              puts("#{Base::R}[-] #{Base::C}Facebook Exception : #{Base::W}#{e}")
+              Base.exception('Facebook', e)
               Log.write("[fb_subs] Exception = #{e}")
             end
           else
-            puts("#{Base::Y}[!] Skipping Facebook : #{Base::W}API key not found!")
+            Base.skipping('Facebook', 'API key not found!')
             Log.write('[fb_subs] API key not found')
           end
 

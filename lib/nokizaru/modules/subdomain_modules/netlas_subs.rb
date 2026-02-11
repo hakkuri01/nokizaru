@@ -14,7 +14,7 @@ module Nokizaru
           key = Base.ensure_key('netlas', conf_path, 'NK_NETLAS_KEY')
 
           if key
-            puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}Netlas#{Base::W}")
+            Base.requesting('Netlas')
             url = 'https://app.netlas.io/api/domains/download/'
             headers = { 'X-API-Key' => key, 'Content-Type' => 'application/json' }
             payload = {
@@ -34,18 +34,18 @@ module Nokizaru
                   sub = entry.dig('data', 'domain')
                   subs << sub if sub
                 end
-                puts("#{Base::G}[+] #{Base::Y}netlas #{Base::W}found #{Base::C}#{subs.length} #{Base::W}subdomains!")
+                Base.found('netlas', subs.length)
                 found.concat(subs)
               else
-                puts("#{Base::R}[-] #{Base::C}netlas Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
+                Base.status_error('netlas', Base.status_label(resp), Base.failure_reason(resp))
                 Log.write("[netlas_subs] Status = #{status}, expected 200")
               end
             rescue StandardError => e
-              puts("#{Base::R}[-] #{Base::C}netlas Exception : #{Base::W}#{e}")
+              Base.exception('netlas', e)
               Log.write("[netlas_subs] Exception = #{e}")
             end
           else
-            puts("#{Base::Y}[!] Skipping netlas : #{Base::W}API key not found!")
+            Base.skipping('netlas', 'API key not found!')
             Log.write('[netlas_subs] API key not found')
           end
 

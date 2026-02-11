@@ -12,12 +12,6 @@ module Nokizaru
     module DirectoryEnum
       module_function
 
-      R = "\e[31m"
-      G = "\e[32m"
-      C = "\e[36m"
-      W = "\e[0m"
-      Y = "\e[33m"
-
       DEFAULT_UA = 'Mozilla/5.0 (X11; Linux x86_64; rv:72.0) Gecko/20100101 Firefox/72.0'
 
       INTERESTING_STATUSES = Set[200, 301, 302, 303, 307, 308, 403].freeze
@@ -114,6 +108,7 @@ module Nokizaru
 
         stats[:elapsed] = Time.now - start_time
         print_progress(count, total) # Final progress
+        clear_progress_line
 
         dir_output(responses, found, stats, ctx)
         Log.write('[dirrec] Completed')
@@ -124,15 +119,8 @@ module Nokizaru
         return if url == "#{target}/"
 
         found << url
-
-        case status
-        when 200
-          puts("\r\e[K#{G}#{status} #{C}|#{W} #{url}")
-        when 301, 302, 303, 307, 308
-          puts("\r\e[K#{Y}#{status} #{C}|#{W} #{url}")
-        when 403
-          puts("\r\e[K#{R}#{status} #{C}|#{W} #{url}")
-        end
+        clear_progress_line
+        UI.line(:info, "#{status} | #{url}")
       end
 
       # Log directory scan errors without interrupting worker progress
@@ -148,22 +136,31 @@ module Nokizaru
 
       # Print directory scan banner and run configuration details
       def print_banner(threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext, word_data, total_urls)
-        puts("\n#{Y}[!] Starting Directory Enum...#{W}\n\n")
-        puts("#{G}[+] #{C}Threads          : #{W}#{threads}")
-        puts("#{G}[+] #{C}Timeout          : #{W}#{timeout_s}")
-        puts("#{G}[+] #{C}Wordlist         : #{W}#{wdlist}")
-        puts("#{G}[+] #{C}Allow Redirects  : #{W}#{allow_redirects}")
-        puts("#{G}[+] #{C}SSL Verification : #{W}#{verify_ssl}")
+        UI.module_header('Starting Directory Enum...')
 
-        puts("#{G}[+] #{C}Wordlist Lines   : #{W}#{word_data[:total_lines]}")
-        puts("#{G}[+] #{C}Usable Entries   : #{W}#{word_data[:unique_lines]}")
-        puts("#{G}[+] #{C}File Extensions  : #{W}#{filext}")
-        puts("#{G}[+] #{C}Total URLs       : #{W}#{total_urls}\n\n")
+        UI.rows(:plus, [
+                  ['Threads', threads],
+                  ['Timeout', timeout_s],
+                  ['Wordlist', wdlist],
+                  ['Allow Redirects', allow_redirects],
+                  ['SSL Verification', verify_ssl],
+                  ['Wordlist Lines', word_data[:total_lines]],
+                  ['Usable Entries', word_data[:unique_lines]],
+                  ['File Extensions', filext],
+                  ['Total URLs', total_urls]
+                ])
+        puts
       end
 
       # Print periodic directory scan progress updates
       def print_progress(current, total)
-        print("#{Y}[!] #{C}Requests : #{W}#{current}/#{total}\r")
+        print(UI.progress(:info, 'Requests', "#{current}/#{total}"))
+        $stdout.flush
+      end
+
+      # Clear transient progress line before printing final summary rows
+      def clear_progress_line
+        print("\r\e[K")
         $stdout.flush
       end
 
@@ -178,7 +175,7 @@ module Nokizaru
           unique_lines: unique.length
         }
       rescue Errno::ENOENT
-        puts("#{R}[-] #{C}Wordlist not found: #{W}#{wdlist}")
+        UI.line(:error, "Wordlist not found : #{wdlist}")
         Log.write("[dirrec] Wordlist not found: #{wdlist}")
         {
           words: [],
@@ -186,7 +183,7 @@ module Nokizaru
           unique_lines: 0
         }
       rescue StandardError => e
-        puts("#{R}[-] #{C}Failed to read wordlist: #{W}#{e.message}")
+        UI.line(:error, "Failed to read wordlist : #{e.message}")
         Log.write("[dirrec] Failed to read wordlist: #{e.class} - #{e.message}")
         {
           words: [],
@@ -216,7 +213,20 @@ module Nokizaru
 
       # Encode path words safely before constructing request URLs
       def encode_path_word(word)
-        word.to_s.split('/').map { |segment| URI.encode_uri_component(segment) }.join('/')
+        word.to_s.split('/').map { |segment| percent_encode_path_segment(segment) }.join('/')
+      end
+
+      # Encode path segments safely without converting spaces to plus signs
+      def percent_encode_path_segment(segment)
+        bytes = segment.to_s.b.bytes
+        bytes.map do |byte|
+          char = byte.chr
+          if char.match?(/[A-Za-z0-9\-._~]/)
+            char
+          else
+            format('%%%02X', byte)
+          end
+        end.join
       end
 
       # Print directory scan totals and representative findings
@@ -236,9 +246,13 @@ module Nokizaru
           }
         }
 
-        puts("\n\n#{G}[+] #{C}Directories Found   : #{W}#{found.uniq.length}")
-        puts("#{G}[+] #{C}Requests/second     : #{W}#{rps}")
-        puts("#{Y}[!] #{C}Errors              : #{W}#{stats[:errors]}\n\n")
+        puts
+        UI.rows(:info, [
+                  ['Directories Found', found.uniq.length],
+                  ['Requests/second', rps],
+                  ['Errors', stats[:errors]]
+                ])
+        puts
 
         ctx.run['modules']['directory_enum'] = result
         ctx.add_artifact('paths', result['found'])

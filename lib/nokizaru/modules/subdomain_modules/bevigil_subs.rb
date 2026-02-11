@@ -14,7 +14,7 @@ module Nokizaru
           key = Base.ensure_key('bevigil', conf_path, 'NK_BEVIGIL_KEY')
 
           if key
-            puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}BeVigil#{Base::W}")
+            Base.requesting('BeVigil')
             url = "https://osint.bevigil.com/api/#{hostname}/subdomains/"
             header = { 'X-Access-Token' => key }
 
@@ -24,18 +24,18 @@ module Nokizaru
               if status == 200
                 json_data = JSON.parse(Base.safe_body(resp))
                 subdomains = json_data['subdomains'] || []
-                puts("#{Base::G}[+] #{Base::Y}BeVigil #{Base::W}found #{Base::C}#{subdomains.length} #{Base::W}subdomains!")
+                Base.found('BeVigil', subdomains.length)
                 found.concat(subdomains)
               else
-                puts("#{Base::R}[-] #{Base::C}BeVigil Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
+                Base.status_error('BeVigil', Base.status_label(resp), Base.failure_reason(resp))
                 Log.write("[bevigil_subs] Status = #{status}, expected 200")
               end
             rescue StandardError => e
-              puts("#{Base::R}[-] #{Base::C}BeVigil Exception : #{Base::W}#{e}")
+              Base.exception('BeVigil', e)
               Log.write("[bevigil_subs] Exception = #{e}")
             end
           else
-            puts("#{Base::Y}[!] Skipping BeVigil : #{Base::W}API key not found!")
+            Base.skipping('BeVigil', 'API key not found!')
             Log.write('[bevigil_subs] API key not found')
           end
 

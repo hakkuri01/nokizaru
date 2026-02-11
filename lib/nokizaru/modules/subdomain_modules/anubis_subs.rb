@@ -11,7 +11,7 @@ module Nokizaru
 
         # Run this module and store normalized results in the run context
         def call(hostname, http, found)
-          puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}AnubisDB#{Base::W}")
+          Base.requesting('AnubisDB')
           url = "https://jldc.me/anubis/subdomains/#{hostname}"
 
           begin
@@ -22,16 +22,16 @@ module Nokizaru
             when 200
               json_out = JSON.parse(Base.safe_body(resp))
               found.concat(json_out)
-              puts("#{Base::G}[+] #{Base::Y}AnubisDB #{Base::W}found #{Base::C}#{json_out.length} #{Base::W}subdomains!")
+              Base.found('AnubisDB', json_out.length)
             when 204, 404, 300
-              puts("#{Base::G}[+] #{Base::Y}AnubisDB #{Base::W}found #{Base::C}0 #{Base::W}subdomains!")
+              Base.found('AnubisDB', 0)
               Log.write("[anubis_subs] Status = #{status}, no subdomains found")
             else
               Base.print_status('AnubisDB', resp)
               Log.write("[anubis_subs] Status = #{status.inspect}, expected 200")
             end
           rescue StandardError => e
-            puts("#{Base::R}[-] #{Base::C}AnubisDB Exception : #{Base::W}#{e}")
+            Base.exception('AnubisDB', e)
             Log.write("[anubis_subs] Exception = #{e}")
           end
 

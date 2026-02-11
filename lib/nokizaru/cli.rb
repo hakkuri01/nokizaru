@@ -55,8 +55,8 @@ module Nokizaru
         ok = args.length == 1 && ['--help', '-h', 'help'].include?(args[0])
 
         unless ok
-          warn("#{R}[-] #{C}Invalid help syntax.#{W}")
-          warn("#{G}[+] #{C}Use #{W}nokizaru --help#{C} (or #{W}-h#{C}) to view the full CLI documentation.#{W}")
+          warn("#{UI.prefix(:error)} #{C}Invalid help syntax#{W}")
+          warn("#{UI.prefix(:plus)} #{C}Use #{W}nokizaru --help#{C} (or #{W}-h#{C}) to view the full CLI documentation#{W}")
           exit(1)
         end
 
@@ -72,8 +72,8 @@ module Nokizaru
     # Print CLI help with strict syntax handling for predictable UX
     def help(*args)
       if args.any?
-        puts("#{R}[-] #{C}Invalid help syntax.#{W}")
-        puts("#{G}[+] #{C}Use #{W}nokizaru --help#{C} to view the full CLI documentation.#{W}")
+        UI.line(:error, 'Invalid help syntax')
+        UI.line(:plus, 'Use nokizaru --help to view the full CLI documentation')
         exit(1)
       end
 
@@ -82,8 +82,8 @@ module Nokizaru
 
     # Print unknown command guidance and exit with a nonzero status
     def self.handle_no_command_error(command, _has_namespace = false)
-      warn("#{R}[-] #{C}Unknown command: #{W}#{command}#{W}")
-      warn("#{G}[+] #{C}Use #{W}nokizaru --help#{C} to view valid flags and usage.#{W}")
+      warn("#{UI.prefix(:error)} #{C}Unknown command : #{W}#{command}#{W}")
+      warn("#{UI.prefix(:plus)} #{C}Use #{W}nokizaru --help#{C} to view valid flags and usage#{W}")
       exit(1)
     end
 
@@ -204,10 +204,10 @@ module Nokizaru
     def scan(*args)
       if args && !args.empty?
         bad = args.join(' ')
-        puts("#{R}[-] #{C}Invalid syntax. Unexpected argument(s): #{W}#{bad}#{W}")
-        puts("#{G}[+] #{C}If you meant export formats, use #{W}-o#{C} with comma-separated formats.#{W}")
-        puts("#{G}[+] #{C}Example: #{W}nokizaru --headers --url https://example.com --export -o txt,json,html#{W}")
-        puts("#{G}[+] #{C}Tip: #{W}--export#{C} is a flag (no positional values).#{W}")
+        UI.line(:error, "Invalid syntax. Unexpected argument(s) : #{bad}")
+        UI.line(:plus, 'If you meant export formats, use -o with comma-separated formats')
+        UI.line(:plus, 'Example : nokizaru --headers --url https://example.com --export -o txt,json,html')
+        UI.line(:plus, 'Tip : --export is a flag (no positional values)')
         exit(1)
       end
 
@@ -273,15 +273,15 @@ module Nokizaru
         key_name, key_str = key_string.split('@', 2)
 
         if key_name.to_s.strip.empty? || key_str.to_s.strip.empty?
-          puts("#{CLI::R}[-] #{CLI::C}Invalid key syntax.#{CLI::W}")
-          puts("#{CLI::G}[+] #{CLI::C}Use: #{CLI::W}-k name@key#{CLI::W} (example: #{CLI::W}shodan@ABC123#{CLI::W})")
+          UI.line(:error, 'Invalid key syntax')
+          UI.line(:plus, 'Use : -k name@key (example: shodan@ABC123)')
           Log.write('Invalid key syntax supplied')
           exit(1)
         end
 
         unless valid_keys.include?(key_name)
-          puts("#{CLI::R}[-] #{CLI::C}Invalid key name!#{CLI::W}")
-          puts("#{CLI::G}[+] #{CLI::C}Valid key names: #{CLI::W}#{valid_keys.join(', ')}#{CLI::W}")
+          UI.line(:error, 'Invalid key name!')
+          UI.row(:plus, 'Valid key names', valid_keys.join(', '))
           Log.write('Invalid key name, exiting')
           exit(1)
         end
@@ -298,7 +298,7 @@ module Nokizaru
         keys_json[key_name] = key_str
         File.write(Paths.keys_file, JSON.pretty_generate(keys_json))
 
-        puts("#{CLI::G}[+] #{CLI::W}#{key_name} #{CLI::C}key saved.#{CLI::W} (not validated)")
+        UI.line(:info, "#{key_name} key saved (not validated)")
         exit(0)
       end
 
@@ -322,18 +322,18 @@ module Nokizaru
 
         target = @opts[:url].to_s
         if target.empty?
-          puts("#{CLI::R}[-] #{CLI::C}No Target Specified!#{CLI::W}")
+          UI.line(:error, 'No Target Specified!')
           exit(1)
         end
 
         unless target.start_with?('http://', 'https://')
-          puts("#{CLI::R}[-] #{CLI::C}Protocol Missing, Include #{CLI::W}http:// #{CLI::C}or#{CLI::W} https:// \n")
+          UI.line(:error, 'Protocol Missing, Include http:// or https://')
           Log.write("Protocol missing in #{target}, exiting")
           exit(1)
         end
 
         target = target.chomp('/')
-        puts("#{CLI::G}[+] #{CLI::C}Target : #{CLI::W}#{target}")
+        UI.row(:info, 'Target', target)
 
         info = parse_target(target)
 
@@ -370,7 +370,7 @@ module Nokizaru
             'run_id' => run_id,
             'base_dir' => workspace.base_dir
           }
-          puts("#{CLI::G}[+] #{CLI::C}Workspace enabled : #{CLI::W}#{workspace.base_dir}")
+          UI.row(:info, 'Workspace enabled', workspace.base_dir)
         end
 
         ctx = Nokizaru::Context.new(run: run, options: @opts, workspace: workspace, cache: cache)
@@ -388,7 +388,7 @@ module Nokizaru
         @skip.each { |k, v| enabled[k] = false if v }
 
         unless enabled.values.any?
-          puts("#{CLI::R}[-] #{CLI::C}No Modules Specified! Use#{CLI::W} --full #{CLI::C}or a module flag.#{CLI::W}")
+          UI.line(:error, 'No Modules Specified! Use --full or a module flag')
           exit(1)
         end
 
@@ -399,8 +399,8 @@ module Nokizaru
 
         if enabled[:sub]
           if info[:type_ip]
-            puts("#{CLI::R}[-] #{CLI::C}Sub-Domain Enumeration is Not Supported for IP Addresses#{CLI::W}\n")
-            exit(1)
+            UI.line(:error, 'Skipping Sub-Domain Enumeration : Not Supported for IP Addresses')
+            exit(1) unless @opts[:full]
           elsif !info[:private_ip]
             Nokizaru::Modules::Subdomains.call(info[:hostname], info[:timeout], ctx, info[:conf_path])
           end
@@ -463,9 +463,9 @@ module Nokizaru
 
         diff_target = resolve_diff_target
         if diff_target && !workspace
-          puts("\n#{CLI::R}[-] #{CLI::C}Diff requested without an active workspace.#{CLI::W}")
-          puts("#{CLI::G}[+] #{CLI::C}Enable a workspace with: #{CLI::W}--project <name>#{CLI::W}")
-          puts("#{CLI::G}[+] #{CLI::C}Workspace base: #{CLI::W}#{Paths.workspace_dir}#{CLI::W}")
+          UI.line(:error, 'Diff requested without an active workspace')
+          UI.line(:plus, 'Enable a workspace with: --project <name>')
+          UI.row(:plus, 'Workspace base', Paths.workspace_dir)
           Log.write('Diff requested without workspace; skipping')
         end
 
@@ -482,10 +482,10 @@ module Nokizaru
                                {}
                              end
 
-            puts("\n#{CLI::G}[+] #{CLI::C}Diffed against run #{CLI::W}#{prev_id}")
+            UI.row(:info, 'Diffed against run', prev_id)
             print_db_diff(run['diff_db'], label: 'Ronin DB diff')
           else
-            puts("\n#{CLI::R}[-] #{CLI::C}#{diff_ref[:message]}#{CLI::W}")
+            UI.line(:error, diff_ref[:message].to_s)
           end
         end
 
@@ -507,16 +507,16 @@ module Nokizaru
             )
             export_dir = File.dirname(export_paths.values.first) if export_paths.any?
           rescue ArgumentError => e
-            puts("\n#{CLI::R}[-] #{CLI::C}Export failed: #{CLI::W}#{e.message}")
-            puts("#{CLI::G}[+] #{CLI::C}Supported formats: #{CLI::W}txt,json,html#{CLI::W}")
+            UI.line(:error, "Export failed : #{e.message}")
+            UI.line(:plus, 'Supported formats : txt,json,html')
             Log.write("[export] #{e.class}: #{e.message}")
             exit(1)
           end
         end
 
-        puts("\n#{CLI::G}[+] #{CLI::C}Completed in #{CLI::W}#{format('%.2f', elapsed)}s")
-        puts("#{CLI::G}[+] #{CLI::C}Workspace run saved : #{CLI::W}#{workspace.run_dir(run_id)}") if workspace && run_id
-        puts("#{CLI::G}[+] #{CLI::C}Exported : #{CLI::W}#{export_dir}") if export_dir
+        UI.row(:info, 'Completed in', format('%.2f', elapsed) + 's')
+        UI.row(:info, 'Workspace run saved', workspace.run_dir(run_id)) if workspace && run_id
+        UI.row(:info, 'Exported', export_dir) if export_dir
         Log.write('-' * 30)
       end
 
@@ -527,13 +527,13 @@ module Nokizaru
         findings = Array(findings)
         return if findings.empty?
 
-        puts("\n#{CLI::G}[+] #{CLI::C}Findings#{CLI::W}")
+        UI.module_header('Findings')
         findings.each do |f|
           sev = (f['severity'] || 'low').to_s.upcase
           title = f['title'] || 'Finding'
           mod = f['module'] ? " (#{f['module']})" : ''
-          puts("  #{CLI::G}[#{sev}]#{CLI::W} #{title}#{mod}")
-          puts("       #{CLI::C}Evidence:#{CLI::W} #{f['evidence']}") if f['evidence']
+          UI.line(:info, "⟦ #{sev} ⟧ #{title}#{mod}")
+          UI.tree_rows([['Evidence', f['evidence']]]) if f['evidence']
         end
       end
 
@@ -542,11 +542,11 @@ module Nokizaru
         diff_db = diff_db.is_a?(Hash) ? diff_db : {}
         return if diff_db.empty?
 
-        puts("#{CLI::G}[+] #{CLI::C}#{label}:#{CLI::W}")
+        UI.line(:info, "#{label}:")
         diff_db.each do |kind, change|
           added = Array(change['added']).length
           removed = Array(change['removed']).length
-          puts("  #{CLI::C}#{kind}#{CLI::W}  +#{added} / -#{removed}")
+          UI.row(:info, kind.to_s, "+#{added} / -#{removed}")
         end
       end
 
@@ -581,13 +581,13 @@ module Nokizaru
 
         case state
         when 'enabled'
-          puts("#{CLI::G}[+] #{CLI::C}Workspace DB : #{CLI::W}enabled#{CLI::C} (collections: #{CLI::W}#{collections}#{CLI::C})#{CLI::W}")
+          UI.row(:info, 'Workspace DB', "enabled (collections: #{collections})")
         when 'unavailable'
           msg = error.empty? ? 'ronin-db not installed' : error
-          puts("#{CLI::G}[!] #{CLI::C}Workspace DB : #{CLI::W}unavailable#{CLI::C} (#{msg})#{CLI::W}")
+          UI.row(:error, 'Workspace DB', "unavailable (#{msg})")
         else
           msg = error.empty? ? 'partial ingest/snapshot failure' : error
-          puts("#{CLI::G}[!] #{CLI::C}Workspace DB : #{CLI::W}degraded#{CLI::C} (#{msg})#{CLI::W}")
+          UI.row(:error, 'Workspace DB', "degraded (#{msg})")
         end
       end
 
@@ -623,7 +623,7 @@ module Nokizaru
         module_flags = %i[full headers sslinfo whois crawl dns sub arch wayback ps dir]
         return if module_flags.any? { |k| @opts[k] }
 
-        puts("\n#{CLI::R}[-] Error : #{CLI::C}At least one argument is required. Try using --help#{CLI::W}")
+        UI.line(:error, 'At least one argument is required. Try using --help')
         exit(1)
       end
 
@@ -660,7 +660,7 @@ module Nokizaru
         uri = URI.parse(target)
         hostname = uri.host.to_s
         if hostname.empty?
-          puts("#{CLI::R}[-] #{CLI::C}Unable to parse hostname from target#{CLI::W}")
+          UI.line(:error, 'Unable to parse hostname from target')
           exit(1)
         end
 
@@ -682,7 +682,7 @@ module Nokizaru
           raise 'no A/AAAA records' unless ai
 
           ip = ai.ip_address
-          puts("\n#{CLI::G}[+] #{CLI::C}IP Address : #{CLI::W}#{ip}")
+          UI.row(:info, 'IP Address', ip)
           private_ip = IPAddr.new(ip).private?
         end
 

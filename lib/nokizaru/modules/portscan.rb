@@ -9,12 +9,6 @@ module Nokizaru
     module PortScan
       module_function
 
-      R = "\e[31m"  # red
-      G = "\e[32m"  # green
-      C = "\e[36m"  # cyan
-      W = "\e[0m"   # white
-      Y = "\e[33m"  # yellow
-
       PORT_LIST = {
         1 => 'tcpmux',
         9 => 'Discard',
@@ -132,8 +126,9 @@ module Nokizaru
       # Run this module and store normalized results in the run context
       def call(ip_addr, threads, ctx)
         result = { 'open_ports' => [] }
-        puts("\n#{Y}[!] Starting Port Scan...#{W}\n\n")
-        puts("#{G}[+] #{C}Scanning Top 100+ Ports With #{threads} Threads...#{W}\n\n")
+        UI.module_header('Starting Port Scan...')
+        UI.row(:plus, 'Scanning Top 100+ Ports With Threads', threads)
+        puts
 
         total = PORT_LIST.length
         counter = Concurrent::AtomicFixnum.new(0)
@@ -145,7 +140,7 @@ module Nokizaru
           pool.post do
             if open_port?(ip_addr, port)
               mutex.synchronize do
-                puts("\e[K#{G}[+] #{C}#{port} (#{name})#{W}")
+                puts("\r\e[K#{UI.prefix(:info)} #{port} (#{name})")
                 result['open_ports'] << "#{port} (#{name})"
               end
             end
@@ -153,14 +148,16 @@ module Nokizaru
             # Ignore
           ensure
             current = counter.increment
-            print("#{Y}[!] #{C}Scanning : #{W}#{current}/#{total}\r")
+            print(UI.progress(:plus, 'Scanning', "#{current}/#{total}"))
           end
         end
 
         pool.shutdown
         pool.wait_for_termination
 
-        puts("\n#{G}[+] #{C}Scan Completed!#{W}\n\n")
+        puts
+        UI.line(:info, 'Scan Completed!')
+        puts
 
         ctx.run['modules']['portscan'] = result
         ctx.add_artifact('open_ports', result['open_ports'].map { |p| p.to_s.split.first })

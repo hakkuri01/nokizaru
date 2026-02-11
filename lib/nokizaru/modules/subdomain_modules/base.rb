@@ -11,11 +11,31 @@ module Nokizaru
       module Base
         module_function
 
-        R = "\e[31m"
-        G = "\e[32m"
-        C = "\e[36m"
-        W = "\e[0m"
-        Y = "\e[33m"
+        # Print provider request start message
+        def requesting(name)
+          UI.line(:plus, "Requesting #{name}")
+        end
+
+        # Print provider success summary
+        def found(name, count)
+          UI.line(:info, "#{name} found #{count} subdomains!")
+        end
+
+        # Print provider error status
+        def status_error(name, status, reason = '')
+          suffix = reason.to_s.strip.empty? ? '' : " (#{reason})"
+          UI.line(:error, "#{name} Status : #{status}#{suffix}")
+        end
+
+        # Print provider exception
+        def exception(name, error)
+          UI.line(:error, "#{name} Exception : #{error}")
+        end
+
+        # Print provider skip reason
+        def skipping(name, reason)
+          UI.line(:error, "Skipping #{name} : #{reason}")
+        end
 
         # Wrap raw HTTPX response in HttpResult for consistent handling
         def wrap_response(raw_response)
@@ -95,18 +115,17 @@ module Nokizaru
         def print_status(vendor, resp)
           if resp.is_a?(HttpResult)
             if resp.success?
-              puts("#{G}[+] #{C}#{vendor} Status : #{W}#{resp.status}")
+              UI.line(:info, "#{vendor} Status : #{resp.status}")
             else
               st = resp.status || 'ERR'
               reason = resp.error_message
-              puts("#{R}[-] #{C}#{vendor} Status : #{W}#{st} (#{reason})")
+              status_error(vendor, st, reason)
             end
           else
             # Legacy handling
             st = status_label(resp)
             reason = failure_reason(resp)
-            suffix = reason.empty? ? '' : " (#{reason})"
-            puts("#{R}[-] #{C}#{vendor} Status : #{W}#{st}#{suffix}")
+            status_error(vendor, st, reason)
           end
         end
 

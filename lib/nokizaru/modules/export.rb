@@ -8,7 +8,7 @@ module Nokizaru
       # Run this module and store normalized results in the run context
       def call(output, data)
         if output[:format] != 'txt'
-          warn("\e[31m[-] \e[36mInvalid Output Format, Valid Formats : \e[0mtxt")
+          UI.line(:error, 'Invalid Output Format, Valid Formats : txt')
           exit(1)
         end
 

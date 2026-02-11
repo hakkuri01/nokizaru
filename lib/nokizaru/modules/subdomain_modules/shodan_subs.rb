@@ -14,7 +14,7 @@ module Nokizaru
           sho_key = Base.ensure_key('shodan', conf_path, 'NK_SHODAN_KEY')
 
           if sho_key
-            puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}Shodan#{Base::W}")
+            Base.requesting('Shodan')
             url = "https://api.shodan.io/dns/domain/#{hostname}?key=#{sho_key}"
             begin
               resp = http.get(url)
@@ -23,18 +23,18 @@ module Nokizaru
                 json_read = JSON.parse(Base.safe_body(resp))
                 subs = json_read['subdomains'] || []
                 tmp = subs.map { |s| "#{s}.#{hostname}" }
-                puts("#{Base::G}[+] #{Base::Y}Shodan #{Base::W}found #{Base::C}#{tmp.length} #{Base::W}subdomains!")
+                Base.found('Shodan', tmp.length)
                 found.concat(tmp)
               else
-                puts("#{Base::R}[-] #{Base::C}Shodan Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
+                Base.status_error('Shodan', Base.status_label(resp), Base.failure_reason(resp))
                 Log.write("[shodan_subs] Status = #{status}, expected 200")
               end
             rescue StandardError => e
-              puts("#{Base::R}[-] #{Base::C}Shodan Exception : #{Base::W}#{e}")
+              Base.exception('Shodan', e)
               Log.write("[shodan_subs] Exception = #{e}")
             end
           else
-            puts("#{Base::Y}[!] Skipping Shodan : #{Base::W}API key not found!")
+            Base.skipping('Shodan', 'API key not found!')
             Log.write('[shodan_subs] API key not found')
           end
 

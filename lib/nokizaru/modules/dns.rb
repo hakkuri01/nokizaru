@@ -8,12 +8,6 @@ module Nokizaru
     module DNSEnumeration
       module_function
 
-      R = "\e[31m"  # red
-      G = "\e[32m"  # green
-      C = "\e[36m"  # cyan
-      W = "\e[0m"   # white
-      Y = "\e[33m"  # yellow
-
       DNS_RECORDS = %w[
         A AAAA AFSDB APL CAA CDNSKEY CDS CERT CNAME CSYNC DHCID DLV DNAME DNSKEY DS
         EUI48 EUI64 HINFO HIP HTTPS IPSECKEY KEY KX LOC MX NAPTR NS NSEC NSEC3
@@ -43,9 +37,7 @@ module Nokizaru
       # Run this module and store normalized results in the run context
       def call(domain, dns_servers, ctx)
         result = { 'records' => {} }
-        puts("\n#{Y}[!] Starting DNS Enumeration...#{W}\n\n")
-
-        full_ans = []
+        UI.module_header('Starting DNS Enumeration...')
 
         # Hard cap keeps full scans smooth even on flaky resolvers
         per_query_timeout = 2
@@ -61,7 +53,7 @@ module Nokizaru
           check.query(domain, 'A')
         rescue Dnsruby::NXDomain => e
           Log.write("[dns] Exception = #{e}")
-          puts("#{R}[-] #{C}DNS Records Not Found!#{W}")
+          UI.line(:error, 'DNS Records Not Found!')
           result['error'] = 'DNS Records Not Found'
           ctx.run['modules']['dns'] = result
           return
@@ -124,12 +116,7 @@ module Nokizaru
           (result['records'][rr_type] ||= []) << rr_val
         end
 
-        result['records'].each do |rr_type, rr_vals|
-          Array(rr_vals).each do |rr_val|
-            puts("#{C}#{rr_type}\t: #{W}#{rr_val}")
-            full_ans << "#{rr_type} : #{rr_val}"
-          end
-        end
+        display_rows = []
 
         # DMARC (separate query; not part of the RR loop)
         dmarc_target = "_dmarc.#{domain}"
@@ -142,18 +129,26 @@ module Nokizaru
 
           resp = dmarc_resolver.query(dmarc_target, 'TXT')
           resp.answer.each do |rr|
-            puts("#{C}DMARC \t: #{W}#{rr.rdata}")
-            (result['records']['DMARC'] ||= []) << rr.rdata.to_s
+            normalized = format_rdata(rr.rdata)
+            (result['records']['DMARC'] ||= []) << normalized
           end
         rescue Dnsruby::NXDomain => e
           Log.write("[dns.dmarc] Exception = #{e}")
-          puts("\n#{R}[-] #{C}DMARC Record Not Found!#{W}")
+          UI.line(:error, 'DMARC Record Not Found!')
           result['records']['DMARC'] ||= []
         rescue Dnsruby::ResolvError => e
           Log.write("[dns.dmarc] Exception = #{e}")
         rescue StandardError => e
           Log.write("[dns.dmarc] Exception = #{e}")
         end
+
+        result['records'].each do |rr_type, rr_vals|
+          Array(rr_vals).each do |rr_val|
+            display_rows << [rr_type, rr_val]
+          end
+        end
+
+        UI.rows(:info, display_rows) if display_rows.any?
 
         ctx.run['modules']['dns'] = result
 

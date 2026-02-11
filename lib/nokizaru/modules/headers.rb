@@ -10,30 +10,23 @@ module Nokizaru
     module Headers
       module_function
 
-      R = "\e[31m"
-      G = "\e[32m"
-      C = "\e[36m"
-      W = "\e[0m"
-      Y = "\e[33m"
-
       TIMEOUT = 10
 
       # Run this module and store normalized results in the run context
       def call(target, ctx)
         result = { 'headers' => {} }
-        puts("\n#{Y}[!] Headers :#{W}\n\n")
+        UI.module_header('Headers :')
 
         begin
           uri = URI.parse(target)
           response = fetch(uri)
 
           if response
-            response.each_header do |key, val|
-              puts("#{C}#{key} : #{W}#{val}")
-              result['headers'][key] = val
-            end
+            pairs = response.each_header.map { |key, val| [key, val] }
+            UI.rows(:info, pairs)
+            pairs.each { |key, val| result['headers'][key] = val }
           else
-            puts("#{R}[-] #{C}Failed to retrieve headers#{W}\n")
+            UI.line(:error, 'Failed to retrieve headers')
             result['error'] = 'Failed to retrieve headers'
           end
         rescue OpenSSL::SSL::SSLError => e
@@ -42,7 +35,7 @@ module Nokizaru
           result['error_type'] = 'SSLError'
           Log.write("[headers] SSL error: #{e.message}")
         rescue StandardError => e
-          puts("#{R}[-] #{C}Error: #{W}#{e.class} - #{e.message}\n")
+          UI.line(:error, "Error : #{e.class} - #{e.message}")
           result['error'] = e.message
           result['error_type'] = e.class.name
           Log.write("[headers] Exception: #{e.class} - #{e.message}")
@@ -75,14 +68,14 @@ module Nokizaru
 
       # Print SSL errors with guidance for certificate validation failures
       def display_ssl_error(error, target)
-        puts("#{R}[-] #{C}SSL Error#{W}")
-        puts("#{R}[-] #{W}#{error.message}\n")
+        UI.line(:error, 'SSL Error')
+        UI.line(:error, error.message.to_s)
 
         return unless target.start_with?('https://')
 
         http_url = target.sub('https://', 'http://')
-        puts("#{Y}[!] #{C}Suggestion: #{W}Try using HTTP instead of HTTPS")
-        puts("#{Y}[!] #{C}Try: #{W}nokizaru --url #{http_url} [options]\n")
+        UI.row(:plus, 'Suggestion', 'Try using HTTP instead of HTTPS')
+        UI.row(:plus, 'Try command', "nokizaru --url #{http_url} [options]")
       end
     end
   end

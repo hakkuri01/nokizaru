@@ -10,21 +10,15 @@ module Nokizaru
     module ArchitectureFingerprinting
       module_function
 
-      R = "\e[31m"
-      G = "\e[32m"
-      C = "\e[36m"
-      W = "\e[0m"
-      Y = "\e[33m"
-
       DEFAULT_UA = "Nokizaru/#{Nokizaru::VERSION} (+https://github.com/hakkuri01)"
 
       # Run this module and store normalized results in the run context
       def call(target, timeout, ctx, _conf_path)
-        puts("\n#{Y}[!] Starting Architecture Fingerprinting...#{W}\n")
+        UI.module_header('Starting Architecture Fingerprinting...')
 
         api_key = KeyStore.fetch('wappalyzer', env: 'NK_WAPPALYZER_KEY')
         if api_key.to_s.strip.empty?
-          puts("#{Y}[!] Skipping Architecture Fingerprinting : #{W}API key not found!")
+          UI.row(:error, 'Skipping Architecture Fingerprinting', 'API key not found!')
           Log.write('[arch] API key not found')
           ctx.run['modules']['architecture_fingerprinting'] = { 'technologies' => [], 'status' => 'skipped_no_key' }
           return
@@ -48,7 +42,7 @@ module Nokizaru
         ctx.add_artifact('technologies', tech.map { |t| t['name'] }.compact)
         Log.write('[arch] Completed')
       rescue StandardError => e
-        puts("#{R}[-] #{C}Architecture Fingerprinting Exception : #{W}#{e}")
+        UI.line(:error, "Architecture Fingerprinting Exception : #{e}")
         Log.write("[arch] Exception = #{e}")
         ctx.run['modules']['architecture_fingerprinting'] = { 'technologies' => [], 'status' => 'error' }
       end
@@ -66,14 +60,15 @@ module Nokizaru
                    else
                      "status=#{status || 'ERR'}"
                    end
-          puts("#{R}[-] #{C}Architecture Fingerprinting Status : #{W}#{status || 'ERR'}#{reason.empty? ? '' : " (#{reason})"}")
+          UI.line(:error,
+                  "Architecture Fingerprinting Status : #{status || 'ERR'}#{reason.empty? ? '' : " (#{reason})"}")
           Log.write("[arch] Status = #{status.inspect}, expected 200")
           return []
         end
 
         parse_wappalyzer_body(resp.body.to_s)
       rescue StandardError => e
-        puts("#{R}[-] #{C}Architecture Fingerprinting Parse Exception : #{W}#{e}")
+        UI.line(:error, "Architecture Fingerprinting Parse Exception : #{e}")
         Log.write("[arch] Parse exception = #{e}")
         []
       end
@@ -126,11 +121,11 @@ module Nokizaru
       # Print detected technologies in a concise terminal format
       def print_technologies(tech)
         if tech.empty?
-          puts("#{Y}[!] #{C}No technologies identified.#{W}")
+          UI.line(:error, 'No technologies identified')
           return
         end
 
-        puts("#{G}[+] #{C}Architecture Fingerprinting Results : #{W}\n")
+        UI.section('Architecture Fingerprinting Results :')
         tech.first(20).each do |entry|
           categories = Array(entry['categories'])
           version = entry['version'].to_s
@@ -140,8 +135,9 @@ module Nokizaru
           suffix = details.empty? ? '' : " (#{details.join(' | ')})"
           puts("#{entry['name']}#{suffix}")
         end
-        puts("\n#{G}[+]#{C} Results truncated...#{W}") if tech.length > 20
-        puts("\n#{G}[+] #{C}Total Unique Technologies Found : #{W}#{tech.length}")
+        UI.line(:info, 'Results truncated...') if tech.length > 20
+        puts
+        UI.row(:info, 'Total Unique Technologies Found', tech.length)
       end
     end
   end

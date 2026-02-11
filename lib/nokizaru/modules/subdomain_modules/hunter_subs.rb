@@ -16,7 +16,7 @@ module Nokizaru
           hunter_key = Base.ensure_key('hunter', conf_path, 'NK_HUNTER_KEY')
 
           if hunter_key
-            puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}Hunter#{Base::W}")
+            Base.requesting('Hunter')
 
             url = 'https://api.hunter.how/search'
             query = "domain.suffix==\"#{hostname}\""
@@ -42,7 +42,7 @@ module Nokizaru
                 resp_code = json_data['code']
                 if resp_code != 200
                   resp_msg = json_data['message']
-                  puts("#{Base::R}[-] #{Base::C}Hunter Status : #{Base::W}#{resp_code}, #{resp_msg}")
+                  Base.status_error('Hunter', resp_code, resp_msg)
                   Log.write("[hunter_subs] Status = #{resp_code}, expected 200")
                   return
                 end
@@ -50,17 +50,17 @@ module Nokizaru
                 list = json_data.dig('data', 'list') || []
                 subs = list.map { |e| e['domain'] }.compact
                 found.concat(subs)
-                puts("#{Base::G}[+] #{Base::Y}Hunter #{Base::W}found #{Base::C}#{subs.length} #{Base::W}subdomains!")
+                Base.found('Hunter', subs.length)
               else
-                puts("#{Base::R}[-] #{Base::C}Hunter Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
+                Base.status_error('Hunter', Base.status_label(resp), Base.failure_reason(resp))
                 Log.write("[hunter_subs] Status = #{status}, expected 200")
               end
             rescue StandardError => e
-              puts("#{Base::R}[-] #{Base::C}Hunter Exception : #{Base::W}#{e}")
+              Base.exception('Hunter', e)
               Log.write("[hunter_subs] Exception = #{e}")
             end
           else
-            puts("#{Base::Y}[!] Skipping Hunter : #{Base::W}API key not found!")
+            Base.skipping('Hunter', 'API key not found!')
             Log.write('[hunter_subs] API key not found')
           end
 

@@ -9,24 +9,18 @@ module Nokizaru
     module SSLInfo
       module_function
 
-      R = "\e[31m"  # red
-      G = "\e[32m"  # green
-      C = "\e[36m"  # cyan
-      W = "\e[0m"   # white
-      Y = "\e[33m"  # yellow
-
       # Run this module and store normalized results in the run context
       def call(hostname, ssl_port, ctx)
         result = {}
         presence = false
-        puts("\n#{Y}[!] SSL Certificate Information : #{W}\n\n")
+        UI.module_header('SSL Certificate Information :')
 
         begin
           Socket.tcp(hostname, ssl_port, connect_timeout: 5) { |_s| }
           presence = true
         rescue StandardError
           presence = false
-          puts("#{R}[-] #{C}SSL is not Present on Target URL...Skipping...#{W}")
+          UI.line(:error, 'SSL is not Present on Target URL...Skipping...')
           result['Error'] = 'SSL is not Present on Target URL'
           Log.write('[sslinfo] SSL is not Present on Target URL...Skipping...')
         end
@@ -66,7 +60,7 @@ module Nokizaru
             result['cert'] = cert_dict
             process_cert(cert_dict, result)
           rescue StandardError => e
-            puts("#{R}[-] #{C}Exception : #{W}#{e}")
+            UI.line(:error, "Exception : #{e}")
             result['Error'] = e.to_s
             Log.write("[sslinfo] Exception = #{e}")
           ensure
@@ -104,22 +98,23 @@ module Nokizaru
 
       # Normalize certificate metadata for module output and exports
       def process_cert(info, result)
+        scalar_pairs = info.filter_map { |key, val| [key, val] unless val.is_a?(Hash) || val.is_a?(Array) }
+        scalar_width = scalar_pairs.map { |(key, _)| key.to_s.length }.max.to_i
+
         info.each do |key, val|
           case val
           when Hash
-            puts("#{G}[+] #{C}#{key}#{W}")
-            val.each do |sub_key, sub_val|
-              puts("\t#{G}└╴#{C}#{sub_key}: #{W}#{sub_val}")
-              result["#{key}-#{sub_key}"] = sub_val
-            end
+            UI.tree_header(key)
+            entries = val.map { |sub_key, sub_val| [sub_key, sub_val] }
+            UI.tree_rows(entries)
+            entries.each { |sub_key, sub_val| result["#{key}-#{sub_key}"] = sub_val }
           when Array
-            puts("#{G}[+] #{C}#{key}#{W}")
-            val.each_with_index do |sub_val, idx|
-              puts("\t#{G}└╴#{C}#{idx}: #{W}#{sub_val}")
-              result["#{key}-#{idx}"] = sub_val
-            end
+            UI.tree_header(key)
+            entries = val.each_with_index.map { |sub_val, idx| [idx, sub_val] }
+            UI.tree_rows(entries)
+            entries.each { |idx, sub_val| result["#{key}-#{idx}"] = sub_val }
           else
-            puts("#{G}[+] #{C}#{key} : #{W}#{val}")
+            UI.row(:info, key, val, label_width: scalar_width)
             result[key] = val
           end
         end

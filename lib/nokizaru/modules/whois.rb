@@ -10,26 +10,20 @@ module Nokizaru
     module WhoisLookup
       module_function
 
-      R = "\e[31m"  # red
-      G = "\e[32m"  # green
-      C = "\e[36m"  # cyan
-      W = "\e[0m"   # white
-      Y = "\e[33m"  # yellow
-
       # Run this module and store normalized results in the run context
       def call(domain, tld, ctx)
         result = {}
         begin
           db_json = JSON.parse(File.read(Paths.whois_servers_file))
         rescue Errno::ENOENT
-          puts("#{R}[-] Error : #{C}Missing whois server database file: #{W}#{Paths.whois_servers_file}")
-          puts("#{G}[+] #{C}Reinstall the gem/repo so #{W}data/whois_servers.json#{C} is present.")
+          UI.line(:error, "Error : Missing whois server database file...⟦ #{Paths.whois_servers_file} ⟧")
+          UI.line(:plus, 'Reinstall the gem/repo so data/whois_servers.json is present')
           Log.write('[whois] Missing whois_servers.json')
           ctx.run['modules']['whois'] = { 'Error' => 'Missing whois server DB (whois_servers.json)' }
           return
         end
 
-        puts("\n#{Y}[!] Whois Lookup : #{W}\n\n")
+        UI.module_header('Whois Lookup :')
 
         begin
           whois_sv = db_json.fetch(tld)
@@ -38,14 +32,14 @@ module Nokizaru
           raw = ctx.cache_fetch(cache_key || "whois:#{query}", ttl_s: 86_400) do
             raw_whois(query, whois_sv)
           end
-          puts(raw)
+          print_whois(raw)
           result['whois'] = raw
         rescue KeyError
-          puts("#{R}[-] Error : #{C}This domain suffix is not supported.#{W}")
+          UI.line(:error, 'Error : This domain suffix is not supported')
           result['Error'] = 'This domain suffix is not supported.'
           Log.write('[whois] Exception = This domain suffix is not supported.')
         rescue StandardError => e
-          puts("#{R}[-] Error : #{C}#{e}#{W}")
+          UI.line(:error, "Error : #{e}")
           result['Error'] = e.to_s
           Log.write("[whois] Exception = #{e}")
         end
@@ -66,6 +60,27 @@ module Nokizaru
         end
         # Keep as raw text
         resp.split('>>>', 2).first
+      end
+
+      # Print whois text as aligned key/value rows when possible
+      def print_whois(raw)
+        pairs = []
+        misc = []
+
+        raw.to_s.each_line do |line|
+          clean = line.strip
+          next if clean.empty?
+
+          if clean.include?(':')
+            key, value = clean.split(':', 2)
+            pairs << [key.strip, value.to_s.strip]
+          else
+            misc << clean
+          end
+        end
+
+        UI.rows(:info, pairs) if pairs.any?
+        misc.each { |line| UI.line(:info, line) }
       end
     end
   end

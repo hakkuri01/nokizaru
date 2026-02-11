@@ -11,7 +11,7 @@ module Nokizaru
 
         # Run this module and store normalized results in the run context
         def call(hostname, http, found)
-          puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}CertSpotter#{Base::W}")
+          Base.requesting('CertSpotter')
           url = 'https://api.certspotter.com/v1/issuances'
           params = { domain: hostname, expand: 'dns_names', include_subdomains: 'true' }
           begin
@@ -19,16 +19,16 @@ module Nokizaru
             status = Base.safe_status(resp)
             if status == 200
               json_read = JSON.parse(Base.safe_body(resp))
-              puts("#{Base::G}[+] #{Base::Y}Certspotter #{Base::W}found #{Base::C}#{json_read.length} #{Base::W}subdomains!")
+              Base.found('Certspotter', json_read.length)
               json_read.each do |entry|
                 found.concat(entry['dns_names'] || [])
               end
             else
-              puts("#{Base::R}[-] #{Base::C}CertSpotter Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
+              Base.status_error('CertSpotter', Base.status_label(resp), Base.failure_reason(resp))
               Log.write("[certspot_subs] Status = #{status}, expected 200")
             end
           rescue StandardError => e
-            puts("#{Base::R}[-] #{Base::C}CertSpotter Exception : #{Base::W}#{e}")
+            Base.exception('CertSpotter', e)
             Log.write("[certspot_subs] Exception = #{e}")
           end
           Log.write('[certspot_subs] Completed')

@@ -13,23 +13,30 @@ module Nokizaru
     module Crawler
       module_function
 
-      R = "\e[31m"
-      G = "\e[32m"
-      C = "\e[36m"
-      W = "\e[0m"
-      Y = "\e[33m"
-
       TIMEOUT = 10
       USER_AGENT = 'Nokizaru'
       PREVIEW_LIMIT = 8
       MAX_FETCH_WORKERS = 8
       MAX_SITEMAPS = 200
+      STEP_LABELS = [
+        'Looking for robots.txt',
+        'Extracting robots Links',
+        'Looking for sitemap.xml',
+        'Extracting CSS Links',
+        'Extracting JavaScript Links',
+        'Extracting Internal Links',
+        'Extracting External Links',
+        'Extracting Image Links',
+        'Crawling Sitemaps',
+        'Crawling Javascripts'
+      ].freeze
+      STEP_LABEL_WIDTH = STEP_LABELS.map(&:length).max
 
       # Run this module and store normalized results in the run context
       def call(target, protocol, netloc, ctx)
         result = initialize_result
 
-        puts("\n#{Y}[!] Starting Crawler...#{W}\n\n")
+        UI.module_header('Starting Crawler...')
 
         base_url = "#{protocol}://#{netloc}"
 
@@ -76,14 +83,14 @@ module Nokizaru
         response = http_get(target)
 
         unless response
-          puts("#{R}[-] Failed to fetch target#{W}")
+          UI.line(:error, 'Failed to fetch target')
           result['error'] = 'Failed to fetch target'
           ctx.run['modules']['crawler'] = result
           return nil
         end
 
         unless response.is_a?(Net::HTTPSuccess)
-          puts("#{R}[-] #{C}Status : #{W}#{response.code}")
+          UI.row(:error, 'Status', response.code)
           Log.write("[crawler] Status = #{response.code}, expected 200")
           result['error'] = "HTTP status #{response.code}"
           ctx.run['modules']['crawler'] = result
@@ -92,7 +99,7 @@ module Nokizaru
 
         Nokogiri::HTML(response.body)
       rescue StandardError => e
-        puts("#{R}[-] Exception : #{C}#{e}#{W}")
+        UI.line(:error, "Exception : #{e}")
         Log.write("[crawler] Exception = #{e}")
         result['error'] = e.to_s
         ctx.run['modules']['crawler'] = result
@@ -137,14 +144,9 @@ module Nokizaru
         r_total = []
         sm_total = []
 
-        print("#{G}[+] #{C}Looking for robots.txt#{W}")
-
         response = http_get(robo_url)
 
         if response&.is_a?(Net::HTTPSuccess)
-          puts("#{G}#{'['.rjust(9, '.')} Found ]#{W}")
-          print("#{G}[+] #{C}Extracting robots Links#{W}")
-
           response.body.each_line do |line|
             next unless line.start_with?('Disallow', 'Allow', 'Sitemap')
 
@@ -156,11 +158,12 @@ module Nokizaru
             sm_total << url if url.end_with?('xml')
           end
 
-          puts("#{G}#{'['.rjust(8, '.')} #{r_total.uniq.length} ]")
+          step_row(:info, 'Looking for robots.txt', 'Found')
+          step_row(:info, 'Extracting robots Links', r_total.uniq.length)
         elsif response&.code == '404'
-          puts("#{R}#{'['.rjust(9, '.')} Not Found ]#{W}")
+          step_row(:info, 'Looking for robots.txt', 'Not Found')
         else
-          puts("#{R}#{'['.rjust(9, '.')} #{response&.code || 'Error'} ]#{W}")
+          step_row(:error, 'Looking for robots.txt', response&.code || 'Error')
         end
 
         [r_total.uniq, sm_total.uniq]
@@ -170,17 +173,15 @@ module Nokizaru
       def sitemap(sm_url, sm_total)
         sm_total = Array(sm_total).dup
 
-        print("#{G}[+] #{C}Looking for sitemap.xml#{W}")
-
         response = http_get(sm_url)
 
         if response&.is_a?(Net::HTTPSuccess)
-          puts("#{G}#{'['.rjust(8, '.')} Found ]#{W}")
+          step_row(:info, 'Looking for sitemap.xml', 'Found')
           sm_total << sm_url
         elsif response&.code == '404'
-          puts("#{R}#{'['.rjust(8, '.')} Not Found ]#{W}")
+          step_row(:info, 'Looking for sitemap.xml', 'Not Found')
         else
-          puts("#{R}#{'['.rjust(8, '.')} #{response&.code || 'Error'} ]#{W}")
+          step_row(:error, 'Looking for sitemap.xml', response&.code || 'Error')
         end
 
         sm_total.uniq
@@ -189,36 +190,30 @@ module Nokizaru
       # Collect stylesheet URLs referenced by the initial response document
       def css(target, soup)
         links = []
-        print("#{G}[+] #{C}Extracting CSS Links#{W}")
-
         soup.css('link[rel="stylesheet"]').each do |tag|
           href = url_filter(target, tag['href'])
           links << href if href
         end
 
-        puts("#{G}#{'['.rjust(13, '.')} #{links.uniq.length} ]")
+        step_row(:info, 'Extracting CSS Links', links.uniq.length)
         links.uniq
       end
 
       # Collect JavaScript asset URLs for later endpoint extraction
       def js_scan(target, soup)
         links = []
-        print("#{G}[+] #{C}Extracting JavaScript Links#{W}")
-
         soup.css('script[src]').each do |tag|
           src = url_filter(target, tag['src'])
           links << src if src
         end
 
-        puts("#{G}#{'['.rjust(5, '.')} #{links.uniq.length} ]")
+        step_row(:info, 'Extracting JavaScript Links', links.uniq.length)
         links.uniq
       end
 
       # Collect links that remain within the target scope
       def internal_links(target, soup)
         links = []
-        print("#{G}[+] #{C}Extracting Internal Links#{W}")
-
         host = begin
           PublicSuffix.domain(URI(target).host)
         rescue StandardError
@@ -240,15 +235,13 @@ module Nokizaru
           links << href
         end
 
-        puts("#{G}#{'['.rjust(11, '.')} #{links.uniq.length} ]")
+        step_row(:info, 'Extracting Internal Links', links.uniq.length)
         links.uniq
       end
 
       # Collect links that point outside the target scope
       def external_links(target, soup)
         links = []
-        print("#{G}[+] #{C}Extracting External Links#{W}")
-
         host = begin
           PublicSuffix.domain(URI(target).host)
         rescue StandardError
@@ -270,21 +263,19 @@ module Nokizaru
           links << href
         end
 
-        puts("#{G}#{'['.rjust(11, '.')} #{links.uniq.length} ]")
+        step_row(:info, 'Extracting External Links', links.uniq.length)
         links.uniq
       end
 
       # Collect image asset URLs that can reveal hidden application paths
       def images(target, soup)
         links = []
-        print("#{G}[+] #{C}Extracting Image Links#{W}")
-
         soup.css('img[src]').each do |tag|
           src = url_filter(target, tag['src'])
           links << src if src
         end
 
-        puts("#{G}#{'['.rjust(14, '.')} #{links.uniq.length} ]")
+        step_row(:info, 'Extracting Image Links', links.uniq.length)
         links.uniq
       end
 
@@ -293,8 +284,6 @@ module Nokizaru
         links = []
         sm_total = Array(sm_total).compact.map(&:strip).uniq
         return links if sm_total.empty?
-
-        print("#{G}[+] #{C}Crawling Sitemaps#{W}")
 
         seen_sitemaps = Set.new
         pending = sm_total.select { |url| url.downcase.end_with?('.xml') }
@@ -333,7 +322,7 @@ module Nokizaru
           pending = discovered_sitemaps.uniq
         end
 
-        puts("#{G}#{'['.rjust(16, '.')} #{links.uniq.length} ]")
+        step_row(:info, 'Crawling Sitemaps', links.uniq.length)
         links.uniq
       end
 
@@ -342,8 +331,6 @@ module Nokizaru
         urls = []
         js_total = Array(js_total).compact.uniq
         return urls if js_total.empty?
-
-        print("#{G}[+] #{C}Crawling JS#{W}")
 
         mutex = Mutex.new
         each_in_threads(js_total) do |js|
@@ -358,8 +345,13 @@ module Nokizaru
           Log.write("[crawler.js_crawl] Exception = #{e}")
         end
 
-        puts("#{G}#{'['.rjust(22, '.')} #{urls.uniq.length} ]")
+        step_row(:info, 'Crawling Javascripts', urls.uniq.length)
         urls.uniq
+      end
+
+      # Print crawler status rows with stable alignment across extraction steps
+      def step_row(type, label, value)
+        UI.row(type, label, value, label_width: STEP_LABEL_WIDTH)
       end
 
       # Aggregate crawler outputs into summary statistics for reporting
@@ -414,10 +406,10 @@ module Nokizaru
         links = Array(links).compact.uniq
         return if links.empty?
 
-        puts("#{G}[+] #{C}#{label} Preview#{W}")
-        links.first(PREVIEW_LIMIT).each { |link| puts("    #{W}#{link}") }
+        UI.line(:info, "#{label} Preview")
+        links.first(PREVIEW_LIMIT).each { |link| puts("    #{link}") }
         remaining = links.length - PREVIEW_LIMIT
-        puts("    #{Y}... #{remaining} more#{W}") if remaining.positive?
+        puts("    ... #{remaining} more") if remaining.positive?
       end
 
       # Normalize extracted URLs before adding them to results

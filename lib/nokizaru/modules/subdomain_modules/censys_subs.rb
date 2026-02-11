@@ -18,18 +18,18 @@ module Nokizaru
           api_secret = Base.ensure_key('censys_api_secret', conf_path, 'NK_CENSYS_API_SECRET')
 
           if api_id && api_secret
-            puts("#{Base::Y}[!] #{Base::C}Requesting #{Base::G}Censys#{Base::W}")
+            Base.requesting('Censys')
 
             begin
               subs = fetch_all_subdomains(hostname, http, api_id, api_secret)
-              puts("#{Base::G}[+] #{Base::Y}Censys #{Base::W}found #{Base::C}#{subs.length} #{Base::W}subdomains!")
+              Base.found('Censys', subs.length)
               found.concat(subs)
             rescue StandardError => e
-              puts("#{Base::R}[-] #{Base::C}Censys Exception : #{Base::W}#{e}")
+              Base.exception('Censys', e)
               Log.write("[censys_subs] Exception = #{e}")
             end
           else
-            puts("#{Base::Y}[!] Skipping Censys : #{Base::W}API credentials not found!")
+            Base.skipping('Censys', 'API credentials not found!')
             Log.write('[censys_subs] API credentials not found')
           end
 
@@ -48,7 +48,7 @@ module Nokizaru
             status = Base.safe_status(resp)
 
             unless status == 200
-              puts("#{Base::R}[-] #{Base::C}Censys Status : #{Base::W}#{Base.status_label(resp)}#{Base.failure_reason(resp).empty? ? '' : " (#{Base.failure_reason(resp)})"}")
+              Base.status_error('Censys', Base.status_label(resp), Base.failure_reason(resp))
               Log.write("[censys_subs] Status = #{status}, expected 200")
               break
             end
