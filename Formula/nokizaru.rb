@@ -1,8 +1,8 @@
 class Nokizaru < Formula
   desc 'Fast modular web recon CLI for bug bounty workflows'
   homepage 'https://github.com/hakkuri01/nokizaru'
-  url 'https://github.com/hakkuri01/nokizaru/archive/refs/tags/v1.6.7.tar.gz'
-  sha256 '01be8f4684ec7160b467cdc93a5cdcbaaf588050d8427f47c682e00d911e8460'
+  url 'https://github.com/hakkuri01/nokizaru/archive/refs/tags/v1.7.7.tar.gz'
+  sha256 '78769706aa83dbffece3de869cd60c7f97f1eeb19ae5f6a3eefcca0d26aabf8c'
   license 'MIT'
   head 'https://github.com/hakkuri01/nokizaru.git', branch: 'main'
 
