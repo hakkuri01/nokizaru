@@ -207,9 +207,9 @@ module Nokizaru
         return if urls.empty?
 
         UI.line(:info, 'Wayback URL Preview')
-        urls.first(PREVIEW_LIMIT).each { |url| puts("    #{url}") }
+        urls.first(PREVIEW_LIMIT).each { |url| puts("    #{UI::C}#{url}#{UI::W}") }
         remaining = urls.length - PREVIEW_LIMIT
-        puts("    ... #{remaining} more") if remaining.positive?
+        puts("    #{UI::C}... #{remaining} more#{UI::W}") if remaining.positive?
       end
 
       # Build fallback URLs from availability metadata when CDX is sparse

@@ -140,7 +140,7 @@ module Nokizaru
           pool.post do
             if open_port?(ip_addr, port)
               mutex.synchronize do
-                puts("\r\e[K#{UI.prefix(:info)} #{port} (#{name})")
+                puts("\r\e[K#{UI.prefix(:info)} #{UI::C}#{port} (#{name})#{UI::W}")
                 result['open_ports'] << "#{port} (#{name})"
               end
             end

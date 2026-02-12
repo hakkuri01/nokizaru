@@ -532,9 +532,22 @@ module Nokizaru
           sev = (f['severity'] || 'low').to_s.upcase
           title = f['title'] || 'Finding'
           mod = f['module'] ? " (#{f['module']})" : ''
-          UI.line(:info, "⟦ #{sev} ⟧ #{title}#{mod}")
+          UI.line(:info, "#{colorize_finding_severity(sev)} #{title}#{mod}")
           UI.tree_rows([['Evidence', f['evidence']]]) if f['evidence']
         end
+      end
+
+      def colorize_finding_severity(severity)
+        label = severity.to_s.upcase
+        color = case label
+                when 'CRITICAL', 'HIGH'
+                  UI::R
+                when 'MEDIUM'
+                  UI::Y
+                else
+                  UI::G
+                end
+        "#{UI::W}⟦ #{color}#{label}#{UI::W} ⟧"
       end
 
       # Print run to run database deltas grouped by artifact type

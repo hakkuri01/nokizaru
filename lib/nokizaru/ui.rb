@@ -40,7 +40,7 @@ module Nokizaru
     end
 
     def line(type, text, io: $stdout)
-      io.puts("#{prefix(type)} #{C}#{text}#{W}")
+      io.puts("#{prefix(type)} #{W}#{text}#{W}")
     end
 
     def row(type, label, value, label_width: nil, min_dots: 3, io: $stdout)
@@ -51,7 +51,7 @@ module Nokizaru
       label_text = label.to_s
       width = [label_width.to_i, label_text.length].max
       dots = '.' * [min_dots, width - label_text.length + min_dots].max
-      "#{prefix(type)} #{C}#{label_text}#{dots}#{W}⟦ #{value} ⟧"
+      "#{prefix(type)} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value}#{W} ⟧"
     end
 
     def rows(type, pairs, min_dots: 3, io: $stdout)
@@ -72,7 +72,7 @@ module Nokizaru
         branch = idx == normalized.length - 1 ? '└─◈' : '├─◈'
         label_text = label.to_s
         dots = '.' * [min_dots, width - label_text.length + min_dots].max
-        io.puts(" #{branch} #{C}#{label_text}#{dots}#{W}⟦ #{value} ⟧")
+        io.puts(" #{branch} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value}#{W} ⟧")
       end
     end
 
