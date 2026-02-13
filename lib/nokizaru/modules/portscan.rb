@@ -155,6 +155,8 @@ module Nokizaru
         pool.shutdown
         pool.wait_for_termination
 
+        # Print a final stable progress update after any concurrent output
+        print(UI.progress(:plus, 'Scanning', "#{total}/#{total}"))
         puts
         UI.line(:info, 'Scan Completed!')
         puts

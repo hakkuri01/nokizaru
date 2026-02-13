@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v1.8.7-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v1.9.7-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -24,6 +24,26 @@ FinalRecon’s Python implementation achieves speed through an async-first appro
 - **Reusable networking:** A shared HTTP client (keep-alive / connection reuse) is used where possible to reduce handshake overhead across modules.
 - **Error UX:** Provider failures are reported cleanly and consistently, but Nokizaru also aims to make errors more actionable and less noisy.
 - **Performance consistency:** Timeouts and budgets are designed to produce consistent runtimes between executions, rather than “sometimes fast, sometimes stuck.”
+
+### Context-Aware Scanning Pipeline
+
+Nokizaru treats early recon results (especially initial headers) as shared target context that can influence later modules. The goal is simple: stay fast while avoiding low-signal brute forcing on targets that intentionally normalize responses (CDNs/WAFs, redirect-heavy setups, etc.).
+
+- **Headers -> Target Profile:** the Headers module collects response headers and derives a lightweight target profile (redirect behavior, canonical scheme/host hints)
+- **Re-Anchor:** Crawler and Directory Enum consume that profile and may automatically “re-anchor” to the most appropriate in-scope URL (for example, HTTP -> HTTPS canonicalization). You’ll see this as:
+  - `⟦+⟧ Re-Anchor...⟦ https://target.tld (http->https) ⟧`
+  - `⟦+⟧ Re-Anchor...⟦ https://target.tld (same-scope) ⟧`
+- **Crawler Feeds Dir Enum:** Directory Enum uses crawler artifacts (robots, internal links, sitemap URLs, URLs found inside JavaScript) as high-signal seed paths, instead of blindly relying on a large wordlist for every target
+
+### Directory Enum Modes
+
+Directory Enum automatically selects a mode after a quick preflight probe. This mode selection is designed to preserve signal and avoid scan time blowups on strict targets.
+
+- **full:** normal targets; scans the full wordlist (bounded by internal budgets)
+- **seeded:** redirect-normalized or mixed targets; prioritizes crawler-derived paths + a small “high-signal” list, optionally blending in a small slice of the wordlist
+- **hostile:** strict/timeout-heavy targets; uses a small seed set and short timeouts to stay within an optimized time budget while making a best effort attempt to extract as much high-signal intel as possible.
+
+The selected mode is printed in the Directory Enum banner so operators can interpret results in context.
 
 ## Installation
 

@@ -4,6 +4,7 @@ require 'net/http'
 require 'uri'
 require 'openssl'
 require_relative '../log'
+require_relative '../target_intel'
 
 module Nokizaru
   module Modules
@@ -14,7 +15,7 @@ module Nokizaru
 
       # Run this module and store normalized results in the run context
       def call(target, ctx)
-        result = { 'headers' => {} }
+        result = { 'headers' => {}, 'target_profile' => {} }
         UI.module_header('Headers :')
 
         begin
@@ -25,9 +26,17 @@ module Nokizaru
             pairs = response.each_header.map { |key, val| [key, val] }
             UI.rows(:info, pairs)
             pairs.each { |key, val| result['headers'][key] = val }
+
+            result['target_profile'] = Nokizaru::TargetIntel.profile(
+              target,
+              verify_ssl: false,
+              timeout_s: TIMEOUT,
+              response: response
+            )
           else
             UI.line(:error, 'Failed to retrieve headers')
             result['error'] = 'Failed to retrieve headers'
+            result['target_profile'] = Nokizaru::TargetIntel.profile(target, verify_ssl: false, timeout_s: TIMEOUT)
           end
         rescue OpenSSL::SSL::SSLError => e
           display_ssl_error(e, target)

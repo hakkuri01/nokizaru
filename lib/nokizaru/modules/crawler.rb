@@ -7,6 +7,7 @@ require 'nokogiri'
 require 'public_suffix'
 require 'set'
 require_relative '../log'
+require_relative '../target_intel'
 
 module Nokizaru
   module Modules
@@ -18,6 +19,8 @@ module Nokizaru
       PREVIEW_LIMIT = 8
       MAX_FETCH_WORKERS = 8
       MAX_SITEMAPS = 200
+      MAX_MAIN_REDIRECTS = 2
+      REDIRECT_CODES = Set[301, 302, 303, 307, 308].freeze
       STEP_LABELS = [
         'Looking for robots.txt',
         'Extracting robots Links',
@@ -33,25 +36,44 @@ module Nokizaru
       STEP_LABEL_WIDTH = STEP_LABELS.map(&:length).max
 
       # Run this module and store normalized results in the run context
-      def call(target, protocol, netloc, ctx)
+      def call(target, _protocol, _netloc, ctx)
         result = initialize_result
 
         UI.module_header('Starting Crawler...')
 
-        base_url = "#{protocol}://#{netloc}"
+        anchor = resolve_anchor(target, ctx)
+        scan_target = anchor[:effective_target]
+        step_row(:plus, 'Re-Anchor', "#{scan_target} (#{anchor[:reason_code]})")
+
+        result['target'] = {
+          'original' => target,
+          'effective' => scan_target,
+          'reanchored' => anchor[:reanchor],
+          'reason' => anchor[:reason],
+          'reason_code' => anchor[:reason_code]
+        }
 
         # Fetch main page
-        soup = fetch_main_page(target, result, ctx)
-        return if soup.nil?
+        page = fetch_main_page(scan_target, result, ctx)
+        return if page.nil?
+
+        soup = page[:soup]
+        page_url = page[:url]
+        result['target']['effective'] = page_url
+
+        page_uri = URI.parse(page_url)
+        scan_protocol = page_uri.scheme
+        scan_netloc = page_uri.port == page_uri.default_port ? page_uri.host : "#{page_uri.host}:#{page_uri.port}"
+        base_url = "#{scan_protocol}://#{scan_netloc}"
 
         # Crawl resources
         result['robots_links'], discovered_sitemaps = robots("#{base_url}/robots.txt", base_url)
         result['sitemap_links'] = sitemap("#{base_url}/sitemap.xml", discovered_sitemaps)
-        result['css_links'] = css(target, soup)
-        result['js_links'] = js_scan(target, soup)
-        result['internal_links'] = internal_links(target, soup)
-        result['external_links'] = external_links(target, soup)
-        result['images'] = images(target, soup)
+        result['css_links'] = css(page_url, soup)
+        result['js_links'] = js_scan(page_url, soup)
+        result['internal_links'] = internal_links(page_url, soup)
+        result['external_links'] = external_links(page_url, soup)
+        result['images'] = images(page_url, soup)
 
         result['urls_inside_sitemap'] = sm_crawl(result['sitemap_links'])
         result['urls_inside_js'] = js_crawl(result['js_links'])
@@ -68,6 +90,20 @@ module Nokizaru
         Log.write('[crawler] Completed')
       end
 
+      # Resolve crawler anchor target from shared headers profile or runtime probing
+      def resolve_anchor(target, ctx)
+        profile = ctx.run.dig('modules', 'headers', 'target_profile')
+        unless profile.is_a?(Hash)
+          profile = Nokizaru::TargetIntel.profile(target, verify_ssl: false,
+                                                          timeout_s: TIMEOUT)
+        end
+
+        decision = Nokizaru::TargetIntel.reanchor_decision(target, profile)
+        decision[:reason] = profile['reason'].to_s
+        decision[:reason_code] ||= Nokizaru::TargetIntel.reason_code_for(profile)
+        decision
+      end
+
       # Initialize crawler result buckets before extraction starts
       def initialize_result
         {
@@ -80,30 +116,59 @@ module Nokizaru
 
       # Fetch and parse the target document used by crawler extractors
       def fetch_main_page(target, result, ctx)
-        response = http_get(target)
+        current = target
+        redirects = 0
 
-        unless response
-          UI.line(:error, 'Failed to fetch target')
-          result['error'] = 'Failed to fetch target'
-          ctx.run['modules']['crawler'] = result
-          return nil
-        end
+        loop do
+          response = http_get(current)
 
-        unless response.is_a?(Net::HTTPSuccess)
+          unless response
+            UI.line(:error, 'Failed to fetch target')
+            result['error'] = 'Failed to fetch target'
+            ctx.run['modules']['crawler'] = result
+            return nil
+          end
+
+          return { soup: Nokogiri::HTML(response.body), url: current } if response.is_a?(Net::HTTPSuccess)
+
+          if redirect_response?(response) && redirects < MAX_MAIN_REDIRECTS
+            location = response['location'].to_s.strip
+            next_url = Nokizaru::TargetIntel.resolve_location(current, location)
+            if !location.empty? && same_scope_redirect?(current, next_url)
+              redirects += 1
+              current = next_url
+              next
+            end
+          end
+
           UI.row(:error, 'Status', response.code)
           Log.write("[crawler] Status = #{response.code}, expected 200")
           result['error'] = "HTTP status #{response.code}"
           ctx.run['modules']['crawler'] = result
           return nil
         end
-
-        Nokogiri::HTML(response.body)
       rescue StandardError => e
         UI.line(:error, "Exception : #{e}")
         Log.write("[crawler] Exception = #{e}")
         result['error'] = e.to_s
         ctx.run['modules']['crawler'] = result
         nil
+      end
+
+      # Check whether response is an HTTP redirect class status
+      def redirect_response?(response)
+        REDIRECT_CODES.include?(response.code.to_i)
+      rescue StandardError
+        false
+      end
+
+      # Keep crawler redirect following restricted to original registrable-domain scope
+      def same_scope_redirect?(from_url, to_url)
+        from = URI.parse(from_url)
+        to = URI.parse(to_url)
+        Nokizaru::TargetIntel.same_scope_host?(from.host, to.host)
+      rescue StandardError
+        false
       end
 
       # Fetch a URL with timeouts and headers used by crawler helpers
@@ -146,7 +211,7 @@ module Nokizaru
 
         response = http_get(robo_url)
 
-        if response&.is_a?(Net::HTTPSuccess)
+        if response.is_a?(Net::HTTPSuccess)
           response.body.each_line do |line|
             next unless line.start_with?('Disallow', 'Allow', 'Sitemap')
 
@@ -175,7 +240,7 @@ module Nokizaru
 
         response = http_get(sm_url)
 
-        if response&.is_a?(Net::HTTPSuccess)
+        if response.is_a?(Net::HTTPSuccess)
           step_row(:info, 'Looking for sitemap.xml', 'Found')
           sm_total << sm_url
         elsif response&.code == '404'
@@ -300,7 +365,7 @@ module Nokizaru
 
           each_in_threads(batch) do |sm|
             response = http_get(sm)
-            next unless response&.is_a?(Net::HTTPSuccess)
+            next unless response.is_a?(Net::HTTPSuccess)
 
             begin
               doc = Nokogiri::XML(response.body)
@@ -335,7 +400,7 @@ module Nokizaru
         mutex = Mutex.new
         each_in_threads(js_total) do |js|
           response = http_get(js)
-          next unless response&.is_a?(Net::HTTPSuccess)
+          next unless response.is_a?(Net::HTTPSuccess)
 
           found = response.body.scan(%r{https?://[\w\-.~:/?#\[\]@!$&'()*+,;=%]+})
           found.map! { |url| sanitize_extracted_url(url) }
@@ -407,9 +472,9 @@ module Nokizaru
         return if links.empty?
 
         UI.line(:info, "#{label} Preview")
-        links.first(PREVIEW_LIMIT).each { |link| puts("    #{link}") }
+        links.first(PREVIEW_LIMIT).each { |link| puts("    #{UI::C}#{link}#{UI::W}") }
         remaining = links.length - PREVIEW_LIMIT
-        puts("    ... #{remaining} more") if remaining.positive?
+        puts("    #{UI::C}... #{remaining} more#{UI::W}") if remaining.positive?
       end
 
       # Normalize extracted URLs before adding them to results

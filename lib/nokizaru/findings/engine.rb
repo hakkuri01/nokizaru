@@ -108,7 +108,7 @@ module Nokizaru
         return [] unless exp
 
         days = ((exp - Time.now) / 86_400.0).round(2)
-        if days < 0
+        if days.negative?
           [{
             'id' => 'tls.cert_expired',
             'severity' => 'high',
@@ -196,7 +196,10 @@ module Nokizaru
       def dir_findings(dir)
         return [] unless dir.is_a?(Hash)
 
-        found = Array(dir['found']).map(&:to_s)
+        by_status = dir['by_status'].is_a?(Hash) ? dir['by_status'] : {}
+        high_signal = %w[200 204 401 403 405 500]
+        found = high_signal.flat_map { |status| Array(by_status[status]) }.map(&:to_s)
+        found = Array(dir['found']).map(&:to_s) if found.empty?
         return [] if found.empty?
 
         interesting = found.select { |u| u =~ %r{/(admin|backup|\.git|\.env|config|debug|swagger|api|graphql)\b}i }

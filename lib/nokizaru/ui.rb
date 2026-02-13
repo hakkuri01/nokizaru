@@ -49,9 +49,17 @@ module Nokizaru
 
     def formatted_row(type, label, value, label_width: nil, min_dots: 3)
       label_text = label.to_s
+      value_text = normalized_value_text(value)
       width = [label_width.to_i, label_text.length].max
       dots = '.' * [min_dots, width - label_text.length + min_dots].max
-      "#{prefix(type)} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value}#{W} ⟧"
+      "#{prefix(type)} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value_text}#{W} ⟧"
+    end
+
+    def normalized_value_text(value)
+      return '-' if value.nil?
+
+      text = value.to_s
+      text.strip.empty? ? '-' : text
     end
 
     def rows(type, pairs, min_dots: 3, io: $stdout)
@@ -72,7 +80,8 @@ module Nokizaru
         branch = idx == normalized.length - 1 ? '└─◈' : '├─◈'
         label_text = label.to_s
         dots = '.' * [min_dots, width - label_text.length + min_dots].max
-        io.puts(" #{branch} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value}#{W} ⟧")
+        value_text = normalized_value_text(value)
+        io.puts(" #{branch} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value_text}#{W} ⟧")
       end
     end
 
