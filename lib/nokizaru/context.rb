@@ -25,23 +25,26 @@ module Nokizaru
     # Add normalized artifacts to the run for export and diffing
     def add_artifact(kind, values)
       kind = kind.to_s
-      @run['artifacts'][kind] ||= []
       return if values.nil?
 
-      arr = Array(values).compact
-      return if arr.empty?
+      existing = @run['artifacts'][kind] ||= []
+      additions = Array(values).compact
+      return if additions.empty?
 
-      # Keep stable order but remove duplicates
-      existing = @run['artifacts'][kind]
       seen = existing.to_set
-      arr.each do |v|
-        next if v.nil?
-        next if seen.include?(v)
+      append_missing(existing, additions, seen)
+    end
 
-        existing << v
-        seen.add(v)
+    def append_missing(existing, additions, seen)
+      additions.each do |value|
+        next if seen.include?(value)
+
+        existing << value
+        seen.add(value)
       end
     end
+
+    private :append_missing
 
     # Read from cache first and compute values only on cache miss
     def cache_fetch(key, ttl_s: 3600, &block)

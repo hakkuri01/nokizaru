@@ -4,6 +4,7 @@ require_relative 'version'
 require_relative 'connection_pool'
 
 module Nokizaru
+  # Nokizaru::HTTPClient implementation
   module HTTPClient
     module_function
 
@@ -18,6 +19,7 @@ module Nokizaru
         headers: DEFAULT_HEADERS.merge(headers || {}),
         verify_ssl: verify_ssl,
         follow_redirects: follow_redirects,
+        persistent: persistent,
         timeout_s: timeout_s.to_f
       )
     end
@@ -30,39 +32,60 @@ module Nokizaru
         verify_ssl: verify_ssl,
         follow_redirects: follow_redirects
       )
+      apply_operation_timeout(base_client, timeout_s)
+    end
 
-      # Apply timeout override if needed
-      if timeout_s && timeout_s != 10.0
-        base_client.with(timeout: { operation_timeout: timeout_s.to_f })
-      else
-        base_client
-      end
+    def apply_operation_timeout(client, timeout_s)
+      return client unless timeout_override?(timeout_s)
+
+      client.with(timeout: { operation_timeout: timeout_s.to_f })
+    end
+
+    def timeout_override?(timeout_s)
+      timeout_s && ((timeout_s.to_f - 10.0).abs > Float::EPSILON)
     end
 
     # Get a client optimized for bulk/parallel requests
-    def for_bulk_requests(target, timeout_s: 8.0, headers: {}, follow_redirects: false,
-                          verify_ssl: true, max_concurrent: 50, retries: nil)
+    def for_bulk_requests(target, timeout_s: 8.0, headers: {}, **options)
+      opts = default_bulk_options(timeout_s, options)
       base_client = for_host(
         target,
         timeout_s: timeout_s,
         headers: headers.merge('Connection' => 'keep-alive'),
-        follow_redirects: follow_redirects,
-        verify_ssl: verify_ssl
+        follow_redirects: opts[:follow_redirects],
+        verify_ssl: opts[:verify_ssl]
       )
 
-      # Override concurrency for bulk operations
-      with_opts = {
-        max_concurrent_requests: max_concurrent,
-        timeout: {
-          connect_timeout: 3.0,
-          read_timeout: timeout_s.to_f,
-          write_timeout: 3.0,
-          operation_timeout: timeout_s.to_f
-        }
-      }
+      base_client.with(**bulk_client_overrides(timeout_s, opts))
+    end
 
-      with_opts[:max_retries] = [retries.to_i, 0].max unless retries.nil?
-      base_client.with(**with_opts)
+    def default_bulk_options(timeout_s, options)
+      {
+        follow_redirects: false,
+        verify_ssl: true,
+        max_concurrent: 50,
+        retries: nil,
+        timeout_s: timeout_s.to_f
+      }.merge(options || {})
+    end
+
+    def bulk_client_overrides(timeout_s, options)
+      overrides = {
+        max_concurrent_requests: options[:max_concurrent],
+        timeout: bulk_timeout_profile(timeout_s)
+      }
+      retries = options[:retries]
+      overrides[:max_retries] = [retries.to_i, 0].max unless retries.nil?
+      overrides
+    end
+
+    def bulk_timeout_profile(timeout_s)
+      {
+        connect_timeout: 3.0,
+        read_timeout: timeout_s.to_f,
+        write_timeout: 3.0,
+        operation_timeout: timeout_s.to_f
+      }
     end
 
     # Convenience method to make a single GET request

@@ -5,6 +5,8 @@ require_relative 'nokizaru/ui'
 require_relative 'nokizaru/paths'
 require_relative 'nokizaru/settings'
 require_relative 'nokizaru/log'
+require_relative 'nokizaru/interrupt_state'
+require_relative 'nokizaru/cli_argv'
 require_relative 'nokizaru/connection_pool'
 require_relative 'nokizaru/http_client'
 require_relative 'nokizaru/context'
@@ -15,6 +17,7 @@ require_relative 'nokizaru/export_manager'
 require_relative 'nokizaru/findings/engine'
 require_relative 'nokizaru/cli'
 
+# Nokizaru namespace for CLI orchestration and shared runtime hooks
 module Nokizaru
   # Ensure connections are properly closed on exit
   # Always attempt client pool shutdown so long-running scans exit cleanly

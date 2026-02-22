@@ -3,6 +3,7 @@
 require 'httpx'
 require 'monitor'
 require_relative 'version'
+require_relative 'connection_pool_builder'
 
 # Load HTTPX plugins
 %w[follow_redirects persistent retries].each do |plugin|
@@ -18,8 +19,10 @@ rescue StandardError
 end
 
 module Nokizaru
+  # Nokizaru::ConnectionPool implementation
   class ConnectionPool
     include MonitorMixin
+    include ConnectionPoolBuilder
 
     DEFAULT_CONFIG = {
       connect_timeout: 5.0,
@@ -52,7 +55,7 @@ module Nokizaru
 
     # Capture constructor arguments and initialize internal state
     def initialize
-      super()
+      super
       @pools = {}
       @config = DEFAULT_CONFIG.dup
     end
@@ -81,11 +84,12 @@ module Nokizaru
     end
 
     # Get a fresh client (not cached)
-    def client(headers: {}, verify_ssl: true, follow_redirects: true, timeout_s: nil)
+    def client(headers: {}, verify_ssl: true, follow_redirects: true, persistent: true, timeout_s: nil)
       build_client(
         headers: headers,
         verify_ssl: verify_ssl,
         follow_redirects: follow_redirects,
+        persistent: persistent,
         timeout_s: timeout_s
       )
     end
@@ -110,49 +114,11 @@ module Nokizaru
     private
 
     # Build an HTTP client with pooling and safe defaults for scanner modules
-    def build_client(headers: {}, verify_ssl: true, follow_redirects: true, timeout_s: nil)
-      http = HTTPX
-
-      # Load plugins safely
-      http = begin
-        http.plugin(:persistent)
-      rescue StandardError
-        http
-      end
-      if follow_redirects
-        http = begin
-          http.plugin(:follow_redirects)
-        rescue StandardError
-          http
-        end
-      end
-      http = begin
-        http.plugin(:retries)
-      rescue StandardError
-        http
-      end
-
+    def build_client(headers: {}, verify_ssl: true, follow_redirects: true, persistent: true, timeout_s: nil)
+      http = apply_plugins(HTTPX, persistent: persistent, follow_redirects: follow_redirects)
       op_timeout = timeout_s || @config[:operation_timeout]
 
-      opts = {
-        headers: DEFAULT_HEADERS.merge(headers),
-        timeout: {
-          connect_timeout: [@config[:connect_timeout], op_timeout].min,
-          read_timeout: [@config[:read_timeout], op_timeout].min,
-          write_timeout: [@config[:write_timeout], op_timeout].min,
-          operation_timeout: op_timeout,
-          keep_alive_timeout: @config[:keep_alive_timeout]
-        },
-        persistent: true,
-        max_retries: @config[:retries]
-      }
-
-      # Force HTTP/1.1 via ALPN to avoid HTTP/2 protocol errors
-      ssl_opts = { alpn_protocols: %w[http/1.1] }
-      ssl_opts[:verify_mode] = OpenSSL::SSL::VERIFY_NONE unless verify_ssl
-      opts[:ssl] = ssl_opts
-
-      http.with(**opts)
+      http.with(**build_client_options(headers, op_timeout, persistent, verify_ssl))
     rescue StandardError => e
       warn "[ConnectionPool] Warning: #{e.message}, using fallback client"
       fallback_client(headers, timeout_s)

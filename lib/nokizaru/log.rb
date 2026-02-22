@@ -5,6 +5,7 @@ require 'time'
 require_relative 'paths'
 
 module Nokizaru
+  # Nokizaru::Log implementation
   module Log
     # Append log entries with timestamps for troubleshooting and auditability
     def self.write(message)

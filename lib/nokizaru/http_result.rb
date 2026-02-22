@@ -1,9 +1,14 @@
 # frozen_string_literal: true
 
+require_relative 'http_error_catalog'
+require_relative 'http_result_helpers'
+
 module Nokizaru
   # Wrapper class for consistent HTTP response handling
   # Safely handles both successful responses and HTTPX::ErrorResponse objects
   class HttpResult
+    include HttpResultHelpers
+
     attr_reader :response, :error
 
     # Capture runtime options and prepare shared state used by this object
@@ -42,83 +47,67 @@ module Nokizaru
     def error_message
       return nil if success?
 
-      case @error
-      when OpenSSL::SSL::SSLError
-        parse_ssl_error(@error)
-      when Errno::ECONNREFUSED
-        'Connection refused - target is not listening on this port'
-      when Errno::ETIMEDOUT, Timeout::Error
-        'Connection timeout - target took too long to respond'
-      when SocketError
-        'DNS resolution failed - could not resolve hostname'
-      when HTTPX::HTTPError
-        "HTTP error: #{@error.message}"
-      when IOError, Errno::EPIPE
-        handle_io_error(@error)
-      else
-        # Check if error message contains common patterns
-        msg = @error.message.to_s
-        if msg.include?('descriptor closed') || msg.include?('Broken pipe')
-          'Connection closed unexpectedly - target may have dropped the connection'
-        else
-          @error.message
-        end
-      end
+      ssl_message = ssl_error_message
+      return ssl_message if ssl_message
+
+      mapped_message = mapped_error_message
+      return mapped_message if mapped_message
+
+      fallback_error_message
     end
 
     # Returns a short hint for how to fix the error
     def error_hint
       return nil if success?
 
-      case @error
-      when OpenSSL::SSL::SSLError
-        if @error.message.include?('wrong version number') || @error.message.include?('record layer failure')
-          'Try using HTTP instead of HTTPS'
-        elsif @error.message.include?('certificate verify failed')
-          'Use -s flag to disable SSL verification (testing only)'
-        end
-      when Errno::ECONNREFUSED
-        'Check if the target service is running'
-      when Errno::ETIMEDOUT
-        'Try increasing timeout with -T option'
-      when IOError
-        msg = @error.message.to_s
-        'Try using HTTP instead of HTTPS' if msg.include?('descriptor closed') || msg.include?('closed stream')
-      else
-        # Check message patterns for descriptor/connection issues
-        msg = @error.message.to_s
-        'Try using HTTP instead of HTTPS' if msg.include?('descriptor closed') || msg.include?('Broken pipe')
-      end
+      ssl_hint = ssl_error_hint
+      return ssl_hint if ssl_hint
+
+      mapped_hint = mapped_error_hint
+      return mapped_hint if mapped_hint
+
+      io_descriptor_hint || descriptor_hint
     end
 
     private
 
-    # Parse SSL exceptions into readable reasons for operators
-    def parse_ssl_error(error)
-      msg = error.message
+    def ssl_error_message
+      return nil unless @error.is_a?(OpenSSL::SSL::SSLError)
 
-      if msg.include?('wrong version number')
-        'SSL/TLS handshake failed - server may not support HTTPS on this port'
-      elsif msg.include?('certificate verify failed')
-        'SSL certificate verification failed - likely self-signed certificate'
-      elsif msg.include?('tlsv1 alert')
-        'SSL/TLS version mismatch - server requires different TLS version'
-      elsif msg.include?('record layer failure')
-        'SSL/TLS handshake failed - server does not support HTTPS on this port'
-      else
-        "SSL/TLS error: #{msg}"
-      end
+      parse_ssl_error(@error)
     end
 
-    # Detect common IO failures and classify them for clearer error reporting
-    def handle_io_error(error)
-      msg = error.message.to_s
-      if msg.include?('closed stream') || msg.include?('descriptor')
-        'Connection closed by server - target may not support HTTPS or dropped the connection'
-      elsif msg.include?('Broken pipe')
-        'Connection reset - target closed the connection unexpectedly'
-      else
-        "I/O error: #{msg}"
+    def mapped_error_message
+      return handle_io_error(@error) if @error.is_a?(IOError) || @error.is_a?(Errno::EPIPE)
+      return 'Connection timeout - target took too long to respond' if timeout_error?
+      return "HTTP error: #{@error.message}" if @error.is_a?(HTTPX::HTTPError)
+
+      Nokizaru::HTTPErrorCatalog::SIMPLE_MESSAGES.each do |klass, message|
+        return message if @error.is_a?(klass)
+      end
+      nil
+    end
+
+    def fallback_error_message
+      descriptor_message || @error.message
+    end
+
+    def ssl_error_hint
+      return nil unless @error.is_a?(OpenSSL::SSL::SSLError)
+
+      message = @error.message.to_s
+      Nokizaru::HTTPErrorCatalog::SSL_HINTS.each do |pattern, hint|
+        return hint if message.include?(pattern)
+      end
+      nil
+    end
+
+    def mapped_error_hint
+      case @error
+      when Errno::ECONNREFUSED
+        'Check if the target service is running'
+      when Errno::ETIMEDOUT
+        'Try increasing timeout with -T option'
       end
     end
   end

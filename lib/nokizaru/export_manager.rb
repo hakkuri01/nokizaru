@@ -18,13 +18,13 @@ module Nokizaru
 
     # Exports scan results to the specified formats
     # Normalize formats, resolve output paths, and write each requested export file
-    def export(run, domain:, formats:, timestamp: nil, custom_directory: nil, custom_basename: nil)
+    def export(run, domain:, formats:, output: {})
       normalized_formats = normalize_formats(formats)
       validate_formats!(normalized_formats)
 
-      timestamp ||= Time.now
-      export_dir = resolve_export_directory(domain, custom_directory)
-      basename = resolve_basename(timestamp, custom_basename)
+      output = normalize_output_options(output)
+      export_dir = resolve_export_directory(domain, output[:custom_directory])
+      basename = resolve_basename(output[:timestamp], output[:custom_basename])
 
       ensure_directory_exists(export_dir)
 
@@ -92,4 +92,12 @@ module Nokizaru
       exporter_class.new.write(run, path)
     end
   end
+end
+
+def normalize_output_options(output)
+  {
+    timestamp: Time.now,
+    custom_directory: nil,
+    custom_basename: nil
+  }.merge(output || {})
 end

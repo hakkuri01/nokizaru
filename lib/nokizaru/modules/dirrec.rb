@@ -9,9 +9,12 @@ require_relative '../http_client'
 require_relative '../http_result'
 require_relative '../log'
 require_relative '../target_intel'
+require_relative '../interrupt_state'
 
 module Nokizaru
   module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    # Nokizaru::Modules::DirectoryEnum implementation
     module DirectoryEnum
       module_function
 
@@ -43,52 +46,195 @@ module Nokizaru
         MODE_SEEDED => { budget_s: 18.0, max_requests: 600 },
         MODE_HOSTILE => { budget_s: 10.0, max_requests: 220 }
       }.freeze
+      HIGH_SIGNAL_PATHS = %w[
+        /robots.txt
+        /sitemap.xml
+        /.git/HEAD
+        /.env
+        /admin
+        /login
+        /signin
+        /auth
+        /account
+        /dashboard
+        /api
+        /graphql
+        /wp-admin
+        /wp-login.php
+        /xmlrpc.php
+        /wp-json
+        /server-status
+        /server-info
+      ].freeze
       REDIRECT_STATUSES = Set[301, 302, 303, 307, 308].freeze
       SOFT_404_SAMPLE_STATUSES = Set[200, 204, 301, 302, 303, 307, 308, 401, 403, 405, 500].freeze
 
       INTERESTING_STATUSES = Set[200, 204, 301, 302, 303, 307, 308, 401, 403, 405, 500].freeze
 
       # Run this module and store normalized results in the run context
-      def call(target, threads, timeout_s, wdlist, allow_redirects, verify_ssl, filext, ctx)
-        anchor = resolve_anchor(target, ctx, verify_ssl, timeout_s)
+      def call(target, threads, timeout_s, wdlist, *args)
+        options = build_call_options(target, threads, timeout_s, wdlist, args)
+        scan = prepare_scan(options)
+        print_banner(scan)
+
+        runtime = init_runtime(scan)
+        run_workers(scan, runtime)
+        finalize_scan(scan, runtime)
+      end
+
+      def build_call_options(target, threads, timeout_s, wdlist, args)
+        {
+          target: target,
+          threads: threads,
+          timeout_s: timeout_s,
+          wdlist: wdlist,
+          allow_redirects: args.fetch(0),
+          verify_ssl: args.fetch(1),
+          filext: args.fetch(2),
+          ctx: args.fetch(3)
+        }
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
+
+      def prepare_scan(options)
+        context = scan_context(options)
+        mode_data = mode_data(context[:preflight], options, context[:anchor])
+        scan_payload = base_scan_payload(options, context, mode_data)
+        attach_scan_urls!(scan_payload, context[:word_data], options, mode_data)
+      end
+
+      def scan_context(options)
+        anchor = resolve_anchor(options[:target], options[:ctx], options[:verify_ssl], options[:timeout_s])
         scan_target = anchor[:effective_target]
-        header_map = ctx.run.dig('modules', 'headers', 'headers')
-        reanchor_display = "#{scan_target} (#{anchor[:reason_code]})"
-
         normalized_target = normalize_target_base(scan_target)
-        word_data = load_words(wdlist)
-        words = word_data[:words]
+        {
+          anchor: anchor,
+          scan_target: scan_target,
+          normalized_target: normalized_target,
+          word_data: load_words(options[:wdlist]),
+          preflight: preflight_for_target(normalized_target, options)
+        }
+      end
 
-        base_timeout = effective_timeout_s(timeout_s, target_profile: anchor[:profile], header_map: header_map,
-                                                      allow_redirects: allow_redirects)
+      def preflight_for_target(normalized_target, options)
+        preflight_probe(normalized_target, verify_ssl: options[:verify_ssl], allow_redirects: options[:allow_redirects])
+      end
 
-        preflight = preflight_probe(
-          normalized_target,
-          verify_ssl: verify_ssl,
-          allow_redirects: allow_redirects
-        )
+      def base_scan_payload(options, context, mode_data)
+        payload = scan_payload_base_fields(options, context)
+        payload.merge!(scan_mode_fields(mode_data))
+        payload[:word_data] = context[:word_data]
+        payload
+      end
+
+      def scan_payload_base_fields(options, context)
+        {
+          options: options,
+          anchor: context[:anchor],
+          scan_target: context[:scan_target],
+          normalized_target: context[:normalized_target],
+          preflight: context[:preflight],
+          total_urls: 0,
+          reanchor_display: "#{context[:scan_target]} (#{context[:anchor][:reason_code]})"
+        }
+      end
+
+      def scan_mode_fields(mode_data)
+        {
+          mode: mode_data[:mode],
+          budgets: mode_data[:budgets],
+          timeout: mode_data[:timeout]
+        }
+      end
+
+      def attach_scan_urls!(scan_payload, word_data, options, mode_data)
+        scan_payload[:urls] = scan_urls(mode_data[:mode], scan_payload[:normalized_target], word_data[:words], options,
+                                        mode_data[:budgets])
+        scan_payload[:total_urls] = scan_payload[:urls].length
+        scan_payload
+      end
+
+      def mode_data(preflight, options, anchor)
         mode = choose_mode(preflight)
-        budgets = MODE_BUDGETS.fetch(mode)
-        effective_timeout = timeout_for_mode(mode, base_timeout)
+        {
+          mode: mode,
+          budgets: MODE_BUDGETS.fetch(mode),
+          timeout: timeout_for_mode(mode, base_timeout(options, anchor))
+        }
+      end
 
-        urls = build_scan_urls(
-          mode,
-          normalized_target,
-          words,
-          filext,
-          ctx,
-          max_seed_paths: budgets[:max_requests]
+      def scan_urls(mode, normalized_target, words, options, budgets)
+        build_scan_urls(
+          {
+            mode: mode,
+            target: normalized_target,
+            words: words,
+            filext: options[:filext],
+            ctx: options[:ctx],
+            max_seed_paths: budgets[:max_requests]
+          }
         )
-        total = urls.length
+      end
 
-        print_banner(reanchor_display, mode, threads, timeout_s, effective_timeout, wdlist, allow_redirects, verify_ssl,
-                     filext, word_data, total)
+      def base_timeout(options, anchor)
+        effective_timeout_s(
+          options[:timeout_s],
+          target_profile: anchor[:profile],
+          header_map: options[:ctx].run.dig('modules', 'headers', 'headers'),
+          allow_redirects: options[:allow_redirects]
+        )
+      end
+    end
+  end
+end
 
-        # Thread-safe result storage
-        mutex = Mutex.new
-        responses = []
-        found = []
-        stats = {
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
+
+      def init_runtime(scan)
+        runtime_state(scan).merge(
+          timeout_state: { current: scan[:timeout], min: MIN_ADAPTIVE_TIMEOUT_S },
+          stop_state: init_stop_state(scan)
+        )
+      end
+
+      def runtime_state(scan)
+        runtime_collections(scan).merge(runtime_soft_404_state)
+      end
+
+      def runtime_collections(scan)
+        {
+          mutex: Mutex.new,
+          responses: [],
+          found: [],
+          stats: init_stats,
+          count: 0,
+          start_time: Time.now,
+          queue: build_work_queue(scan[:urls])
+        }
+      end
+
+      def runtime_soft_404_state
+        {
+          baseline: nil,
+          learning: init_soft_404_learning,
+          soft_404_state: init_soft_404_state
+        }
+      end
+
+      def init_stats
+        {
           success: 0,
           errors: 0,
           filtered: 0,
@@ -97,186 +243,261 @@ module Nokizaru
           timeout_downshifts: 0,
           error_kinds: Hash.new(0)
         }
-        count = 0
-        timeout_state = { current: effective_timeout, min: MIN_ADAPTIVE_TIMEOUT_S }
-        stop_state = {
+      end
+
+      def init_stop_state(scan)
+        {
           stop: false,
           reason: nil,
-          mode: mode,
-          budgets: budgets,
-          preflight: preflight,
-          request_method: request_method_for_mode(mode),
+          mode: scan[:mode],
+          budgets: scan[:budgets],
+          preflight: scan[:preflight],
+          request_method: request_method_for_mode(scan[:mode]),
           client_closed: false
         }
+      end
 
-        # Create worker threads
-        num_workers = [thread_cap_for_mode(mode, threads.to_i), 1].max
-        start_time = Time.now
+      def build_work_queue(urls)
+        queue = Queue.new
+        urls.each { |url| queue << url }
+        queue
+      end
 
-        # Build one shared client - all workers use this same client
-        # Connection pooling happens automatically inside HTTPX
-        client = Nokizaru::HTTPClient.for_bulk_requests(
-          scan_target,
-          timeout_s: effective_timeout,
+      def run_workers(scan, runtime)
+        num_workers = [thread_cap_for_mode(scan[:mode], scan[:options][:threads].to_i), 1].max
+        prepare_runtime_client!(scan, runtime, num_workers)
+        workers = Array.new(num_workers) { Thread.new { run_worker_loop(scan, runtime) } }
+        workers.each(&:join)
+      ensure
+        close_client!(runtime[:stop_state], runtime[:client]) if runtime
+      end
+
+      def prepare_runtime_client!(scan, runtime, num_workers)
+        runtime[:client] = build_bulk_client(scan, num_workers)
+        runtime[:baseline] = build_soft_404_baseline(runtime[:client], scan[:normalized_target])
+      end
+
+      def build_bulk_client(scan, num_workers)
+        Nokizaru::HTTPClient.for_bulk_requests(
+          scan[:scan_target],
+          timeout_s: scan[:timeout],
           headers: { 'User-Agent' => DEFAULT_UA },
-          follow_redirects: allow_redirects,
-          verify_ssl: verify_ssl,
+          follow_redirects: scan[:options][:allow_redirects],
+          verify_ssl: scan[:options][:verify_ssl],
           max_concurrent: num_workers,
           retries: 0
         )
+      end
+    end
+  end
+end
 
-        soft_404_baseline = build_soft_404_baseline(client, normalized_target)
-        soft_404_learning = init_soft_404_learning
-        soft_404_state = init_soft_404_state
-        target_profile = anchor[:profile]
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
-        # Queue-based work distribution
-        queue = Queue.new
-        urls.each { |url| queue << url }
+      def run_worker_loop(scan, runtime)
+        error_streak = 0
+        loop do
+          url = pop_queue_url(runtime[:queue])
+          break unless worker_active?(url, runtime[:stop_state])
 
-        workers = Array.new(num_workers) do
-          Thread.new do
-            error_streak = 0
+          error_streak = process_worker_url(scan, runtime, url, error_streak)
+        end
+      end
 
-            # Each worker loops, pulling URLs from queue until empty
-            loop do
-              # Non-blocking pop - returns nil if queue empty
-              url = begin
-                queue.pop(true)
-              rescue ThreadError
-                nil
-              end
+      def pop_queue_url(queue)
+        queue.pop(true)
+      rescue ThreadError
+        nil
+      end
 
-              break if url.nil? || stop_state[:stop] || $interrupted
+      def worker_active?(url, stop_state)
+        url && !stop_state[:stop] && !Nokizaru::InterruptState.interrupted?
+      end
 
-              # Make individual request through shared client
-              begin
-                raw_resp = request_url(client, url, stop_state)
-                http_result = HttpResult.new(raw_resp)
+      def process_worker_url(scan, runtime, url, error_streak)
+        http_result = worker_http_result(runtime, url)
+        return process_worker_error(scan, runtime, url, http_result, error_streak + 1) unless http_result.success?
 
-                if http_result.success?
-                  status = http_result.status
-                  error_streak = 0
-                  redirect_is_noise = false
-                  if INTERESTING_STATUSES.include?(status) && redirect_status?(status)
-                    redirect_sample = response_redirect_sample(http_result, request_url: url)
-                    redirect_is_noise = redirect_noise?(url, http_result, redirect_sample, soft_404_baseline,
-                                                        target_profile)
-                  end
+        process_worker_success(scan, runtime, url, http_result)
+        0
+      rescue StandardError => e
+        handle_worker_exception(runtime, url, e, error_streak)
+      end
 
-                  mutex.synchronize do
-                    stats[:success] += 1
-                    count += 1
+      def worker_http_result(runtime, url)
+        raw_resp = request_url(runtime[:client], url, runtime[:stop_state])
+        HttpResult.new(raw_resp)
+      end
 
-                    if should_stop_now?(count, start_time, stop_state)
-                      stop!(stop_state, count, start_time, client)
-                      next
-                    end
+      def handle_worker_exception(runtime, url, error, error_streak)
+        process_worker_exception(runtime, url, error)
+        next_streak = error_streak + 1
+        sleep(error_backoff_s(next_streak, runtime[:stop_state][:mode]))
+        next_streak
+      end
 
-                    if maybe_downgrade_mode!(count, stats, stop_state, timeout_state)
-                      client, timeout_state = rebuild_client(
-                        client,
-                        timeout_state,
-                        scan_target,
-                        allow_redirects,
-                        verify_ssl,
-                        thread_cap_for_mode(stop_state[:mode], threads.to_i)
-                      )
-                      clear_progress_line
-                      UI.row(:plus, 'Dir Enum Mode', "#{stop_state[:mode]} (adaptive downgrade)")
-                    end
+      def process_worker_success(scan, runtime, url, http_result)
+        redirect_is_noise = redirect_noise?(
+          url,
+          http_result,
+          response_redirect_sample(http_result, request_url: url),
+          runtime[:baseline],
+          scan[:anchor][:profile]
+        )
 
-                    if INTERESTING_STATUSES.include?(status)
-                      if redirect_is_noise
-                        stats[:redirect_filtered] += 1
-                        print_progress(count, total) if (count % PROGRESS_EVERY).zero?
-                        next
-                      end
+        runtime[:mutex].synchronize do
+          process_synchronized_success(scan, runtime, url, http_result, redirect_is_noise)
+        end
+      end
 
-                      if !redirect_status?(status) && soft_404_active?(soft_404_state, soft_404_baseline)
-                        sample = response_sample(http_result, request_url: url)
+      def process_synchronized_success(scan, runtime, url, http_result, redirect_is_noise)
+        increment_count!(runtime[:stats], runtime)
+        handle_runtime_adaptation!(scan, runtime)
+        handle_success_status(scan, runtime, url, http_result, redirect_is_noise)
+        print_progress(runtime[:count], scan[:total_urls]) if (runtime[:count] % PROGRESS_EVERY).zero?
+      end
 
-                        if sample
-                          record_soft_404_sample!(soft_404_state)
-                          soft_404_baseline = learn_soft_404_baseline(sample, soft_404_baseline, soft_404_learning)
-                          disable_soft_404_if_unstable!(soft_404_state, soft_404_baseline, soft_404_learning)
+      def increment_count!(stats, runtime)
+        stats[:success] += 1
+        runtime[:count] += 1
+      end
+    end
+  end
+end
 
-                          if soft_404_match_sample?(sample, soft_404_baseline)
-                            stats[:filtered] += 1
-                            print_progress(count, total) if (count % PROGRESS_EVERY).zero?
-                            next
-                          end
-                        end
-                      end
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
-                      stats[:redirect_outliers] += 1 if redirect_status?(status)
+      def handle_runtime_adaptation!(scan, runtime)
+        maybe_stop!(runtime)
+        return unless apply_mode_downgrade!(runtime[:count], runtime[:stats], runtime[:stop_state],
+                                            runtime[:timeout_state])
 
-                      responses << [url, status]
-                      print_finding(scan_target, url, status, found)
-                    end
+        rebuild = rebuild_client(client_config(scan, runtime))
+        runtime[:client], runtime[:timeout_state] = rebuild
+        clear_progress_line
+        UI.row(:plus, 'Dir Enum Mode', "#{runtime[:stop_state][:mode]} (adaptive downgrade)")
+      end
 
-                    print_progress(count, total) if (count % PROGRESS_EVERY).zero?
-                  end
-                else
-                  error_streak += 1
-                  error_kind = classify_error(http_result)
+      def handle_success_status(scan, runtime, url, http_result, redirect_is_noise)
+        status = http_result.status
+        return unless INTERESTING_STATUSES.include?(status)
+        return track_filtered_redirect?(runtime[:stats], runtime[:count], scan[:total_urls]) if redirect_is_noise
+        return if filtered_soft_404?(runtime, url, http_result, status, scan)
 
-                  mutex.synchronize do
-                    stats[:errors] += 1
-                    stats[:error_kinds][error_kind] += 1
-                    count += 1
-                    log_error(url, http_result, stats[:errors])
+        runtime[:stats][:redirect_outliers] += 1 if redirect_status?(status)
+        runtime[:responses] << [url, status]
+        print_finding(scan[:scan_target], url, status, runtime[:found])
+      end
 
-                    if should_stop_now?(count, start_time, stop_state)
-                      stop!(stop_state, count, start_time, client)
-                      next
-                    end
+      def track_filtered_redirect?(stats, count, total)
+        stats[:redirect_filtered] += 1
+        print_progress(count, total) if (count % PROGRESS_EVERY).zero?
+        true
+      end
 
-                    if should_adapt_timeout?(count, stats, timeout_state)
-                      client, timeout_state = rebuild_client_with_lower_timeout(
-                        client,
-                        timeout_state,
-                        scan_target,
-                        allow_redirects,
-                        verify_ssl,
-                        thread_cap_for_mode(stop_state[:mode], threads.to_i)
-                      )
-                      stats[:timeout_downshifts] += 1
-                      clear_progress_line
-                      UI.row(:plus, 'Adaptive Timeout', "reduced to #{timeout_state[:current]}s (timeout-heavy target)")
-                    end
+      def filtered_soft_404?(runtime, url, http_result, status, scan)
+        return false if redirect_status?(status)
+        return false unless soft_404_active?(runtime[:soft_404_state], runtime[:baseline])
 
-                    print_progress(count, total) if (count % PROGRESS_EVERY).zero?
-                  end
+        sample = response_sample(http_result, request_url: url)
+        return false unless sample
 
-                  sleep(error_backoff_s(error_streak, stop_state[:mode]))
-                end
-              rescue StandardError => e
-                error_streak += 1
+        update_soft_404_learning!(runtime, sample)
+        return false unless soft_404_match_sample?(sample, runtime[:baseline])
 
-                mutex.synchronize do
-                  stats[:errors] += 1
-                  count += 1
-                  Log.write("[dirrec] Exception for #{url}: #{e.class}") if stats[:errors] <= 5
-                  print_progress(count, total) if (count % PROGRESS_EVERY).zero?
-                end
+        apply_soft_404_filter?(runtime, scan)
+      end
 
-                sleep(error_backoff_s(error_streak, stop_state[:mode]))
-              end
-            end
-          end
+      def update_soft_404_learning!(runtime, sample)
+        state = runtime[:soft_404_state]
+        record_soft_404_sample!(state)
+        runtime[:baseline] = learn_soft_404_baseline(sample, runtime[:baseline], runtime[:learning])
+        disable_soft_404_if_unstable!(state, runtime[:baseline], runtime[:learning])
+      end
+
+      def apply_soft_404_filter?(runtime, scan)
+        runtime[:stats][:filtered] += 1
+        print_progress(runtime[:count], scan[:total_urls]) if (runtime[:count] % PROGRESS_EVERY).zero?
+        true
+      end
+
+      def process_worker_error(scan, runtime, url, http_result, error_streak)
+        error_kind = classify_error(http_result)
+        runtime[:mutex].synchronize do
+          record_worker_error!(runtime, url, http_result, error_kind)
+          maybe_stop!(runtime)
+          adapt_timeout_if_needed!(scan, runtime)
+          print_progress(runtime[:count], scan[:total_urls]) if (runtime[:count] % PROGRESS_EVERY).zero?
         end
 
-        # Wait for all workers to complete
-        workers.each(&:join)
+        sleep(error_backoff_s(error_streak, runtime[:stop_state][:mode]))
+        error_streak
+      end
 
-        stats[:elapsed] = Time.now - start_time
-        print_progress(count, total) # Final progress
+      def record_worker_error!(runtime, url, http_result, error_kind)
+        runtime[:stats][:errors] += 1
+        runtime[:stats][:error_kinds][error_kind] += 1
+        runtime[:count] += 1
+        log_error(url, http_result, runtime[:stats][:errors])
+      end
+
+      def process_worker_exception(runtime, url, error)
+        runtime[:mutex].synchronize do
+          runtime[:stats][:errors] += 1
+          runtime[:count] += 1
+          Log.write("[dirrec] Exception for #{url}: #{error.class}") if runtime[:stats][:errors] <= 5
+        end
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
+
+      def maybe_stop!(runtime)
+        return unless should_stop_now?(runtime[:count], runtime[:start_time], runtime[:stop_state])
+
+        stop!(runtime[:stop_state], runtime[:count], runtime[:start_time], runtime[:client])
+      end
+
+      def adapt_timeout_if_needed!(scan, runtime)
+        return unless should_adapt_timeout?(runtime[:count], runtime[:stats], runtime[:timeout_state])
+
+        rebuild = rebuild_client_with_lower_timeout(client_config(scan, runtime))
+        runtime[:client], runtime[:timeout_state] = rebuild
+        runtime[:stats][:timeout_downshifts] += 1
         clear_progress_line
+        UI.row(:plus, 'Adaptive Timeout', "reduced to #{runtime[:timeout_state][:current]}s (timeout-heavy target)")
+      end
 
-        dir_output(responses, found, stats, ctx, original_target: target, effective_target: scan_target,
-                                                 reanchored: anchor[:reanchor], reason: anchor[:reason],
-                                                 stop_state: stop_state)
+      def client_config(scan, runtime)
+        {
+          client: runtime[:client],
+          timeout_state: runtime[:timeout_state],
+          target: scan[:scan_target],
+          allow_redirects: scan[:options][:allow_redirects],
+          verify_ssl: scan[:options][:verify_ssl],
+          threads: thread_cap_for_mode(runtime[:stop_state][:mode], scan[:options][:threads].to_i)
+        }
+      end
+
+      def finalize_scan(scan, runtime)
+        runtime[:stats][:elapsed] = Time.now - runtime[:start_time]
+        print_progress(runtime[:count], scan[:total_urls])
+        clear_progress_line
+        dir_output(runtime: runtime, scan: scan)
         Log.write('[dirrec] Completed')
       end
 
@@ -293,6 +514,15 @@ module Nokizaru
         decision[:reason_code] ||= Nokizaru::TargetIntel.reason_code_for(profile)
         decision
       end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Print a discovered directory finding with status and context
       def print_finding(target, url, status, found)
@@ -328,28 +558,59 @@ module Nokizaru
       end
 
       # Print directory scan banner and run configuration details
-      def print_banner(reanchor_display, mode, threads, timeout_s, effective_timeout, wdlist, allow_redirects,
-                       verify_ssl, filext, word_data, total_urls)
+      def print_banner(scan)
         UI.module_header('Starting Directory Enum...')
 
-        rows = [
-          ['Re-Anchor', reanchor_display],
-          ['Mode', mode],
-          ['Threads', threads],
-          ['Timeout', timeout_s],
-          ['Wordlist', wdlist],
-          ['Allow Redirects', allow_redirects],
-          ['SSL Verification', verify_ssl],
-          ['Wordlist Lines', word_data[:total_lines]],
-          ['Usable Entries', word_data[:unique_lines]],
-          ['File Extensions', filext],
-          ['Total URLs', total_urls]
-        ]
-        rows.insert(3, ['Effective Timeout', effective_timeout]) if effective_timeout != timeout_s.to_f
+        rows = banner_rows(scan)
 
         UI.rows(:plus, rows)
         puts
       end
+
+      def banner_rows(scan)
+        rows = base_banner_rows(scan)
+        insert_effective_timeout!(rows, scan)
+      end
+
+      def base_banner_rows(scan)
+        banner_target_rows(scan) + banner_wordlist_rows(scan)
+      end
+
+      def banner_target_rows(scan)
+        [
+          ['Re-Anchor', scan[:reanchor_display]],
+          ['Mode', scan[:mode]],
+          ['Threads', scan[:options][:threads]],
+          ['Timeout', scan[:options][:timeout_s]],
+          ['Wordlist', scan[:options][:wdlist]],
+          ['Allow Redirects', scan[:options][:allow_redirects]],
+          ['SSL Verification', scan[:options][:verify_ssl]]
+        ]
+      end
+
+      def banner_wordlist_rows(scan)
+        [
+          ['Wordlist Lines', scan[:word_data][:total_lines]],
+          ['Usable Entries', scan[:word_data][:unique_lines]],
+          ['File Extensions', scan[:options][:filext]],
+          ['Total URLs', scan[:total_urls]]
+        ]
+      end
+
+      def insert_effective_timeout!(rows, scan)
+        timeout_changed = (scan[:timeout].to_f - scan[:options][:timeout_s].to_f).abs > Float::EPSILON
+        rows.insert(3, ['Effective Timeout', scan[:timeout]]) if timeout_changed
+        rows
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Print periodic directory scan progress updates
       def print_progress(current, total)
@@ -368,32 +629,60 @@ module Nokizaru
         lines = File.readlines(wdlist, chomp: true)
         normalized = lines.map(&:strip).reject(&:empty?)
         unique = normalized.uniq
-        {
-          words: unique,
-          total_lines: lines.length,
-          unique_lines: unique.length
-        }
+        word_data(unique, lines.length)
       rescue Errno::ENOENT
+        missing_wordlist(wdlist)
+      rescue StandardError => e
+        unreadable_wordlist(e)
+      end
+
+      def missing_wordlist(wdlist)
         UI.line(:error, "Wordlist not found : #{wdlist}")
         Log.write("[dirrec] Wordlist not found: #{wdlist}")
+        empty_word_data
+      end
+
+      def unreadable_wordlist(error)
+        UI.line(:error, "Failed to read wordlist : #{error.message}")
+        Log.write("[dirrec] Failed to read wordlist: #{error.class} - #{error.message}")
+        empty_word_data
+      end
+
+      def word_data(words, total_lines)
         {
-          words: [],
-          total_lines: 0,
-          unique_lines: 0
-        }
-      rescue StandardError => e
-        UI.line(:error, "Failed to read wordlist : #{e.message}")
-        Log.write("[dirrec] Failed to read wordlist: #{e.class} - #{e.message}")
-        {
-          words: [],
-          total_lines: 0,
-          unique_lines: 0
+          words: words,
+          total_lines: total_lines,
+          unique_lines: words.length
         }
       end
 
+      def empty_word_data
+        word_data([], 0)
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
+
       # Probe the target shape quickly so we can select an enumeration mode
       def preflight_probe(target, verify_ssl:, allow_redirects:)
-        probe_client = Nokizaru::HTTPClient.for_bulk_requests(
+        probe_client = build_preflight_client(target, verify_ssl: verify_ssl, allow_redirects: allow_redirects)
+        metrics = empty_preflight_metrics
+        run_preflight_workers(preflight_urls(target), probe_client, metrics)
+        metrics
+      rescue StandardError
+        preflight_fallback_metrics
+      ensure
+        probe_client.close if probe_client.respond_to?(:close)
+      end
+
+      def build_preflight_client(target, verify_ssl:, allow_redirects:)
+        Nokizaru::HTTPClient.for_bulk_requests(
           target,
           timeout_s: PREFLIGHT_TIMEOUT_S,
           headers: { 'User-Agent' => DEFAULT_UA },
@@ -402,9 +691,10 @@ module Nokizaru
           max_concurrent: 8,
           retries: 0
         )
+      end
 
-        urls = preflight_urls(target)
-        metrics = {
+      def empty_preflight_metrics
+        {
           total: 0,
           errors: 0,
           timeouts: 0,
@@ -412,69 +702,71 @@ module Nokizaru
           generic_redirects: 0,
           statuses: Hash.new(0)
         }
-
-        q = Queue.new
-        urls.each { |u| q << u }
-
-        mtx = Mutex.new
-        workers = Array.new(8) do
-          Thread.new do
-            loop do
-              url = begin
-                q.pop(true)
-              rescue ThreadError
-                nil
-              end
-
-              break if url.nil? || $interrupted
-
-              begin
-                raw = request_url(probe_client, url, { request_method: :head })
-                res = HttpResult.new(raw)
-                kind = res.success? ? 'ok' : classify_error(res)
-
-                mtx.synchronize do
-                  metrics[:total] += 1
-
-                  if res.success?
-                    status = res.status.to_i
-                    metrics[:statuses][status] += 1
-                    if redirect_status?(status)
-                      metrics[:redirects] += 1
-                      sample = response_redirect_sample(res, request_url: url)
-                      if sample && generic_redirect_pattern?(sample[:redirect_pattern].to_s)
-                        metrics[:generic_redirects] += 1
-                      end
-                    end
-                  else
-                    metrics[:errors] += 1
-                    metrics[:timeouts] += 1 if kind == 'timeout'
-                  end
-                end
-              rescue StandardError
-                mtx.synchronize do
-                  metrics[:total] += 1
-                  metrics[:errors] += 1
-                end
-              end
-            end
-          end
-        end
-
-        workers.each(&:join)
-
-        probe_client.close if probe_client.respond_to?(:close)
-        metrics
-      rescue StandardError
-        {
-          total: 0,
-          errors: 0,
-          timeouts: 0,
-          redirects: 0,
-          generic_redirects: 0,
-          statuses: {}
-        }
       end
+
+      def preflight_fallback_metrics
+        empty_preflight_metrics.merge(statuses: {})
+      end
+
+      def run_preflight_workers(urls, probe_client, metrics)
+        queue = build_work_queue(urls)
+        mutex = Mutex.new
+        workers = Array.new(8) { Thread.new { preflight_worker_loop(queue, probe_client, metrics, mutex) } }
+        workers.each(&:join)
+      end
+
+      def preflight_worker_loop(queue, probe_client, metrics, mutex)
+        loop do
+          url = pop_queue_url(queue)
+          break if url.nil? || Nokizaru::InterruptState.interrupted?
+
+          process_preflight_url(url, probe_client, metrics, mutex)
+        end
+      end
+
+      def process_preflight_url(url, probe_client, metrics, mutex)
+        result = preflight_result(probe_client, url)
+        mutex.synchronize { update_preflight_metrics!(metrics, result, url) }
+      rescue StandardError
+        mutex.synchronize { record_preflight_error!(metrics) }
+      end
+
+      def preflight_result(probe_client, url)
+        raw = request_url(probe_client, url, { request_method: :head })
+        result = HttpResult.new(raw)
+        { response: result, error_kind: result.success? ? nil : classify_error(result) }
+      end
+
+      def update_preflight_metrics!(metrics, result, url)
+        metrics[:total] += 1
+        return record_preflight_error!(metrics, result[:error_kind]) unless result[:response].success?
+
+        record_preflight_success!(metrics, result[:response], url)
+      end
+
+      def record_preflight_error!(metrics, error_kind = nil)
+        metrics[:errors] += 1
+        metrics[:timeouts] += 1 if error_kind == 'timeout'
+      end
+
+      def record_preflight_success!(metrics, response, url)
+        status = response.status.to_i
+        metrics[:statuses][status] += 1
+        return unless redirect_status?(status)
+
+        metrics[:redirects] += 1
+        sample = response_redirect_sample(response, request_url: url)
+        metrics[:generic_redirects] += 1 if sample && generic_redirect_pattern?(sample[:redirect_pattern].to_s)
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Compose a small preflight set: random canaries + high-signal endpoints
       def preflight_urls(target)
@@ -510,28 +802,50 @@ module Nokizaru
         total = preflight[:total].to_i
         return MODE_HOSTILE if total <= 0
 
-        errors = preflight[:errors].to_i
-        timeouts = preflight[:timeouts].to_i
-        redirects = preflight[:redirects].to_i
-        generic_redirects = preflight[:generic_redirects].to_i
-
-        error_ratio = errors.to_f / total
-        timeout_ratio = timeouts.to_f / total
-        redirect_ratio = redirects.to_f / total
-        generic_ratio = redirects.positive? ? (generic_redirects.to_f / redirects) : 0.0
-
-        return MODE_HOSTILE if timeout_ratio >= 0.05
-        return MODE_HOSTILE if error_ratio >= 0.6
-
-        if redirect_ratio >= 0.4 && generic_ratio >= 0.7
-          return MODE_HOSTILE if error_ratio >= 0.25
-
-          return MODE_SEEDED
-        end
-
-        return MODE_SEEDED if error_ratio >= 0.15
+        ratios = preflight_ratios(preflight, total)
+        return MODE_HOSTILE if hostile_preflight?(ratios)
+        return MODE_SEEDED if seeded_preflight?(ratios)
 
         MODE_FULL
+      end
+
+      def preflight_ratios(preflight, total)
+        redirects = preflight[:redirects].to_i
+        {
+          error: preflight[:errors].to_i.to_f / total,
+          timeout: preflight[:timeouts].to_i.to_f / total,
+          redirect: redirects.to_f / total,
+          generic: generic_redirect_ratio(preflight, redirects)
+        }
+      end
+
+      def generic_redirect_ratio(preflight, redirects)
+        return 0.0 unless redirects.positive?
+
+        preflight[:generic_redirects].to_i.to_f / redirects
+      end
+
+      def hostile_preflight?(ratios)
+        return true if ratios[:timeout] >= 0.05
+        return true if ratios[:error] >= 0.6
+        return false unless ratios[:redirect] >= 0.4 && ratios[:generic] >= 0.7
+
+        ratios[:error] >= 0.25
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
+
+      def seeded_preflight?(ratios)
+        return true if ratios[:redirect] >= 0.4 && ratios[:generic] >= 0.7
+
+        ratios[:error] >= 0.15
       end
 
       # Adjust request timeout further based on chosen mode
@@ -558,7 +872,7 @@ module Nokizaru
         return [value, 1].max if mode == MODE_FULL
 
         cap = mode == MODE_HOSTILE ? 12 : 20
-        [[value, cap].min, 1].max
+        value.clamp(1, cap)
       end
 
       def request_url(client, url, stop_state)
@@ -571,21 +885,38 @@ module Nokizaru
       rescue NoMethodError
         client.get(url)
       end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Build the URL list for the chosen enumeration mode
-      def build_scan_urls(mode, target, words, filext, ctx, max_seed_paths:)
-        case mode
+      def build_scan_urls(config)
+        case config[:mode]
         when MODE_FULL
-          build_urls(target, words, filext)
+          build_urls(config[:target], config[:words], config[:filext])
         when MODE_SEEDED
-          seed_urls = build_seed_urls(target, ctx, max_seed_paths: max_seed_paths)
-          word_urls = build_urls(target, Array(words).first(150), filext)
-          (seed_urls + word_urls).uniq.first(max_seed_paths.to_i)
+          seeded_scan_urls(config)
         when MODE_HOSTILE
-          build_seed_urls(target, ctx, max_seed_paths: max_seed_paths).first(max_seed_paths.to_i)
-        else
-          build_urls(target, words, filext)
+          hostile_scan_urls(config)
         end
+      end
+
+      def seeded_scan_urls(config)
+        max_paths = config[:max_seed_paths].to_i
+        seed_urls = build_seed_urls(config[:target], config[:ctx], max_seed_paths: max_paths)
+        word_urls = build_urls(config[:target], Array(config[:words]).first(150), config[:filext])
+        (seed_urls + word_urls).uniq.first(max_paths)
+      end
+
+      def hostile_scan_urls(config)
+        max_paths = config[:max_seed_paths].to_i
+        build_seed_urls(config[:target], config[:ctx], max_seed_paths: max_paths).first(max_paths)
       end
 
       # Build seed URLs using crawler artifacts + high-signal endpoints
@@ -601,19 +932,11 @@ module Nokizaru
         crawler = ctx.run.dig('modules', 'crawler')
         return [] unless crawler.is_a?(Hash)
 
-        buckets = %w[internal_links robots_links urls_inside_js urls_inside_sitemap]
-        urls = buckets.flat_map { |k| Array(crawler[k]) }
+        urls = crawler_seed_urls(crawler)
         base_uri = URI.parse(base_target)
 
         paths = urls.filter_map do |url|
-          uri = URI.parse(url.to_s)
-          next unless Nokizaru::TargetIntel.same_scope_host?(base_uri.host, uri.host)
-
-          path = uri.path.to_s
-          path = '/' if path.empty?
-          next if path == '/'
-
-          path
+          crawler_seed_path(url, base_uri)
         rescue StandardError
           nil
         end
@@ -621,27 +944,23 @@ module Nokizaru
         paths.uniq
       end
 
+      def crawler_seed_urls(crawler)
+        %w[internal_links robots_links urls_inside_js urls_inside_sitemap].flat_map { |key| Array(crawler[key]) }
+      end
+
+      def crawler_seed_path(url, base_uri)
+        uri = URI.parse(url.to_s)
+        return nil unless Nokizaru::TargetIntel.same_scope_host?(base_uri.host, uri.host)
+
+        path = uri.path.to_s
+        path = '/' if path.empty?
+        return nil if path == '/'
+
+        path
+      end
+
       def high_signal_paths
-        %w[
-          /robots.txt
-          /sitemap.xml
-          /.git/HEAD
-          /.env
-          /admin
-          /login
-          /signin
-          /auth
-          /account
-          /dashboard
-          /api
-          /graphql
-          /wp-admin
-          /wp-login.php
-          /xmlrpc.php
-          /wp-json
-          /server-status
-          /server-info
-        ]
+        HIGH_SIGNAL_PATHS
       end
 
       def join_url(base, path)
@@ -649,6 +968,15 @@ module Nokizaru
         cleaned = "/#{cleaned}" unless cleaned.start_with?('/')
         "#{normalize_target_base(base)}#{cleaned}"
       end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Budget stop logic
       def should_stop_now?(count, start_time, stop_state)
@@ -667,21 +995,26 @@ module Nokizaru
       def stop!(stop_state, count, start_time, client = nil)
         return if stop_state[:stop]
 
-        budgets = stop_state[:budgets].is_a?(Hash) ? stop_state[:budgets] : {}
-        max_requests = budgets[:max_requests].to_i
-        budget_s = budgets[:budget_s].to_f
-        elapsed = Time.now - start_time
-
+        budgets = stop_budgets(stop_state)
         stop_state[:stop] = true
-        stop_state[:reason] ||= if max_requests.positive? && count >= max_requests
-                                  "request budget hit (#{count}/#{max_requests})"
-                                elsif budget_s.positive? && elapsed >= budget_s
-                                  "time budget hit (#{elapsed.round(2)}s/#{budget_s}s)"
-                                else
-                                  'stopped'
-                                end
+        stop_state[:reason] ||= stop_reason(budgets, count, start_time)
 
         close_client!(stop_state, client)
+      end
+
+      def stop_budgets(stop_state)
+        stop_state[:budgets].is_a?(Hash) ? stop_state[:budgets] : {}
+      end
+
+      def stop_reason(budgets, count, start_time)
+        max_requests = budgets[:max_requests].to_i
+        return "request budget hit (#{count}/#{max_requests})" if max_requests.positive? && count >= max_requests
+
+        budget_s = budgets[:budget_s].to_f
+        elapsed = Time.now - start_time
+        return "time budget hit (#{elapsed.round(2)}s/#{budget_s}s)" if budget_s.positive? && elapsed >= budget_s
+
+        'stopped'
       end
 
       # Build candidate paths from words and optional extensions
@@ -689,20 +1022,39 @@ module Nokizaru
         return [] if words.empty?
 
         base = normalize_target_base(target)
-        exts = filext.to_s.strip.empty? ? [] : filext.split(',').map(&:strip)
-
-        urls = if exts.empty?
-                 words.map { |w| "#{base}/#{encode_path_word(w)}" }
-               else
-                 all_exts = [''] + exts
-                 words.flat_map do |word|
-                   encoded_word = encode_path_word(word)
-                   all_exts.map { |ext| ext.empty? ? "#{base}/#{encoded_word}" : "#{base}/#{encoded_word}.#{ext}" }
-                 end
-               end
+        exts = file_extensions(filext)
+        urls = exts.empty? ? base_word_urls(base, words) : extension_urls(base, words, exts)
 
         urls.uniq
       end
+
+      def file_extensions(filext)
+        value = filext.to_s.strip
+        return [] if value.empty?
+
+        value.split(',').map(&:strip)
+      end
+
+      def base_word_urls(base, words)
+        words.map { |word| "#{base}/#{encode_path_word(word)}" }
+      end
+
+      def extension_urls(base, words, exts)
+        all_exts = [''] + exts
+        words.flat_map do |word|
+          encoded = encode_path_word(word)
+          all_exts.map { |ext| ext.empty? ? "#{base}/#{encoded}" : "#{base}/#{encoded}.#{ext}" }
+        end
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Encode path words safely before constructing request URLs
       def encode_path_word(word)
@@ -723,57 +1075,129 @@ module Nokizaru
       end
 
       # Print directory scan totals and representative findings
-      def dir_output(responses, found, stats, ctx, original_target:, effective_target:, reanchored:, reason:,
-                     stop_state:)
+      def dir_output(runtime:, scan:)
+        payload = dir_payload_inputs(runtime)
+        stats = payload[:stats]
         elapsed = stats[:elapsed] || 1
         rps = ((stats[:success] + stats[:errors]) / elapsed).round(1)
+        stop_meta = stop_metadata(runtime[:stop_state])
+        result = dir_result_payload(scan: scan, payload: payload, stop_meta: stop_meta, rps: rps, elapsed: elapsed)
+        print_dir_summary(rps, payload[:found], stop_meta[:stop_reason])
+        store_dir_result(scan, result)
+      end
 
-        stop_state ||= {}
-        mode = stop_state[:mode].to_s
-        budgets = stop_state[:budgets].is_a?(Hash) ? stop_state[:budgets] : {}
-        stop_reason = stop_state[:reason].to_s
-        preflight = stop_state[:preflight]
-
-        result = {
-          'target' => {
-            'original' => original_target,
-            'effective' => effective_target,
-            'reanchored' => reanchored,
-            'reason' => reason
-          },
-          'found' => found.uniq,
-          'by_status' => responses.group_by { |(_, s)| s.to_s }.transform_values { |v| v.map(&:first) },
-          'stats' => {
-            'mode' => mode,
-            'stop_reason' => stop_reason.empty? ? nil : stop_reason,
-            'budget_seconds' => budgets[:budget_s],
-            'max_requests' => budgets[:max_requests],
-            'preflight' => preflight,
-            'total_requests' => stats[:success] + stats[:errors],
-            'successful' => stats[:success],
-            'errors' => stats[:errors],
-            'error_breakdown' => stats[:error_kinds].to_h,
-            'timeout_downshifts' => stats[:timeout_downshifts].to_i,
-            'redirect_noise_filtered' => stats[:redirect_filtered].to_i,
-            'redirect_outliers' => stats[:redirect_outliers].to_i,
-            'elapsed_seconds' => elapsed.round(2),
-            'requests_per_second' => rps
-          }
+      def dir_payload_inputs(runtime)
+        {
+          responses: runtime[:responses],
+          found: runtime[:found],
+          stats: runtime[:stats]
         }
+      end
 
+      def stop_metadata(stop_state)
+        state = stop_state || {}
+        {
+          mode: state[:mode].to_s,
+          budgets: state[:budgets].is_a?(Hash) ? state[:budgets] : {},
+          stop_reason: state[:reason].to_s,
+          preflight: state[:preflight]
+        }
+      end
+
+      def dir_result_payload(scan:, payload:, stop_meta:, rps:, elapsed:)
+        {
+          'target' => dir_target_payload(scan),
+          'found' => payload[:found].uniq,
+          'by_status' => grouped_status_payload(payload[:responses]),
+          'stats' => dir_stats_payload(payload[:stats], stop_meta, rps, elapsed)
+        }
+      end
+
+      def grouped_status_payload(responses)
+        responses.group_by { |(_, status)| status.to_s }.transform_values { |values| values.map(&:first) }
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
+
+      def dir_target_payload(scan)
+        {
+          'original' => scan[:options][:target],
+          'effective' => scan[:scan_target],
+          'reanchored' => scan[:anchor][:reanchor],
+          'reason' => scan[:anchor][:reason]
+        }
+      end
+
+      def dir_stats_payload(stats, stop_meta, rps, elapsed)
+        dir_stop_stats(stop_meta).merge(dir_runtime_stats(stats, rps, elapsed))
+      end
+
+      def dir_stop_stats(stop_meta)
+        {
+          'mode' => stop_meta[:mode],
+          'stop_reason' => stop_reason_value(stop_meta[:stop_reason]),
+          'budget_seconds' => stop_meta[:budgets][:budget_s],
+          'max_requests' => stop_meta[:budgets][:max_requests],
+          'preflight' => stop_meta[:preflight]
+        }
+      end
+
+      def dir_runtime_stats(stats, rps, elapsed)
+        dir_request_stats(stats).merge(dir_timing_stats(stats, rps, elapsed))
+      end
+
+      def dir_request_stats(stats)
+        {
+          'total_requests' => stats[:success] + stats[:errors],
+          'successful' => stats[:success],
+          'errors' => stats[:errors],
+          'error_breakdown' => stats[:error_kinds].to_h
+        }
+      end
+
+      def dir_timing_stats(stats, rps, elapsed)
+        {
+          'timeout_downshifts' => stats[:timeout_downshifts].to_i,
+          'redirect_noise_filtered' => stats[:redirect_filtered].to_i,
+          'redirect_outliers' => stats[:redirect_outliers].to_i,
+          'elapsed_seconds' => elapsed.round(2),
+          'requests_per_second' => rps
+        }
+      end
+
+      def stop_reason_value(stop_reason)
+        stop_reason.empty? ? nil : stop_reason
+      end
+
+      def print_dir_summary(rps, found, stop_reason)
         puts
-        rows = [
-          ['Requests/second', rps],
-          ['Directories Found', found.uniq.length]
-        ]
+        rows = [['Requests/second', rps], ['Directories Found', found.uniq.length]]
         rows << ['Stop Reason', stop_reason] unless stop_reason.to_s.strip.empty?
-
         UI.rows(:info, rows)
         puts
+      end
 
+      def store_dir_result(scan, result)
+        ctx = scan[:options][:ctx]
         ctx.run['modules']['directory_enum'] = result
         ctx.add_artifact('paths', result['found'])
       end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Clamp directory enumeration timeout to reduce long-tail stalls on strict targets
       def effective_timeout_s(timeout_s, target_profile: nil, header_map: nil, allow_redirects: false)
@@ -793,15 +1217,23 @@ module Nokizaru
       def protected_target?(target_profile, header_map, allow_redirects)
         return false if allow_redirects
 
-        mode = target_profile.is_a?(Hash) ? target_profile['mode'].to_s : ''
+        mode = target_profile_mode(target_profile)
+        edge_provider?(header_map) || !mode.empty?
+      end
+
+      def target_profile_mode(target_profile)
+        target_profile.is_a?(Hash) ? target_profile['mode'].to_s : ''
+      end
+
+      def edge_provider?(header_map)
         headers = header_map.is_a?(Hash) ? header_map : {}
         server = headers['server'].to_s.downcase
         powered_by = headers['x-powered-by'].to_s.downcase
+        edge_vendor?(server) || powered_by.include?('cloudflare')
+      end
 
-        edge = server.include?('cloudflare') || server.include?('akamai') || server.include?('sucuri') ||
-               server.include?('imperva') || powered_by.include?('cloudflare')
-
-        edge || !mode.empty?
+      def edge_vendor?(server)
+        %w[cloudflare akamai sucuri imperva].any? { |vendor| server.include?(vendor) }
       end
 
       # Decide when error profile indicates timeouts are dominating and runtime timeout should be reduced
@@ -816,68 +1248,79 @@ module Nokizaru
       end
 
       # Rebuild bulk HTTP client with lower timeout to keep directory scan throughput stable on protected targets
-      def rebuild_client_with_lower_timeout(client, timeout_state, target, allow_redirects, verify_ssl, threads)
-        next_timeout = [(timeout_state[:current] * 0.6).round(2), timeout_state[:min]].max
+      def rebuild_client_with_lower_timeout(config)
+        client = config[:client]
+        timeout_state = config[:timeout_state]
+        next_timeout = next_timeout_value(timeout_state)
         return [client, timeout_state] if next_timeout >= timeout_state[:current]
 
-        client.close if client.respond_to?(:close)
-
-        refreshed = Nokizaru::HTTPClient.for_bulk_requests(
-          target,
-          timeout_s: next_timeout,
-          headers: { 'User-Agent' => DEFAULT_UA },
-          follow_redirects: allow_redirects,
-          verify_ssl: verify_ssl,
-          max_concurrent: [threads.to_i, 1].max,
-          retries: 0
-        )
+        refreshed = rebuild_client_with_timeout(config, next_timeout)
 
         [refreshed, timeout_state.merge(current: next_timeout)]
       rescue StandardError
         [client, timeout_state]
       end
 
-      def rebuild_client(client, timeout_state, target, allow_redirects, verify_ssl, threads)
-        current_timeout = timeout_state[:current].to_f
-        refreshed = Nokizaru::HTTPClient.for_bulk_requests(
-          target,
-          timeout_s: current_timeout,
-          headers: { 'User-Agent' => DEFAULT_UA },
-          follow_redirects: allow_redirects,
-          verify_ssl: verify_ssl,
-          max_concurrent: [threads.to_i, 1].max,
-          retries: 0
-        )
+      def next_timeout_value(timeout_state)
+        [(timeout_state[:current] * 0.6).round(2), timeout_state[:min]].max
+      end
 
-        client.close if client.respond_to?(:close)
+      def rebuild_client(config)
+        client = config[:client]
+        timeout_state = config[:timeout_state]
+        refreshed = rebuild_client_with_timeout(config, timeout_state[:current].to_f)
         [refreshed, timeout_state]
       rescue StandardError
         [client, timeout_state]
       end
 
+      def rebuild_client_with_timeout(config, timeout)
+        config[:client].close if config[:client].respond_to?(:close)
+        Nokizaru::HTTPClient.for_bulk_requests(
+          config[:target],
+          timeout_s: timeout,
+          headers: { 'User-Agent' => DEFAULT_UA },
+          follow_redirects: config[:allow_redirects],
+          verify_ssl: config[:verify_ssl],
+          max_concurrent: [config[:threads].to_i, 1].max,
+          retries: 0
+        )
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
+
       # Downgrade scan mode during execution if the target becomes hostile under load
-      def maybe_downgrade_mode!(count, stats, stop_state, timeout_state)
-        return false if stop_state[:stop]
-        return false if count < 80
+      def apply_mode_downgrade!(count, stats, stop_state, timeout_state)
+        return nil if stop_state[:stop]
+        return nil if count < 80
 
         current_mode = stop_state[:mode].to_s
-        return false if current_mode == MODE_HOSTILE
+        return nil if current_mode == MODE_HOSTILE
 
+        return nil unless hostile_runtime_ratios?(count, stats)
+
+        apply_hostile_mode!(stop_state, timeout_state)
+      end
+
+      def hostile_runtime_ratios?(count, stats)
         errors = stats[:errors].to_i
         timeouts = stats[:error_kinds]['timeout'].to_i
+        (timeouts.to_f / count) >= 0.08 || (errors.to_f / count) >= 0.75
+      end
 
-        error_ratio = errors.to_f / count
-        timeout_ratio = timeouts.to_f / count
-
-        if timeout_ratio >= 0.08 || error_ratio >= 0.75
-          stop_state[:mode] = MODE_HOSTILE
-          stop_state[:budgets] = MODE_BUDGETS.fetch(MODE_HOSTILE)
-          stop_state[:request_method] = request_method_for_mode(MODE_HOSTILE)
-          timeout_state[:current] = timeout_for_mode(MODE_HOSTILE, timeout_state[:current])
-          return true
-        end
-
-        false
+      def apply_hostile_mode!(stop_state, timeout_state)
+        stop_state[:mode] = MODE_HOSTILE
+        stop_state[:budgets] = MODE_BUDGETS.fetch(MODE_HOSTILE)
+        stop_state[:request_method] = request_method_for_mode(MODE_HOSTILE)
+        timeout_state[:current] = timeout_for_mode(MODE_HOSTILE, timeout_state[:current])
+        :downgraded
       end
 
       def close_client!(stop_state, client)
@@ -895,30 +1338,53 @@ module Nokizaru
         error = http_result.error
         message = http_result.error_message.to_s.downcase
 
-        return 'timeout' if message.include?('timeout') || message.include?('timed out')
-        return 'timeout' if message.include?('waiting on select') || message.include?('waited')
-        return 'timeout' if defined?(Timeout::Error) && error.is_a?(Timeout::Error)
-        return 'timeout' if defined?(Errno::ETIMEDOUT) && error.is_a?(Errno::ETIMEDOUT)
-        return 'timeout' if defined?(IO::TimeoutError) && error.is_a?(IO::TimeoutError)
-        return 'timeout' if defined?(HTTPX::TimeoutError) && error.is_a?(HTTPX::TimeoutError)
+        return 'timeout' if timeout_error?(message, error)
         return 'tls' if defined?(OpenSSL::SSL::SSLError) && error.is_a?(OpenSSL::SSL::SSLError)
-        if message.include?('connection') || message.include?('reset') || message.include?('refused')
-          return 'connection'
-        end
+        return 'connection' if connection_error_message?(message)
 
         'other'
       end
+
+      def timeout_error?(message, error)
+        timeout_message?(message) || timeout_exception?(error)
+      end
+
+      def timeout_message?(message)
+        message.include?('timeout') || message.include?('timed out') ||
+          message.include?('waiting on select') || message.include?('waited')
+      end
+
+      def timeout_exception?(error)
+        timeout_error_classes.any? { |klass| klass && error.is_a?(klass) }
+      end
+
+      def timeout_error_classes
+        [
+          (defined?(Timeout::Error) ? Timeout::Error : nil),
+          (defined?(Errno::ETIMEDOUT) ? Errno::ETIMEDOUT : nil),
+          (defined?(IO::TimeoutError) ? IO::TimeoutError : nil),
+          (defined?(HTTPX::TimeoutError) ? HTTPX::TimeoutError : nil)
+        ]
+      end
+
+      def connection_error_message?(message)
+        message.include?('connection') || message.include?('reset') || message.include?('refused')
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Detect wildcard or soft-404 responses so noisy 200 pages are filtered
       def build_soft_404_baseline(client, target)
         samples = []
         SOFT_404_PROBES.times do
-          probe_url = "#{normalize_target_base(target)}/#{SecureRandom.hex(10)}"
-          raw = client.get(probe_url)
-          result = HttpResult.new(raw)
-          next unless result.success?
-
-          sample = response_sample(result, request_url: probe_url)
+          sample = soft_404_probe_sample(client, target)
           samples << sample if sample
         rescue StandardError
           nil
@@ -927,25 +1393,59 @@ module Nokizaru
         soft_404_baseline_from_samples(samples)
       end
 
+      def soft_404_probe_sample(client, target)
+        probe_url = "#{normalize_target_base(target)}/#{SecureRandom.hex(10)}"
+        raw = client.get(probe_url)
+        result = HttpResult.new(raw)
+        return nil unless result.success?
+
+        response_sample(result, request_url: probe_url)
+      end
+
       # Build a compact comparable sample from one HTTP response
       def response_sample(http_result, request_url: nil)
         status = http_result.status.to_i
         return nil unless SOFT_404_SAMPLE_STATUSES.include?(status)
 
-        content_type = normalize_content_type(http_result.headers['content-type'])
-        body = http_result.body.to_s
-        location = normalized_location_from_request(request_url, http_result.headers['location'])
-        redirect_pattern = redirect_pattern(request_url, http_result.headers['location'])
+        context = response_sample_context(http_result, request_url)
+        response_sample_payload(status, context)
+      end
+
+      def response_sample_payload(status, context)
         {
           status: status,
-          content_type: content_type,
-          body_length: body.bytesize,
-          title: extract_title(body),
-          fingerprint: body_fingerprint(body),
-          location: location,
-          redirect_pattern: redirect_pattern
+          content_type: context[:content_type],
+          body_length: context[:body].bytesize
+        }.merge(response_sample_body_fields(context)).merge(
+          location: context[:location],
+          redirect_pattern: context[:pattern]
+        )
+      end
+
+      def response_sample_body_fields(context)
+        {
+          title: extract_title(context[:body]),
+          fingerprint: body_fingerprint(context[:body])
         }
       end
+
+      def response_sample_context(http_result, request_url)
+        {
+          content_type: normalize_content_type(http_result.headers['content-type']),
+          body: http_result.body.to_s,
+          location: normalized_location_from_request(request_url, http_result.headers['location']),
+          pattern: redirect_pattern(request_url, http_result.headers['location'])
+        }
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Build a lightweight redirect sample used by directory redirect fast-path filtering
       def response_redirect_sample(http_result, request_url: nil)
@@ -965,43 +1465,85 @@ module Nokizaru
       def soft_404_baseline_from_samples(samples)
         return nil if samples.length < SOFT_404_MIN_PROBES
 
-        statuses = samples.map { |s| s[:status] }.uniq
+        status = single_soft_404_status(samples)
+        return nil unless status
+        return redirect_soft_404_baseline(samples, status) if redirect_status?(status)
+
+        content_soft_404_baseline(samples, status)
+      end
+
+      def single_soft_404_status(samples)
+        statuses = samples.map { |sample| sample[:status] }.uniq
         return nil unless statuses.length == 1
 
-        status = statuses.first
+        statuses.first
+      end
 
-        if redirect_status?(status)
-          patterns = samples.map { |s| s[:redirect_pattern] }.compact.uniq
-          return { status: status, redirect_pattern: patterns.first } if patterns.length == 1
+      def redirect_soft_404_baseline(samples, status)
+        patterns = samples.map { |sample| sample[:redirect_pattern] }.compact.uniq
+        return { status: status, redirect_pattern: patterns.first } if patterns.length == 1
 
-          locations = samples.map { |s| s[:location] }.compact.uniq
-          return nil unless locations.length == 1
+        locations = samples.map { |sample| sample[:location] }.compact.uniq
+        return nil unless locations.length == 1
 
-          return { status: status, location: locations.first }
-        end
+        { status: status, location: locations.first }
+      end
 
-        content_types = samples.map { |s| s[:content_type] }.uniq
-        return nil unless content_types.length == 1
+      def content_soft_404_baseline(samples, status)
+        content_type = single_content_type(samples)
+        return nil unless content_type
 
-        lengths = samples.map { |s| s[:body_length] }
-        return nil if lengths.empty?
+        median_length = median_body_length(samples)
+        return nil unless median_length
 
-        median_length = lengths.sort[lengths.length / 2]
-        tolerance = [[(median_length * 0.05).round, SOFT_404_MIN_TOLERANCE].max, SOFT_404_MAX_TOLERANCE].min
-        titles = samples.map { |s| s[:title] }.uniq
-        baseline_title = titles.length == 1 ? titles.first : nil
-        fingerprints = samples.map { |s| s[:fingerprint] }.compact
-        baseline_fingerprint = fingerprints.uniq.length == 1 ? fingerprints.first : nil
+        content_baseline_payload(samples, status, content_type, median_length)
+      end
 
+      def content_baseline_payload(samples, status, content_type, median_length)
         {
           status: status,
-          content_type: content_types.first,
+          content_type: content_type,
           body_length: median_length,
-          tolerance: tolerance,
-          title: baseline_title,
-          fingerprint: baseline_fingerprint
+          tolerance: soft_404_tolerance(median_length),
+          title: single_sample_title(samples),
+          fingerprint: single_sample_fingerprint(samples)
         }
       end
+
+      def single_content_type(samples)
+        content_types = samples.map { |sample| sample[:content_type] }.uniq
+        content_types.length == 1 ? content_types.first : nil
+      end
+
+      def median_body_length(samples)
+        lengths = samples.map { |sample| sample[:body_length] }
+        return nil if lengths.empty?
+
+        lengths.sort[lengths.length / 2]
+      end
+
+      def soft_404_tolerance(body_length)
+        [(body_length * 0.05).round, SOFT_404_MIN_TOLERANCE].max.clamp(0, SOFT_404_MAX_TOLERANCE)
+      end
+
+      def single_sample_title(samples)
+        titles = samples.map { |sample| sample[:title] }.uniq
+        titles.length == 1 ? titles.first : nil
+      end
+
+      def single_sample_fingerprint(samples)
+        fingerprints = samples.map { |sample| sample[:fingerprint] }.compact
+        fingerprints.uniq.length == 1 ? fingerprints.first : nil
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Check whether a response matches wildcard baseline and should be suppressed
       def soft_404_match?(http_result, baseline)
@@ -1011,23 +1553,32 @@ module Nokizaru
 
       # Check whether a precomputed response sample matches wildcard baseline
       def soft_404_match_sample?(sample, baseline)
-        return false unless baseline
-        return false unless sample
-        return false unless sample[:status] == baseline[:status]
-
-        if redirect_status?(sample[:status])
-          return sample[:redirect_pattern] == baseline[:redirect_pattern] if baseline[:redirect_pattern]
-          return false unless baseline[:location]
-
-          return sample[:location] == baseline[:location]
-        end
-
+        return false unless valid_soft_404_sample?(sample, baseline)
+        return redirect_soft_404_match?(sample, baseline) if redirect_status?(sample[:status])
         return false unless sample[:content_type] == baseline[:content_type]
+        return true if fingerprint_match?(sample, baseline)
 
+        title_and_length_match?(sample, baseline)
+      end
+
+      def valid_soft_404_sample?(sample, baseline)
+        baseline && sample && sample[:status] == baseline[:status]
+      end
+
+      def redirect_soft_404_match?(sample, baseline)
+        return sample[:redirect_pattern] == baseline[:redirect_pattern] if baseline[:redirect_pattern]
+        return false unless baseline[:location]
+
+        sample[:location] == baseline[:location]
+      end
+
+      def fingerprint_match?(sample, baseline)
         baseline_fingerprint = baseline[:fingerprint]
         sample_fingerprint = sample[:fingerprint]
-        return true if baseline_fingerprint && sample_fingerprint && (baseline_fingerprint == sample_fingerprint)
+        baseline_fingerprint && sample_fingerprint && baseline_fingerprint == sample_fingerprint
+      end
 
+      def title_and_length_match?(sample, baseline)
         length_delta = (sample[:body_length] - baseline[:body_length]).abs
         return false if length_delta > baseline[:tolerance]
         return true unless baseline[:title]
@@ -1075,47 +1626,85 @@ module Nokizaru
         top_count = learning[:signatures].values.max.to_i
         top_count.to_f / total
       end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Learn a fallback baseline from repeated response signatures during enumeration
       def learn_soft_404_baseline(sample, baseline, learning)
         return baseline if baseline || sample.nil?
         return baseline unless SOFT_404_SAMPLE_STATUSES.include?(sample[:status])
 
-        signature_key = if redirect_status?(sample[:status])
-                          sample[:redirect_pattern] || sample[:location]
-                        else
-                          sample[:fingerprint] || sample[:title]
-                        end
+        signature_key = sample_signature_key(sample)
         return baseline unless signature_key
 
+        update_learning_signature!(learning, sample, signature_key)
+        promoted = promote_learning_signature(learning)
+        return baseline unless promoted
+
+        promoted_soft_404_baseline(promoted)
+      end
+
+      def sample_signature_key(sample)
+        if redirect_status?(sample[:status])
+          sample[:redirect_pattern] || sample[:location]
+        else
+          sample[:fingerprint] || sample[:title]
+        end
+      end
+
+      def update_learning_signature!(learning, sample, signature_key)
         learning[:total] += 1
         signature = [sample[:status], sample[:content_type], signature_key, sample[:body_length] / 256]
         learning[:signatures][signature] += 1
         learning[:samples][signature] ||= sample
+        signature
+      end
 
-        top_signature, top_count = learning[:signatures].max_by { |_sig, count| count }
-        return baseline unless top_signature && learning[:total] >= 8
-        return baseline unless top_count >= 6
-        return baseline unless (top_count.to_f / learning[:total]) >= 0.8
+      def promote_learning_signature(learning)
+        top_signature, top_count = learning[:signatures].max_by { |_signature, count| count }
+        return nil unless top_signature && learning[:total] >= 8
+        return nil unless top_count >= 6
+        return nil unless (top_count.to_f / learning[:total]) >= 0.8
 
-        promoted = learning[:samples][top_signature]
-        if redirect_status?(promoted[:status])
-          return {
-            status: promoted[:status],
-            location: promoted[:location],
-            redirect_pattern: promoted[:redirect_pattern]
-          }
-        end
+        learning[:samples][top_signature]
+      end
+
+      def promoted_soft_404_baseline(sample)
+        return promoted_redirect_baseline(sample) if redirect_status?(sample[:status])
 
         {
-          status: promoted[:status],
-          content_type: promoted[:content_type],
-          body_length: promoted[:body_length],
-          tolerance: [[(promoted[:body_length] * 0.05).round, SOFT_404_MIN_TOLERANCE].max, SOFT_404_MAX_TOLERANCE].min,
-          title: promoted[:title],
-          fingerprint: promoted[:fingerprint]
+          status: sample[:status],
+          content_type: sample[:content_type],
+          body_length: sample[:body_length],
+          tolerance: soft_404_tolerance(sample[:body_length]),
+          title: sample[:title],
+          fingerprint: sample[:fingerprint]
         }
       end
+
+      def promoted_redirect_baseline(sample)
+        {
+          status: sample[:status],
+          location: sample[:location],
+          redirect_pattern: sample[:redirect_pattern]
+        }
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Build a stable body fingerprint for generic wildcard pages with minor dynamic values
       def body_fingerprint(body)
@@ -1162,6 +1751,15 @@ module Nokizaru
 
         value.end_with?('/') ? value.chomp('/') : value
       end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Resolve and normalize redirect location using request context when available
       def normalized_location_from_request(request_url, location_header)
@@ -1186,21 +1784,23 @@ module Nokizaru
 
         req_path = normalize_pattern_path(req.path)
         loc_path = normalize_pattern_path(loc.path)
-        scheme_host = "#{loc.scheme}:#{loc.host.to_s.downcase}"
-
-        if req_path == loc_path
-          "same_path:#{scheme_host}"
-        elsif "#{req_path}/" == loc_path || (req_path == '/' && loc_path == '/')
-          "same_path_slash:#{scheme_host}"
-        elsif loc_path == '/'
-          "root:#{scheme_host}"
-        elsif loc_path.start_with?('/login', '/signin', '/auth')
-          "auth_entry:#{scheme_host}"
-        else
-          "path_specific:#{scheme_host}:#{loc_path}"
-        end
+        redirect_pattern_for_paths(req_path, loc_path, loc)
       rescue StandardError
         nil
+      end
+
+      def redirect_pattern_for_paths(req_path, loc_path, loc)
+        scheme_host = "#{loc.scheme}:#{loc.host.to_s.downcase}"
+        return "same_path:#{scheme_host}" if req_path == loc_path
+        return "same_path_slash:#{scheme_host}" if same_path_slash?(req_path, loc_path)
+        return "root:#{scheme_host}" if loc_path == '/'
+        return "auth_entry:#{scheme_host}" if loc_path.start_with?('/login', '/signin', '/auth')
+
+        "path_specific:#{scheme_host}:#{loc_path}"
+      end
+
+      def same_path_slash?(req_path, loc_path)
+        "#{req_path}/" == loc_path || (req_path == '/' && loc_path == '/')
       end
 
       # Normalize path for redirect pattern comparisons while preserving root
@@ -1211,6 +1811,15 @@ module Nokizaru
 
         value.chomp('/')
       end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       # Determine if current redirect is generic redirect noise and should be filtered
       def redirect_noise?(url, http_result, sample, baseline, target_profile)

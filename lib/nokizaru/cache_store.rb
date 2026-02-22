@@ -23,26 +23,33 @@ module Nokizaru
     # Return cached data when fresh or compute and store a new value
     def fetch(key, ttl_s: 3600)
       path = File.join(@dir, "#{key}.json")
-      if File.exist?(path)
-        begin
-          obj = JSON.parse(File.read(path))
-          stored_at = Time.at(obj.fetch('stored_at'))
-          return obj['payload'] if (Time.now - stored_at) <= ttl_s.to_f
-        rescue StandardError
-          # Treat as cache miss
-        end
-      end
+      cached = read_cached_payload(path, ttl_s)
+      return cached unless cached.nil?
 
       payload = yield
-      begin
-        File.write(path, JSON.pretty_generate({
-                                                'stored_at' => Time.now.to_i,
-                                                'payload' => payload
-                                              }))
-      rescue StandardError
-        # Ignore cache write failures
-      end
+      write_cached_payload(path, payload)
       payload
+    end
+
+    private
+
+    def read_cached_payload(path, ttl_s)
+      return nil unless File.exist?(path)
+
+      obj = JSON.parse(File.read(path))
+      stored_at = Time.at(obj.fetch('stored_at'))
+      return nil if (Time.now - stored_at) > ttl_s.to_f
+
+      obj['payload']
+    rescue StandardError
+      nil
+    end
+
+    def write_cached_payload(path, payload)
+      cache_data = { 'stored_at' => Time.now.to_i, 'payload' => payload }
+      File.write(path, JSON.pretty_generate(cache_data))
+    rescue StandardError
+      nil
     end
   end
 end

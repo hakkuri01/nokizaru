@@ -5,42 +5,43 @@ require_relative 'paths'
 require_relative 'log'
 
 module Nokizaru
-  # Prefer environment variables
-  # Fallback to ~/.config/nokizaru/keys.json
-  # If the key name is missing from keys.json, add it with null
+  # Read API keys from environment first, then persisted keys file
   module KeyStore
     module_function
 
-    # Parameters describe inputs expected by this method
-    # Parameters describe inputs expected by this method
-    # Return value describes what callers can safely rely on
-    # Read key values from env first, then keys file, and seed missing key slots
     def fetch(name, env: nil)
-      name = name.to_s
-      env_val = env && ENV[env]
-      return env_val if env_val && !env_val.empty?
+      key_name = name.to_s
+      env_value = env && ENV.fetch(env, nil)
+      return env_value if present_value?(env_value)
 
-      begin
-        keys = JSON.parse(File.read(Paths.keys_file))
-      rescue StandardError => e
-        Log.write("[keys] Unable to read keys.json: #{e}")
-        keys = {}
-      end
+      keys = load_keys
+      return normalized_key_value(keys[key_name]) if keys.key?(key_name)
 
-      if keys.key?(name)
-        val = keys[name]
-        return nil if val.nil? || val.to_s.empty?
-
-        return val
-      end
-
-      # Add missing key with null
-      keys[name] = nil
-      File.write(Paths.keys_file, JSON.pretty_generate(keys))
+      seed_missing_key!(keys, key_name)
       nil
     rescue StandardError => e
       Log.write("[keys] Exception: #{e}")
       nil
+    end
+
+    def load_keys
+      JSON.parse(File.read(Paths.keys_file))
+    rescue StandardError => e
+      Log.write("[keys] Unable to read keys.json: #{e}")
+      {}
+    end
+
+    def present_value?(value)
+      !value.nil? && !value.empty?
+    end
+
+    def normalized_key_value(value)
+      present_value?(value.to_s) ? value : nil
+    end
+
+    def seed_missing_key!(keys, key_name)
+      keys[key_name] = nil
+      File.write(Paths.keys_file, JSON.pretty_generate(keys))
     end
   end
 end

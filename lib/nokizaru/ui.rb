@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Nokizaru
+  # Nokizaru::UI implementation
   module UI
     module_function
 
@@ -43,8 +44,8 @@ module Nokizaru
       io.puts("#{prefix(type)} #{W}#{text}#{W}")
     end
 
-    def row(type, label, value, label_width: nil, min_dots: 3, io: $stdout)
-      io.puts(formatted_row(type, label, value, label_width: label_width, min_dots: min_dots))
+    def row(type, label, value, io: $stdout, **format_opts)
+      io.puts(formatted_row(type, label, value, **format_opts))
     end
 
     def formatted_row(type, label, value, label_width: nil, min_dots: 3)
@@ -76,13 +77,16 @@ module Nokizaru
     def tree_rows(pairs, min_dots: 3, io: $stdout)
       normalized = Array(pairs)
       width = normalized.map { |(label, _)| label.to_s.length }.max.to_i
-      normalized.each_with_index do |(label, value), idx|
-        branch = idx == normalized.length - 1 ? '└─◈' : '├─◈'
-        label_text = label.to_s
-        dots = '.' * [min_dots, width - label_text.length + min_dots].max
-        value_text = normalized_value_text(value)
-        io.puts(" #{branch} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value_text}#{W} ⟧")
-      end
+      normalized.each_with_index { |pair, idx| io.puts(format_tree_row(pair, idx, normalized.length, width, min_dots)) }
+    end
+
+    def format_tree_row(pair, idx, total, width, min_dots)
+      label, value = pair
+      branch = idx == total - 1 ? '└─◈' : '├─◈'
+      label_text = label.to_s
+      dots = '.' * [min_dots, width - label_text.length + min_dots].max
+      value_text = normalized_value_text(value)
+      " #{branch} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value_text}#{W} ⟧"
     end
 
     def progress(type, label, value, label_width: nil, min_dots: 3)
