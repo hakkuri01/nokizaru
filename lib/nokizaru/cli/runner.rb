@@ -13,6 +13,8 @@ module Nokizaru
   class CLI
     # Scan runner orchestration class
     class Runner
+      SKIPPABLE_MODULES = %w[headers sslinfo whois crawl dns sub arch dir wayback ps].freeze
+
       include Runner::Keys
       include Runner::Findings
       include Runner::Parsing
@@ -29,15 +31,12 @@ module Nokizaru
       end
 
       def parse_skip_flags(argv)
-        names = %w[headers sslinfo whois crawl dns sub arch dir wayback ps]
-        names.each_with_object({}) { |name, skip| skip[name.to_sym] = skip_flag?(argv, name) }
+        SKIPPABLE_MODULES.each_with_object({}) do |name, skip|
+          skip[name.to_sym] = argv.include?("--skip-#{name}") || argv.include?("--no-#{name}")
+        end
       end
 
-      def skip_flag?(argv, name)
-        argv.include?("--skip-#{name}") || argv.include?("--no-#{name}")
-      end
-
-      private :parse_skip_flags, :skip_flag?
+      private :parse_skip_flags
     end
   end
 end

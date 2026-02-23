@@ -14,7 +14,6 @@ require_relative '../interrupt_state'
 module Nokizaru
   module Modules
     # Nokizaru::Modules::DirectoryEnum implementation
-    # Nokizaru::Modules::DirectoryEnum implementation
     module DirectoryEnum
       module_function
 
@@ -105,61 +104,41 @@ module Nokizaru
       module_function
 
       def prepare_scan(options)
-        context = scan_context(options)
-        mode_data = mode_data(context[:preflight], options, context[:anchor])
-        scan_payload = base_scan_payload(options, context, mode_data)
-        attach_scan_urls!(scan_payload, context[:word_data], options, mode_data)
-      end
-
-      def scan_context(options)
         anchor = resolve_anchor(options[:target], options[:ctx], options[:verify_ssl], options[:timeout_s])
         scan_target = anchor[:effective_target]
         normalized_target = normalize_target_base(scan_target)
+        preflight = preflight_probe(
+          normalized_target,
+          verify_ssl: options[:verify_ssl],
+          allow_redirects: options[:allow_redirects]
+        )
+        word_data = load_words(options[:wdlist])
+        scan_mode = mode_data(preflight, options, anchor)
+        urls = build_scan_urls(
+          {
+            mode: scan_mode[:mode],
+            target: normalized_target,
+            words: word_data[:words],
+            filext: options[:filext],
+            ctx: options[:ctx],
+            max_seed_paths: scan_mode[:budgets][:max_requests]
+          }
+        )
+
         {
+          options: options,
           anchor: anchor,
           scan_target: scan_target,
           normalized_target: normalized_target,
-          word_data: load_words(options[:wdlist]),
-          preflight: preflight_for_target(normalized_target, options)
+          preflight: preflight,
+          word_data: word_data,
+          mode: scan_mode[:mode],
+          budgets: scan_mode[:budgets],
+          timeout: scan_mode[:timeout],
+          urls: urls,
+          total_urls: urls.length,
+          reanchor_display: "#{scan_target} (#{anchor[:reason_code]})"
         }
-      end
-
-      def preflight_for_target(normalized_target, options)
-        preflight_probe(normalized_target, verify_ssl: options[:verify_ssl], allow_redirects: options[:allow_redirects])
-      end
-
-      def base_scan_payload(options, context, mode_data)
-        payload = scan_payload_base_fields(options, context)
-        payload.merge!(scan_mode_fields(mode_data))
-        payload[:word_data] = context[:word_data]
-        payload
-      end
-
-      def scan_payload_base_fields(options, context)
-        {
-          options: options,
-          anchor: context[:anchor],
-          scan_target: context[:scan_target],
-          normalized_target: context[:normalized_target],
-          preflight: context[:preflight],
-          total_urls: 0,
-          reanchor_display: "#{context[:scan_target]} (#{context[:anchor][:reason_code]})"
-        }
-      end
-
-      def scan_mode_fields(mode_data)
-        {
-          mode: mode_data[:mode],
-          budgets: mode_data[:budgets],
-          timeout: mode_data[:timeout]
-        }
-      end
-
-      def attach_scan_urls!(scan_payload, word_data, options, mode_data)
-        scan_payload[:urls] = scan_urls(mode_data[:mode], scan_payload[:normalized_target], word_data[:words], options,
-                                        mode_data[:budgets])
-        scan_payload[:total_urls] = scan_payload[:urls].length
-        scan_payload
       end
 
       def mode_data(preflight, options, anchor)
@@ -169,19 +148,6 @@ module Nokizaru
           budgets: MODE_BUDGETS.fetch(mode),
           timeout: timeout_for_mode(mode, base_timeout(options, anchor))
         }
-      end
-
-      def scan_urls(mode, normalized_target, words, options, budgets)
-        build_scan_urls(
-          {
-            mode: mode,
-            target: normalized_target,
-            words: words,
-            filext: options[:filext],
-            ctx: options[:ctx],
-            max_seed_paths: budgets[:max_requests]
-          }
-        )
       end
 
       def base_timeout(options, anchor)
@@ -203,17 +169,6 @@ module Nokizaru
       module_function
 
       def init_runtime(scan)
-        runtime_state(scan).merge(
-          timeout_state: { current: scan[:timeout], min: MIN_ADAPTIVE_TIMEOUT_S },
-          stop_state: init_stop_state(scan)
-        )
-      end
-
-      def runtime_state(scan)
-        runtime_collections(scan).merge(runtime_soft_404_state)
-      end
-
-      def runtime_collections(scan)
         {
           mutex: Mutex.new,
           responses: [],
@@ -221,15 +176,12 @@ module Nokizaru
           stats: init_stats,
           count: 0,
           start_time: Time.now,
-          queue: build_work_queue(scan[:urls])
-        }
-      end
-
-      def runtime_soft_404_state
-        {
+          queue: build_work_queue(scan[:urls]),
           baseline: nil,
           learning: init_soft_404_learning,
-          soft_404_state: init_soft_404_state
+          soft_404_state: init_soft_404_state,
+          timeout_state: { current: scan[:timeout], min: MIN_ADAPTIVE_TIMEOUT_S },
+          stop_state: init_stop_state(scan)
         }
       end
 
@@ -560,23 +512,13 @@ module Nokizaru
       # Print directory scan banner and run configuration details
       def print_banner(scan)
         UI.module_header('Starting Directory Enum...')
-
         rows = banner_rows(scan)
-
+        rows.insert(3, ['Effective Timeout', scan[:timeout]]) if effective_timeout_changed?(scan)
         UI.rows(:plus, rows)
         puts
       end
 
       def banner_rows(scan)
-        rows = base_banner_rows(scan)
-        insert_effective_timeout!(rows, scan)
-      end
-
-      def base_banner_rows(scan)
-        banner_target_rows(scan) + banner_wordlist_rows(scan)
-      end
-
-      def banner_target_rows(scan)
         [
           ['Re-Anchor', scan[:reanchor_display]],
           ['Mode', scan[:mode]],
@@ -584,12 +526,7 @@ module Nokizaru
           ['Timeout', scan[:options][:timeout_s]],
           ['Wordlist', scan[:options][:wdlist]],
           ['Allow Redirects', scan[:options][:allow_redirects]],
-          ['SSL Verification', scan[:options][:verify_ssl]]
-        ]
-      end
-
-      def banner_wordlist_rows(scan)
-        [
+          ['SSL Verification', scan[:options][:verify_ssl]],
           ['Wordlist Lines', scan[:word_data][:total_lines]],
           ['Usable Entries', scan[:word_data][:unique_lines]],
           ['File Extensions', scan[:options][:filext]],
@@ -597,10 +534,8 @@ module Nokizaru
         ]
       end
 
-      def insert_effective_timeout!(rows, scan)
-        timeout_changed = (scan[:timeout].to_f - scan[:options][:timeout_s].to_f).abs > Float::EPSILON
-        rows.insert(3, ['Effective Timeout', scan[:timeout]]) if timeout_changed
-        rows
+      def effective_timeout_changed?(scan)
+        (scan[:timeout].to_f - scan[:options][:timeout_s].to_f).abs > Float::EPSILON
       end
     end
   end
@@ -1076,104 +1011,62 @@ module Nokizaru
 
       # Print directory scan totals and representative findings
       def dir_output(runtime:, scan:)
-        payload = dir_payload_inputs(runtime)
-        stats = payload[:stats]
+        stats = runtime[:stats]
         elapsed = stats[:elapsed] || 1
         rps = ((stats[:success] + stats[:errors]) / elapsed).round(1)
-        stop_meta = stop_metadata(runtime[:stop_state])
-        result = dir_result_payload(scan: scan, payload: payload, stop_meta: stop_meta, rps: rps, elapsed: elapsed)
-        print_dir_summary(rps, payload[:found], stop_meta[:stop_reason])
+        stop_meta = dir_stop_meta(runtime[:stop_state])
+        result = dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
+
+        print_dir_summary(rps, runtime[:found], stop_meta[:reason])
         store_dir_result(scan, result)
       end
 
-      def dir_payload_inputs(runtime)
-        {
-          responses: runtime[:responses],
-          found: runtime[:found],
-          stats: runtime[:stats]
-        }
-      end
-
-      def stop_metadata(stop_state)
+      def dir_stop_meta(stop_state)
         state = stop_state || {}
         {
           mode: state[:mode].to_s,
-          budgets: state[:budgets].is_a?(Hash) ? state[:budgets] : {},
-          stop_reason: state[:reason].to_s,
-          preflight: state[:preflight]
+          reason: state[:reason].to_s,
+          preflight: state[:preflight],
+          budgets: state[:budgets].is_a?(Hash) ? state[:budgets] : {}
         }
       end
 
-      def dir_result_payload(scan:, payload:, stop_meta:, rps:, elapsed:)
+      def dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
         {
-          'target' => dir_target_payload(scan),
-          'found' => payload[:found].uniq,
-          'by_status' => grouped_status_payload(payload[:responses]),
-          'stats' => dir_stats_payload(payload[:stats], stop_meta, rps, elapsed)
+          'target' => {
+            'original' => scan[:options][:target],
+            'effective' => scan[:scan_target],
+            'reanchored' => scan[:anchor][:reanchor],
+            'reason' => scan[:anchor][:reason]
+          },
+          'found' => runtime[:found].uniq,
+          'by_status' => grouped_response_statuses(runtime[:responses]),
+          'stats' => dir_stats(stats, stop_meta, elapsed, rps)
         }
       end
 
-      def grouped_status_payload(responses)
-        responses.group_by { |(_, status)| status.to_s }.transform_values { |values| values.map(&:first) }
-      end
-    end
-  end
-end
-
-module Nokizaru
-  module Modules
-    # Nokizaru::Modules::DirectoryEnum implementation
-    module DirectoryEnum
-      module_function
-
-      def dir_target_payload(scan)
-        {
-          'original' => scan[:options][:target],
-          'effective' => scan[:scan_target],
-          'reanchored' => scan[:anchor][:reanchor],
-          'reason' => scan[:anchor][:reason]
-        }
+      def grouped_response_statuses(responses)
+        grouped = responses.group_by { |(_, status)| status.to_s }
+        grouped.transform_values { |rows| rows.map(&:first) }
       end
 
-      def dir_stats_payload(stats, stop_meta, rps, elapsed)
-        dir_stop_stats(stop_meta).merge(dir_runtime_stats(stats, rps, elapsed))
-      end
-
-      def dir_stop_stats(stop_meta)
+      def dir_stats(stats, stop_meta, elapsed, rps)
         {
           'mode' => stop_meta[:mode],
-          'stop_reason' => stop_reason_value(stop_meta[:stop_reason]),
+          'stop_reason' => stop_meta[:reason].empty? ? nil : stop_meta[:reason],
           'budget_seconds' => stop_meta[:budgets][:budget_s],
           'max_requests' => stop_meta[:budgets][:max_requests],
-          'preflight' => stop_meta[:preflight]
-        }
-      end
-
-      def dir_runtime_stats(stats, rps, elapsed)
-        dir_request_stats(stats).merge(dir_timing_stats(stats, rps, elapsed))
-      end
-
-      def dir_request_stats(stats)
-        {
+          'preflight' => stop_meta[:preflight],
           'total_requests' => stats[:success] + stats[:errors],
           'successful' => stats[:success],
           'errors' => stats[:errors],
-          'error_breakdown' => stats[:error_kinds].to_h
-        }
-      end
-
-      def dir_timing_stats(stats, rps, elapsed)
-        {
+          'error_breakdown' => stats[:error_kinds].to_h,
           'timeout_downshifts' => stats[:timeout_downshifts].to_i,
           'redirect_noise_filtered' => stats[:redirect_filtered].to_i,
           'redirect_outliers' => stats[:redirect_outliers].to_i,
           'elapsed_seconds' => elapsed.round(2),
           'requests_per_second' => rps
         }
-      end
-
-      def stop_reason_value(stop_reason)
-        stop_reason.empty? ? nil : stop_reason
       end
 
       def print_dir_summary(rps, found, stop_reason)

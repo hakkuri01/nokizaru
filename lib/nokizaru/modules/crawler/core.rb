@@ -8,19 +8,18 @@ module Nokizaru
         private
 
         def initialize_result
-          base_link_buckets.merge(extra_crawler_buckets)
-        end
-
-        def base_link_buckets
           {
-            'robots_links' => [], 'sitemap_links' => [], 'css_links' => [],
-            'js_links' => [], 'internal_links' => [], 'external_links' => [],
-            'images' => []
+            'robots_links' => [],
+            'sitemap_links' => [],
+            'css_links' => [],
+            'js_links' => [],
+            'internal_links' => [],
+            'external_links' => [],
+            'images' => [],
+            'urls_inside_sitemap' => [],
+            'urls_inside_js' => [],
+            'stats' => {}
           }
-        end
-
-        def extra_crawler_buckets
-          { 'urls_inside_sitemap' => [], 'urls_inside_js' => [], 'stats' => {} }
         end
 
         def crawl_page_resources!(result, page)

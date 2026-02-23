@@ -23,7 +23,17 @@ module Nokizaru
           return if diff_target.nil?
           return warn_diff_without_workspace if workspace.nil?
 
-          resolve_and_apply_diff(workspace, run_id, run, diff_target)
+          diff_ref = resolve_diff_reference(workspace, run_id, diff_target)
+          if diff_ref[:ok]
+            old_run = workspace.load_run(diff_ref[:run_id])
+            run['diff'] = Nokizaru::Diff.compute(old_run, run)
+            run['diff_db'] = compute_db_diff(old_run, run)
+            UI.row(:info, 'Diffed against run', diff_ref[:run_id])
+            print_db_diff(run['diff_db'], label: 'Ronin DB diff')
+            return
+          end
+
+          UI.line(:error, diff_ref[:message].to_s)
         end
 
         def warn_diff_without_workspace
@@ -31,21 +41,6 @@ module Nokizaru
           UI.line(:plus, 'Enable a workspace with: --project <name>')
           UI.row(:plus, 'Workspace base', Paths.workspace_dir)
           Log.write('Diff requested without workspace; skipping')
-        end
-
-        def resolve_and_apply_diff(workspace, run_id, run, diff_target)
-          diff_ref = resolve_diff_reference(workspace, run_id, diff_target)
-          return UI.line(:error, diff_ref[:message].to_s) unless diff_ref[:ok]
-
-          apply_diff!(workspace, run, diff_ref[:run_id])
-        end
-
-        def apply_diff!(workspace, run, previous_id)
-          old_run = workspace.load_run(previous_id)
-          run['diff'] = Nokizaru::Diff.compute(old_run, run)
-          run['diff_db'] = compute_db_diff(old_run, run)
-          UI.row(:info, 'Diffed against run', previous_id)
-          print_db_diff(run['diff_db'], label: 'Ronin DB diff')
         end
 
         def compute_db_diff(old_run, run)
@@ -57,22 +52,15 @@ module Nokizaru
         def export_if_enabled(run, info, workspace, run_id)
           return nil unless @opts[:export]
 
-          paths = perform_export(run, info, workspace, run_id)
-          paths.any? ? File.dirname(paths.values.first) : nil
-        rescue ArgumentError => e
-          handle_export_error(e)
-        end
-
-        def perform_export(run, info, workspace, run_id)
-          Nokizaru::ExportManager.new.export(
+          paths = Nokizaru::ExportManager.new.export(
             run,
             domain: info[:hostname],
             formats: export_formats,
-            output: {
-              custom_directory: resolve_custom_export_directory(workspace, run_id),
-              custom_basename: resolved_export_basename
-            }
+            output: export_output(workspace, run_id)
           )
+          paths.any? ? File.dirname(paths.values.first) : nil
+        rescue ArgumentError => e
+          handle_export_error(e)
         end
 
         def handle_export_error(error)
@@ -80,11 +68,6 @@ module Nokizaru
           UI.line(:plus, 'Supported formats : txt,json,html')
           Log.write("[export] #{error.class}: #{error.message}")
           exit(1)
-        end
-
-        def resolved_export_basename
-          value = @opts[:of].to_s.strip
-          value.empty? ? nil : value
         end
 
         def print_run_completion(elapsed, workspace, run_id, export_dir)
@@ -110,11 +93,18 @@ module Nokizaru
           stripped.empty? ? nil : stripped
         end
 
-        def resolve_custom_export_directory(workspace, run_id)
-          return @opts[:cd] if @opts[:cd] && !@opts[:cd].to_s.strip.empty?
-          return workspace.run_dir(run_id) if workspace && run_id
+        def export_output(workspace, run_id)
+          custom_directory = if @opts[:cd] && !@opts[:cd].to_s.strip.empty?
+                               @opts[:cd]
+                             elsif workspace && run_id
+                               workspace.run_dir(run_id)
+                             end
 
-          nil
+          custom_basename = @opts[:of].to_s.strip
+          {
+            custom_directory: custom_directory,
+            custom_basename: custom_basename.empty? ? nil : custom_basename
+          }
         end
       end
     end

@@ -57,29 +57,19 @@ module Nokizaru
     end
 
     def self.diff_snapshots(old_snap, new_snap)
-      old_map = normalize_snapshot(old_snap)
-      new_map = normalize_snapshot(new_snap)
-      kinds = old_map.keys | new_map.keys
-      kinds.each_with_object({}) do |kind, diff|
-        snapshot_delta!(diff, kind, old_map[kind], new_map[kind])
+      old_map = old_snap.is_a?(Hash) ? old_snap : {}
+      new_map = new_snap.is_a?(Hash) ? new_snap : {}
+
+      (old_map.keys | new_map.keys).each_with_object({}) do |kind, diff|
+        old_set = Set.new(Array(old_map[kind]))
+        new_set = Set.new(Array(new_map[kind]))
+        added = (new_set - old_set).to_a
+        removed = (old_set - new_set).to_a
+        next if added.empty? && removed.empty?
+
+        diff[kind] = { 'added' => added.sort, 'removed' => removed.sort }
       end
     end
-
-    def self.normalize_snapshot(snapshot)
-      snapshot.is_a?(Hash) ? snapshot : {}
-    end
-
-    def self.snapshot_delta!(diff, kind, old_values, new_values)
-      old_set = Set.new(Array(old_values))
-      new_set = Set.new(Array(new_values))
-      added = (new_set - old_set).to_a
-      removed = (old_set - new_set).to_a
-      return if added.empty? && removed.empty?
-
-      diff[kind] = { 'added' => added.sort, 'removed' => removed.sort }
-    end
-
-    private_class_method :normalize_snapshot, :snapshot_delta!
 
     private
 

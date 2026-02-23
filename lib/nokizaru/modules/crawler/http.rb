@@ -13,26 +13,19 @@ module Nokizaru
         private
 
         def crawl_main_page(target, ctx, result)
-          scan_target = apply_anchor!(target, ctx, result)
-          fetch_main_page(scan_target, result, ctx)
-        end
-
-        def apply_anchor!(target, ctx, result)
           anchor = resolve_anchor(target, ctx)
-          effective = anchor[:effective_target]
-          step_row(:plus, 'Re-Anchor', "#{effective} (#{anchor[:reason_code]})")
-          result['target'] = anchor_target_hash(target, effective, anchor)
-          effective
-        end
-
-        def anchor_target_hash(target, effective, anchor)
-          {
+          scan_target = anchor[:effective_target]
+          step_row(:plus, 'Re-Anchor', "#{scan_target} (#{anchor[:reason_code]})")
+          result['target'] = {
             'original' => target,
-            'effective' => effective,
+            'effective' => scan_target,
             'reanchored' => anchor[:reanchor],
             'reason' => anchor[:reason],
             'reason_code' => anchor[:reason_code]
           }
+          run_fetch_loop(scan_target, result, ctx)
+        rescue StandardError => e
+          crawl_exception(result, ctx, e)
         end
 
         def resolve_anchor(target, ctx)
@@ -45,12 +38,6 @@ module Nokizaru
           decision[:reason] = profile['reason'].to_s
           decision[:reason_code] ||= Nokizaru::TargetIntel.reason_code_for(profile)
           decision
-        end
-
-        def fetch_main_page(target, result, ctx)
-          run_fetch_loop(target, result, ctx)
-        rescue StandardError => e
-          crawl_exception(result, ctx, e)
         end
 
         def run_fetch_loop(target, result, ctx)

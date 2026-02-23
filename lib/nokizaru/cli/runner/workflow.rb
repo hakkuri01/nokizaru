@@ -90,11 +90,16 @@ module Nokizaru
         def run_directory_enum(enabled, target, info, ctx)
           return unless enabled[:dir]
 
-          args = [
-            target, info[:dir_threads], info[:timeout], info[:wordlist],
-            info[:allow_redirects], info[:verify_ssl], info[:extensions], ctx
-          ]
-          Nokizaru::Modules::DirectoryEnum.call(*args)
+          Nokizaru::Modules::DirectoryEnum.call(
+            target,
+            info[:dir_threads],
+            info[:timeout],
+            info[:wordlist],
+            info[:allow_redirects],
+            info[:verify_ssl],
+            info[:extensions],
+            ctx
+          )
         end
 
         def run_wayback(enabled, target, info, ctx)

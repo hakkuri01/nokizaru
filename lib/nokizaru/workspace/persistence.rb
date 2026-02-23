@@ -40,19 +40,17 @@ module Nokizaru
         ids = run_ids
         return nil if ids.empty?
 
-        return previous_known_run_id(ids, current_run_id) if current_run_id && ids.include?(current_run_id.to_s)
+        if current_run_id && ids.include?(current_run_id.to_s)
+          idx = ids.index(current_run_id.to_s)
+          return nil if idx.nil? || idx.zero?
+
+          return ids[idx - 1]
+        end
 
         ids[-2]
       end
 
       private
-
-      def previous_known_run_id(ids, current_run_id)
-        idx = ids.index(current_run_id.to_s)
-        return nil if idx.nil? || idx.zero?
-
-        ids[idx - 1]
-      end
 
       def write_json_atomic(path, obj)
         FileUtils.mkdir_p(File.dirname(path))

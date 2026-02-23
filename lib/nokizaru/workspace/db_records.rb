@@ -31,19 +31,12 @@ module Nokizaru
       end
 
       def ingest_artifact_urls(artifacts, modules)
-        artifact_urls(artifacts).each { |url| import_url(url) }
-        crawler_urls(modules).each { |url| import_url(url) }
-      end
+        (Array(artifacts['urls']) + Array(artifacts['wayback_urls'])).each { |url| import_url(url) }
 
-      def artifact_urls(artifacts)
-        Array(artifacts['urls']) + Array(artifacts['wayback_urls'])
-      end
-
-      def crawler_urls(modules)
         crawler = modules['crawler']
-        return [] unless crawler.is_a?(Hash)
+        return unless crawler.is_a?(Hash)
 
-        Array(crawler['internal_links']) + Array(crawler['external_links'])
+        (Array(crawler['internal_links']) + Array(crawler['external_links'])).each { |url| import_url(url) }
       end
 
       def add_snapshot_hostnames!(snapshot)

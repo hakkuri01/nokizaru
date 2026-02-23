@@ -1,3 +1,59 @@
 AllCops:
   NewCops: enable
   TargetRubyVersion: 3.1
+
+Layout/LineLength:
+  Max: 120
+  AllowHeredoc: true
+  AllowURI: true
+
+Style/Documentation:
+  Enabled: false
+
+Metrics/MethodLength:
+  Max: 20
+  CountComments: false
+  CountAsOne:
+    - array
+    - hash
+    - heredoc
+    - method_call
+
+Metrics/AbcSize:
+  Max: 28
+  CountRepeatedAttributes: false
+
+Metrics/CyclomaticComplexity:
+  Max: 10
+
+Metrics/PerceivedComplexity:
+  Max: 12
+
+Metrics/BlockLength:
+  Max: 35
+  CountComments: false
+  CountAsOne:
+    - array
+    - hash
+    - heredoc
+    - method_call
+
+Metrics/ClassLength:
+  Max: 220
+  CountComments: false
+
+Metrics/ModuleLength:
+  Max: 320
+  CountComments: false
+
+Metrics/ParameterLists:
+  Max: 6
+
+Lint/DuplicateMethods:
+  Enabled: true
+
+Lint/UselessMethodDefinition:
+  Enabled: true
+
+Security/Eval:
+  Enabled: true
