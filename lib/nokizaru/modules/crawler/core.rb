@@ -26,7 +26,8 @@ module Nokizaru
           page_url = page[:url]
           result['target']['effective'] = page_url
           populate_page_links!(result, page_url, base_url_for(page_url), page[:soup])
-          populate_deep_links!(result)
+          populate_deep_links!(result, page_url)
+          result['high_signal_urls'] = high_signal_urls(result)
           result['stats'] = calculate_stats(result)
         end
 
@@ -42,6 +43,7 @@ module Nokizaru
           print_links_preview('URLs inside Sitemaps', result['urls_inside_sitemap'])
           ctx.run['modules']['crawler'] = result
           ctx.add_artifact('urls', result['stats']['total_urls'])
+          ctx.add_artifact('high_signal_urls', result['high_signal_urls']) if Array(result['high_signal_urls']).any?
           Log.write('[crawler] Completed')
         end
       end

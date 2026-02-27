@@ -20,6 +20,13 @@ module Nokizaru
           end
 
           row(:error, 'Fetching URLs from CDX', 'Timeout') if cdx_status == 'timeout_with_fallback'
+          return row(:plus, 'Fetching URLs from CDX', "#{urls.length} (reduced query)") if cdx_status == 'found_reduced'
+
+          if cdx_status == 'found_partial_timeout'
+            return row(:plus, 'Fetching URLs from CDX',
+                       "#{urls.length} (partial, timeout)")
+          end
+
           row(:info, 'Fetching URLs from CDX', urls.length) unless cdx_status == 'timeout_with_fallback'
         end
 

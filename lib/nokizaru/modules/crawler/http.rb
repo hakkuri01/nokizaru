@@ -103,15 +103,42 @@ module Nokizaru
         end
 
         def http_get(url)
+          with_http_retries(url) { perform_http_get(url) }
+        end
+
+        def perform_http_get(url)
           uri = URI.parse(url)
           http = Net::HTTP.new(uri.host, uri.port)
           http.open_timeout = Crawler::TIMEOUT
           http.read_timeout = Crawler::TIMEOUT
           enable_ssl!(http) if uri.scheme == 'https'
           http.request(build_request(uri))
-        rescue StandardError => e
-          Log.write("[crawler] HTTP error for #{url}: #{e.message}")
+        end
+
+        def with_http_retries(url)
+          max_attempts = Crawler::MAX_HTTP_RETRIES + 1
+          (1..max_attempts).each do |attempt|
+            response = yield
+            return response unless retryable_http_status?(response)
+            return response if attempt == max_attempts
+
+            sleep(0.15 * attempt)
+          rescue StandardError => e
+            Log.write("[crawler] HTTP error for #{url}: #{e.message}")
+            return nil if attempt == max_attempts
+
+            sleep(0.15 * attempt)
+          end
+
           nil
+        end
+
+        def retryable_http_status?(response)
+          code = response&.code.to_i
+          code == 429 || code >= 500
+        rescue StandardError => e
+          Log.write("[crawler] HTTP retry check error: #{e.message}")
+          false
         end
       end
     end

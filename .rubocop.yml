@@ -18,10 +18,14 @@ Metrics/MethodLength:
     - hash
     - heredoc
     - method_call
+  Exclude:
+    - 'bench/**/*.rb'
 
 Metrics/AbcSize:
   Max: 28
   CountRepeatedAttributes: false
+  Exclude:
+    - 'bench/**/*.rb'
 
 Metrics/CyclomaticComplexity:
   Max: 10
@@ -41,6 +45,8 @@ Metrics/BlockLength:
 Metrics/ClassLength:
   Max: 220
   CountComments: false
+  Exclude:
+    - 'bench/**/*.rb'
 
 Metrics/ModuleLength:
   Max: 320

@@ -44,9 +44,11 @@ module Nokizaru
 
       def execute_query(target, timeout_s, raw)
         timeout_value = normalized_timeout(timeout_s)
-        availability = Query.availability_status(target, timeout_value)
+        availability_timeout = Query.availability_timeout(timeout_value)
+        availability = Query.availability_status(target, availability_timeout)
         Presenter.availability_status(availability[:state])
-        urls, cdx_status = Query.fetch_urls_with_status(target, timeout_value, availability[:snapshots], raw: raw)
+        cdx_timeout = Query.cdx_timeout(timeout_value, availability_timeout)
+        urls, cdx_status = Query.fetch_urls_with_status(target, cdx_timeout, availability[:snapshots], raw: raw)
         Presenter.cdx_status(cdx_status, urls)
         [availability[:state], cdx_status, urls]
       end
@@ -57,13 +59,17 @@ module Nokizaru
       end
 
       def persist_wayback(ctx, availability_state, cdx_status, urls)
+        high_signal_urls = Normalize.rank_high_signal_urls(urls)
+        high_signal_urls = Array(urls).first(20) if high_signal_urls.empty? && Array(urls).any?
         Presenter.urls_preview(urls)
         ctx.add_artifact('urls', urls) if urls.any?
         ctx.add_artifact('wayback_urls', urls) if urls.any?
+        ctx.add_artifact('wayback_high_signal_urls', high_signal_urls) if high_signal_urls.any?
         ctx.run['modules']['wayback'] = {
           'availability' => availability_state.to_s,
           'cdx_status' => cdx_status,
-          'urls' => urls
+          'urls' => urls,
+          'high_signal_urls' => high_signal_urls
         }
       end
     end

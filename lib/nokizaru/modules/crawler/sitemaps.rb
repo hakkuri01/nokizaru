@@ -10,9 +10,9 @@ module Nokizaru
       module Sitemaps
         private
 
-        def populate_deep_links!(result)
+        def populate_deep_links!(result, page_url)
           result['urls_inside_sitemap'] = sm_crawl(result['sitemap_links'])
-          result['urls_inside_js'] = js_crawl(result['js_links'])
+          result['urls_inside_js'] = js_crawl(result['js_links'], page_url)
         end
 
         def sm_crawl(sitemap_links)
@@ -36,6 +36,8 @@ module Nokizaru
 
         def crawl_sitemap_graph(state)
           while state[:pending].any? && state[:seen].length < Crawler::MAX_SITEMAPS
+            break if state[:links].length >= Crawler::MAX_SITEMAP_URLS
+
             batch = next_sitemap_batch(state)
             break if batch.empty?
 
@@ -52,10 +54,18 @@ module Nokizaru
 
         def crawl_sitemap_batch(batch, links)
           discovered = []
+          mutex = Mutex.new
           each_in_threads(batch) do |sitemap_url|
             page_links, child_sitemaps = parse_sitemap_document(sitemap_url)
-            links.concat(page_links)
-            discovered.concat(child_sitemaps)
+            mutex.synchronize do
+              links.concat(page_links)
+              links.uniq!
+              links.slice!(Crawler::MAX_SITEMAP_URLS..) if links.length > Crawler::MAX_SITEMAP_URLS
+
+              discovered.concat(child_sitemaps)
+              discovered.uniq!
+              discovered.slice!(Crawler::MAX_SITEMAPS..) if discovered.length > Crawler::MAX_SITEMAPS
+            end
           end
           discovered.uniq
         end

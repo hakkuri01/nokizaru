@@ -37,6 +37,7 @@ coverage/
 *.log
 tmp/
 log/
+bench/
 
 # =========================
 # Secrets / local config

@@ -2,6 +2,7 @@
 
 require 'set'
 require 'securerandom'
+require 'timeout'
 require 'zlib'
 require 'uri'
 
@@ -35,6 +36,14 @@ module Nokizaru
       PREFLIGHT_RANDOM_PROBES = 6
       PREFLIGHT_TOTAL_PROBES = 12
       PREFLIGHT_TIMEOUT_S = 1.5
+      PREFLIGHT_HOSTILE_MIN_SUCCESS_RATIO = 0.35
+      PREFLIGHT_HOSTILE_TIMEOUT_RATIO = 0.25
+      PREFLIGHT_HOSTILE_ERROR_RATIO = 0.75
+      PREFLIGHT_SEEDED_ERROR_RATIO = 0.2
+      PREFLIGHT_SEEDED_TIMEOUT_RATIO = 0.1
+      REQUEST_HARD_TIMEOUT_PADDING_S = 0.75
+      REQUEST_HARD_TIMEOUT_MIN_S = 1.0
+      REQUEST_HARD_TIMEOUT_MAX_S = 6.0
 
       MODE_FULL = 'full'
       MODE_SEEDED = 'seeded'
@@ -174,6 +183,7 @@ module Nokizaru
           responses: [],
           found: [],
           stats: init_stats,
+          issued: 0,
           count: 0,
           start_time: Time.now,
           queue: build_work_queue(scan[:urls]),
@@ -190,9 +200,11 @@ module Nokizaru
           success: 0,
           errors: 0,
           filtered: 0,
+          filtered_low_signal: 0,
           redirect_filtered: 0,
           redirect_outliers: 0,
           timeout_downshifts: 0,
+          positive_statuses: Hash.new(0),
           error_kinds: Hash.new(0)
         }
       end
@@ -205,6 +217,7 @@ module Nokizaru
           budgets: scan[:budgets],
           preflight: scan[:preflight],
           request_method: request_method_for_mode(scan[:mode]),
+          request_timeout: scan[:timeout],
           client_closed: false
         }
       end
@@ -255,6 +268,7 @@ module Nokizaru
         loop do
           url = pop_queue_url(runtime[:queue])
           break unless worker_active?(url, runtime[:stop_state])
+          break unless reserve_request_slot!(runtime)
 
           error_streak = process_worker_url(scan, runtime, url, error_streak)
         end
@@ -268,6 +282,16 @@ module Nokizaru
 
       def worker_active?(url, stop_state)
         url && !stop_state[:stop] && !Nokizaru::InterruptState.interrupted?
+      end
+
+      # Reserve one request slot before dispatch so request budgets remain strict under concurrency
+      def reserve_request_slot!(runtime)
+        runtime[:mutex].synchronize do
+          return false if should_stop_now?(runtime[:issued], runtime[:start_time], runtime[:stop_state])
+
+          runtime[:issued] += 1
+          true
+        end
       end
 
       def process_worker_url(scan, runtime, url, error_streak)
@@ -334,6 +358,7 @@ module Nokizaru
 
         rebuild = rebuild_client(client_config(scan, runtime))
         runtime[:client], runtime[:timeout_state] = rebuild
+        runtime[:stop_state][:request_timeout] = runtime[:timeout_state][:current]
         clear_progress_line
         UI.row(:plus, 'Dir Enum Mode', "#{runtime[:stop_state][:mode]} (adaptive downgrade)")
       end
@@ -343,10 +368,63 @@ module Nokizaru
         return unless INTERESTING_STATUSES.include?(status)
         return track_filtered_redirect?(runtime[:stats], runtime[:count], scan[:total_urls]) if redirect_is_noise
         return if filtered_soft_404?(runtime, url, http_result, status, scan)
+        return if filtered_low_signal?(runtime, url, status, scan)
 
         runtime[:stats][:redirect_outliers] += 1 if redirect_status?(status)
+        runtime[:stats][:positive_statuses][status.to_i] += 1
         runtime[:responses] << [url, status]
         print_finding(scan[:scan_target], url, status, runtime[:found])
+      end
+
+      def filtered_low_signal?(runtime, url, status, scan)
+        return false unless namespace_noise_filter_active?(runtime)
+        return false unless [200, 401, 403].include?(status.to_i)
+        return false unless low_signal_namespace_path?(url, scan[:normalized_target])
+
+        runtime[:stats][:filtered_low_signal] += 1
+        print_progress(runtime[:count], scan[:total_urls]) if (runtime[:count] % PROGRESS_EVERY).zero?
+        true
+      end
+
+      def namespace_noise_filter_active?(runtime)
+        mode = runtime[:stop_state][:mode].to_s
+        count = runtime[:count].to_i
+        return false if count < 120
+
+        mode == MODE_SEEDED || mode == MODE_HOSTILE || low_signal_saturation?(count, runtime[:stats])
+      end
+
+      def low_signal_namespace_path?(url, normalized_target)
+        path = URI.parse(url).path.to_s
+        target_path = URI.parse(normalized_target).path.to_s
+        path = '/' if path.empty?
+        target_path = '/' if target_path.empty?
+        return false if path == '/' || path == target_path
+
+        segment = first_path_segment(path)
+        return false unless segment_candidate?(segment)
+
+        high_signal_segment_allowlist.none? { |allowed| segment == allowed }
+      rescue StandardError
+        false
+      end
+
+      def first_path_segment(path)
+        path.to_s.split('/').reject(&:empty?).first.to_s.downcase
+      end
+
+      def segment_candidate?(segment)
+        return false if segment.empty? || segment.length > 24
+
+        segment.match?(/\A[a-z0-9-]+\z/)
+      end
+
+      def high_signal_path_tokens
+        @high_signal_path_tokens ||= HIGH_SIGNAL_PATHS.map { |path| path.delete_prefix('/').downcase }
+      end
+
+      def high_signal_segment_allowlist
+        @high_signal_segment_allowlist ||= high_signal_path_tokens.map { |token| token.split('/').first }.uniq
       end
 
       def track_filtered_redirect?(stats, count, total)
@@ -429,6 +507,7 @@ module Nokizaru
 
         rebuild = rebuild_client_with_lower_timeout(client_config(scan, runtime))
         runtime[:client], runtime[:timeout_state] = rebuild
+        runtime[:stop_state][:request_timeout] = runtime[:timeout_state][:current]
         runtime[:stats][:timeout_downshifts] += 1
         clear_progress_line
         UI.row(:plus, 'Adaptive Timeout', "reduced to #{runtime[:timeout_state][:current]}s (timeout-heavy target)")
@@ -745,9 +824,11 @@ module Nokizaru
       end
 
       def preflight_ratios(preflight, total)
+        errors = preflight[:errors].to_i
         redirects = preflight[:redirects].to_i
         {
-          error: preflight[:errors].to_i.to_f / total,
+          success: (total - errors).to_f / total,
+          error: errors.to_f / total,
           timeout: preflight[:timeouts].to_i.to_f / total,
           redirect: redirects.to_f / total,
           generic: generic_redirect_ratio(preflight, redirects)
@@ -761,8 +842,11 @@ module Nokizaru
       end
 
       def hostile_preflight?(ratios)
-        return true if ratios[:timeout] >= 0.05
-        return true if ratios[:error] >= 0.6
+        severe_transport_failure = ratios[:error] >= PREFLIGHT_HOSTILE_ERROR_RATIO ||
+                                   ratios[:timeout] >= PREFLIGHT_HOSTILE_TIMEOUT_RATIO
+        return true if severe_transport_failure && ratios[:success] <= PREFLIGHT_HOSTILE_MIN_SUCCESS_RATIO
+
+        return true if ratios[:timeout] >= 0.6
         return false unless ratios[:redirect] >= 0.4 && ratios[:generic] >= 0.7
 
         ratios[:error] >= 0.25
@@ -780,7 +864,9 @@ module Nokizaru
       def seeded_preflight?(ratios)
         return true if ratios[:redirect] >= 0.4 && ratios[:generic] >= 0.7
 
-        ratios[:error] >= 0.15
+        return true if ratios[:error] >= PREFLIGHT_SEEDED_ERROR_RATIO
+
+        ratios[:timeout] >= PREFLIGHT_SEEDED_TIMEOUT_RATIO
       end
 
       # Adjust request timeout further based on chosen mode
@@ -811,14 +897,26 @@ module Nokizaru
       end
 
       def request_url(client, url, stop_state)
-        method = stop_state[:request_method].to_s
-        if method == 'head' && client.respond_to?(:head)
-          client.head(url)
-        else
-          client.get(url)
+        hard_timeout = request_hard_timeout_s(stop_state)
+        Timeout.timeout(hard_timeout) do
+          method = stop_state[:request_method].to_s
+          if method == 'head' && client.respond_to?(:head)
+            client.head(url)
+          else
+            client.get(url)
+          end
         end
+      rescue Timeout::Error
+        raise Errno::ETIMEDOUT, 'directory request hard timeout reached'
       rescue NoMethodError
         client.get(url)
+      end
+
+      def request_hard_timeout_s(stop_state)
+        base = stop_state.is_a?(Hash) ? stop_state[:request_timeout].to_f : 0.0
+        base = MIN_ADAPTIVE_TIMEOUT_S if base <= 0
+        padded = base + REQUEST_HARD_TIMEOUT_PADDING_S
+        padded.clamp(REQUEST_HARD_TIMEOUT_MIN_S, REQUEST_HARD_TIMEOUT_MAX_S)
       end
     end
   end
@@ -1032,6 +1130,7 @@ module Nokizaru
       end
 
       def dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
+        high_signal_found = rank_high_signal_paths(runtime[:responses], scan[:normalized_target])
         {
           'target' => {
             'original' => scan[:options][:target],
@@ -1040,9 +1139,58 @@ module Nokizaru
             'reason' => scan[:anchor][:reason]
           },
           'found' => runtime[:found].uniq,
+          'high_signal_found' => high_signal_found,
           'by_status' => grouped_response_statuses(runtime[:responses]),
           'stats' => dir_stats(stats, stop_meta, elapsed, rps)
         }
+      end
+
+      def rank_high_signal_paths(responses, normalized_target)
+        Array(responses)
+          .map { |url, status| [url.to_s, score_path_signal(url, status, normalized_target)] }
+          .select { |(_, score)| score.positive? }
+          .sort_by { |(url, score)| [-score, url.length] }
+          .first(200)
+          .map(&:first)
+          .uniq
+      end
+
+      def score_path_signal(url, status, normalized_target)
+        path = URI.parse(url).path.to_s.downcase
+        target_path = URI.parse(normalized_target).path.to_s.downcase
+        return 0 if path.empty? || path == '/' || path == target_path
+
+        status_signal_score(status.to_i) + path_signal_score(path)
+      rescue StandardError
+        0
+      end
+
+      def status_signal_score(code)
+        return 4 if [401, 403].include?(code)
+        return 3 if [200, 500].include?(code)
+        return 1 if [301, 302, 303, 307, 308].include?(code)
+
+        0
+      end
+
+      def path_signal_score(path)
+        score = 0
+        score += 4 if high_signal_path?(path)
+        score += 1 if path.count('/') >= 2
+        score -= 3 if low_information_segment?(first_path_segment(path))
+        score
+      end
+
+      def high_signal_path?(path)
+        HIGH_SIGNAL_PATHS.any? { |seed| path_matches_seed?(path, seed.downcase) }
+      end
+
+      def path_matches_seed?(path, seed)
+        path == seed || path.start_with?("#{seed}/")
+      end
+
+      def low_information_segment?(segment)
+        segment.match?(/\A[a-z]{1,10}\z/) && high_signal_path_tokens.none? { |token| token.include?(segment) }
       end
 
       def grouped_response_statuses(responses)
@@ -1061,6 +1209,7 @@ module Nokizaru
           'successful' => stats[:success],
           'errors' => stats[:errors],
           'error_breakdown' => stats[:error_kinds].to_h,
+          'low_signal_filtered' => stats[:filtered_low_signal].to_i,
           'timeout_downshifts' => stats[:timeout_downshifts].to_i,
           'redirect_noise_filtered' => stats[:redirect_filtered].to_i,
           'redirect_outliers' => stats[:redirect_outliers].to_i,
@@ -1081,6 +1230,7 @@ module Nokizaru
         ctx = scan[:options][:ctx]
         ctx.run['modules']['directory_enum'] = result
         ctx.add_artifact('paths', result['found'])
+        ctx.add_artifact('high_signal_paths', result['high_signal_found']) if Array(result['high_signal_found']).any?
       end
     end
   end
@@ -1197,9 +1347,26 @@ module Nokizaru
         current_mode = stop_state[:mode].to_s
         return nil if current_mode == MODE_HOSTILE
 
+        if current_mode == MODE_FULL && low_signal_saturation?(count, stats)
+          return apply_seeded_mode!(stop_state, timeout_state)
+        end
+
         return nil unless hostile_runtime_ratios?(count, stats)
 
         apply_hostile_mode!(stop_state, timeout_state)
+      end
+
+      def low_signal_saturation?(count, stats)
+        return false if count < 160
+
+        positive_statuses = stats[:positive_statuses].is_a?(Hash) ? stats[:positive_statuses] : {}
+        positive_total = positive_statuses.values.sum
+        return false if positive_total < 60
+
+        dominant = positive_statuses[200].to_i + positive_statuses[401].to_i + positive_statuses[403].to_i
+        positive_ratio = positive_total.to_f / count
+        dominant_ratio = dominant.to_f / positive_total
+        positive_ratio >= 0.32 && dominant_ratio >= 0.9
       end
 
       def hostile_runtime_ratios?(count, stats)
@@ -1213,6 +1380,16 @@ module Nokizaru
         stop_state[:budgets] = MODE_BUDGETS.fetch(MODE_HOSTILE)
         stop_state[:request_method] = request_method_for_mode(MODE_HOSTILE)
         timeout_state[:current] = timeout_for_mode(MODE_HOSTILE, timeout_state[:current])
+        stop_state[:request_timeout] = timeout_state[:current]
+        :downgraded
+      end
+
+      def apply_seeded_mode!(stop_state, timeout_state)
+        stop_state[:mode] = MODE_SEEDED
+        stop_state[:budgets] = MODE_BUDGETS.fetch(MODE_SEEDED)
+        stop_state[:request_method] = request_method_for_mode(MODE_SEEDED)
+        timeout_state[:current] = timeout_for_mode(MODE_SEEDED, timeout_state[:current])
+        stop_state[:request_timeout] = timeout_state[:current]
         :downgraded
       end
 

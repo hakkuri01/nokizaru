@@ -30,10 +30,21 @@ module Nokizaru
       extend Crawler::Threads
 
       TIMEOUT = 10
+      MAX_HTTP_RETRIES = 2
       USER_AGENT = 'Nokizaru'
       PREVIEW_LIMIT = 8
       MAX_FETCH_WORKERS = 8
       MAX_SITEMAPS = 200
+      MAX_ROBOTS_LINKS = 180
+      MAX_SITEMAP_LINKS = 160
+      MAX_RESOURCE_LINKS = 400
+      MAX_INTERNAL_LINKS = 900
+      MAX_EXTERNAL_LINKS = 220
+      MAX_IMAGE_LINKS = 300
+      MAX_SITEMAP_URLS = 2500
+      MAX_JS_TARGETS = 80
+      MAX_JS_URLS_PER_FILE = 120
+      MAX_JS_URLS_TOTAL = 1200
       MAX_MAIN_REDIRECTS = 2
       REDIRECT_CODES = Set[301, 302, 303, 307, 308].freeze
       STEP_LABELS = [

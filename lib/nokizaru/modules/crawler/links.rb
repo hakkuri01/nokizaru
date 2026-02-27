@@ -11,11 +11,32 @@ module Nokizaru
           robots_links, discovered = robots("#{base_url}/robots.txt", base_url)
           result['robots_links'] = robots_links
           result['sitemap_links'] = sitemap("#{base_url}/sitemap.xml", discovered)
-          result['css_links'] = collect_links(soup, 'link[rel="stylesheet"]', 'href', page_url, 'Extracting CSS Links')
-          result['js_links'] = collect_links(soup, 'script[src]', 'src', page_url, 'Extracting JavaScript Links')
+          result['css_links'] = collect_links(
+            soup,
+            'link[rel="stylesheet"]',
+            'href',
+            page_url,
+            'Extracting CSS Links',
+            Crawler::MAX_RESOURCE_LINKS
+          )
+          result['js_links'] = collect_links(
+            soup,
+            'script[src]',
+            'src',
+            page_url,
+            'Extracting JavaScript Links',
+            Crawler::MAX_RESOURCE_LINKS
+          )
           result['internal_links'] = internal_links(page_url, soup)
           result['external_links'] = external_links(page_url, soup)
-          result['images'] = collect_links(soup, 'img[src]', 'src', page_url, 'Extracting Image Links')
+          result['images'] = collect_links(
+            soup,
+            'img[src]',
+            'src',
+            page_url,
+            'Extracting Image Links',
+            Crawler::MAX_IMAGE_LINKS
+          )
         end
 
         def robots(url, base_url)
@@ -32,7 +53,7 @@ module Nokizaru
           links = []
           sitemaps = []
           body.each_line { |line| append_robots_line(line, base_url, links, sitemaps) }
-          [links.uniq, sitemaps.uniq]
+          [cap_links(links, Crawler::MAX_ROBOTS_LINKS), cap_links(sitemaps, Crawler::MAX_SITEMAP_LINKS)]
         end
 
         def append_robots_line(line, base_url, links, sitemaps)
@@ -61,10 +82,10 @@ module Nokizaru
         end
 
         def sitemap(url, discovered)
-          links = Array(discovered).dup
+          links = cap_links(Array(discovered), Crawler::MAX_SITEMAP_LINKS)
           response = http_get(url)
           apply_sitemap_status(response, url, links)
-          links.uniq
+          cap_links(links, Crawler::MAX_SITEMAP_LINKS)
         end
 
         def apply_sitemap_status(response, sitemap_url, links)
@@ -79,24 +100,37 @@ module Nokizaru
           step_row(level, 'Looking for sitemap.xml', status)
         end
 
-        def collect_links(soup, selector, attr, target, label)
-          links = soup.css(selector).filter_map { |tag| url_filter(target, tag[attr]) }.uniq
+        def collect_links(soup, selector, attr, target, label, limit)
+          links = cap_links(
+            soup.css(selector).filter_map { |tag| url_filter(target, tag[attr]) },
+            limit
+          )
           step_row(:info, label, links.length)
           links
         end
 
         def internal_links(target, soup)
           host = target_public_suffix_domain(target)
-          links = soup.css('a[href]').filter_map { |tag| internal_link(target, host, tag['href']) }.uniq
+          links = cap_links(
+            soup.css('a[href]').filter_map { |tag| internal_link(target, host, tag['href']) },
+            Crawler::MAX_INTERNAL_LINKS
+          )
           step_row(:info, 'Extracting Internal Links', links.length)
           links
         end
 
         def external_links(target, soup)
           host = target_public_suffix_domain(target)
-          links = soup.css('a[href]').filter_map { |tag| external_link(host, tag['href']) }.uniq
+          links = cap_links(
+            soup.css('a[href]').filter_map { |tag| external_link(host, tag['href']) },
+            Crawler::MAX_EXTERNAL_LINKS
+          )
           step_row(:info, 'Extracting External Links', links.length)
           links
+        end
+
+        def cap_links(links, limit)
+          Array(links).compact.uniq.first(limit)
         end
       end
     end
