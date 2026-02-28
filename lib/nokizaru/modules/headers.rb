@@ -44,8 +44,53 @@ module Nokizaru
 
       def apply_header_pairs!(response, result)
         pairs = response.each_header.map { |key, value| [key, value] }
-        UI.rows(:info, pairs)
+        print_header_pairs(pairs)
         pairs.each { |key, value| result['headers'][key] = value }
+      end
+
+      def print_header_pairs(pairs)
+        width = Array(pairs).map { |(key, _)| key.to_s.length }.max.to_i
+        Array(pairs).each do |key, value|
+          segments = header_tree_segments(key, value)
+          if segments.empty?
+            UI.row(:info, key, value, label_width: width)
+          else
+            UI.tree_header(key)
+            UI.tree_rows(segments)
+          end
+        end
+      end
+
+      def header_tree_segments(key, value)
+        text = value.to_s
+        return [] unless text.length > 140
+
+        case key.to_s.downcase
+        when 'content-security-policy'
+          split_csp_segments(text)
+        when 'set-cookie'
+          split_set_cookie_segments(text)
+        when 'vary'
+          split_csv_segments(text)
+        else
+          []
+        end
+      end
+
+      def split_csp_segments(value)
+        value.split(';').map(&:strip).reject(&:empty?).map { |segment| ['directive', segment] }
+      end
+
+      def split_set_cookie_segments(value)
+        value
+          .split(/,(?=\s*[A-Za-z0-9!#$%&'*+.^_`|~-]+=)/)
+          .map(&:strip)
+          .reject(&:empty?)
+          .map { |segment| ['cookie', segment] }
+      end
+
+      def split_csv_segments(value)
+        value.split(',').map(&:strip).reject(&:empty?).map { |segment| ['value', segment] }
       end
 
       def profile_for(target, response: nil)

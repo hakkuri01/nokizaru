@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v1.11.9-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v1.12.9-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -44,6 +44,8 @@ Directory Enum automatically selects a mode after a quick preflight probe. This 
 - **hostile:** strict/timeout-heavy targets; uses a small seed set and short timeouts to stay within an optimized time budget while making a best effort attempt to extract as much high-signal intel as possible.
 
 The selected mode is printed in the Directory Enum banner so operators can interpret results in context.
+
+Directory Enum keeps stdout focused on bug bounty pivot statuses (200/204/401/403/405/500) and reports notable 3xx redirect signals only when they look meaningful. Exported data remains raw and unfiltered so you can inspect every discovered status when needed.
 
 ## Installation
 

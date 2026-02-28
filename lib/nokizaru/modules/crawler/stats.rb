@@ -82,8 +82,9 @@ module Nokizaru
           values = Array(links).compact.uniq
           return if values.empty?
 
-          UI.line(:info, "#{label} Preview")
-          values.first(Crawler::PREVIEW_LIMIT).each { |link| puts("    #{UI::C}#{link}#{UI::W}") }
+          UI.tree_header("#{label} Preview")
+          rows = values.first(Crawler::PREVIEW_LIMIT).map { |link| ['URL', link] }
+          UI.tree_rows(rows)
           print_remaining_count(values.length)
         end
 
@@ -91,7 +92,7 @@ module Nokizaru
           remaining = total - Crawler::PREVIEW_LIMIT
           return unless remaining.positive?
 
-          puts("    #{UI::C}... #{remaining} more#{UI::W}")
+          UI.tree_rows([['More', remaining]])
         end
       end
     end

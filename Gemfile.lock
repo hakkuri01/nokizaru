@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    nokizaru (1.11.9)
+    nokizaru (1.12.9)
       async (~> 2.10)
       async-io (~> 1.35)
       concurrent-ruby (~> 1.3)

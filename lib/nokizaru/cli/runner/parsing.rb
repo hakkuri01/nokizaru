@@ -22,9 +22,7 @@ module Nokizaru
             exit(1)
           end
 
-          normalized = target.chomp('/')
-          UI.row(:info, 'Target', normalized)
-          normalized
+          target.chomp('/')
         end
 
         def parse_target(target)
@@ -32,8 +30,13 @@ module Nokizaru
           hostname = parse_hostname!(uri)
           protocol = uri.scheme.to_s
           ip, type_ip = resolve_target_ip(hostname)
+          print_target_context(target, ip)
           base_info = target_base_info(uri, protocol, hostname, ip, type_ip)
           base_info.merge(parse_runtime_options)
+        end
+
+        def print_target_context(target, ip)
+          UI.rows(:info, [['Target', target], ['IP Address', ip]])
         end
 
         def target_base_info(uri, protocol, hostname, ip, type_ip)
@@ -68,7 +71,6 @@ module Nokizaru
           return [hostname, true] if ip_literal?(hostname)
 
           ip = resolve_hostname_ip(hostname)
-          UI.row(:info, 'IP Address', ip)
           [ip, false]
         end
 

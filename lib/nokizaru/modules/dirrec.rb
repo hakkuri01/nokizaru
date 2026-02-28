@@ -77,7 +77,7 @@ module Nokizaru
       REDIRECT_STATUSES = Set[301, 302, 303, 307, 308].freeze
       SOFT_404_SAMPLE_STATUSES = Set[200, 204, 301, 302, 303, 307, 308, 401, 403, 405, 500].freeze
 
-      INTERESTING_STATUSES = Set[200, 204, 301, 302, 303, 307, 308, 401, 403, 405, 500].freeze
+      INTERESTING_STATUSES = Set[200, 204, 401, 403, 405, 500].freeze
 
       # Run this module and store normalized results in the run context
       def call(target, threads, timeout_s, wdlist, *args)
@@ -181,15 +181,15 @@ module Nokizaru
         {
           mutex: Mutex.new,
           responses: [],
+          signal_responses: [],
           found: [],
+          all_found: [],
+          redirect_signals: init_redirect_signals,
           stats: init_stats,
           issued: 0,
           count: 0,
           start_time: Time.now,
           queue: build_work_queue(scan[:urls]),
-          baseline: nil,
-          learning: init_soft_404_learning,
-          soft_404_state: init_soft_404_state,
           timeout_state: { current: scan[:timeout], min: MIN_ADAPTIVE_TIMEOUT_S },
           stop_state: init_stop_state(scan)
         }
@@ -199,13 +199,20 @@ module Nokizaru
         {
           success: 0,
           errors: 0,
-          filtered: 0,
-          filtered_low_signal: 0,
-          redirect_filtered: 0,
-          redirect_outliers: 0,
           timeout_downshifts: 0,
           positive_statuses: Hash.new(0),
           error_kinds: Hash.new(0)
+        }
+      end
+
+      def init_redirect_signals
+        {
+          counts: {
+            cross_scope: 0,
+            callback_like: 0,
+            auth_flow: 0
+          },
+          examples: []
         }
       end
 
@@ -239,7 +246,6 @@ module Nokizaru
 
       def prepare_runtime_client!(scan, runtime, num_workers)
         runtime[:client] = build_bulk_client(scan, num_workers)
-        runtime[:baseline] = build_soft_404_baseline(runtime[:client], scan[:normalized_target])
       end
 
       def build_bulk_client(scan, num_workers)
@@ -317,23 +323,15 @@ module Nokizaru
       end
 
       def process_worker_success(scan, runtime, url, http_result)
-        redirect_is_noise = redirect_noise?(
-          url,
-          http_result,
-          response_redirect_sample(http_result, request_url: url),
-          runtime[:baseline],
-          scan[:anchor][:profile]
-        )
-
         runtime[:mutex].synchronize do
-          process_synchronized_success(scan, runtime, url, http_result, redirect_is_noise)
+          process_synchronized_success(scan, runtime, url, http_result)
         end
       end
 
-      def process_synchronized_success(scan, runtime, url, http_result, redirect_is_noise)
+      def process_synchronized_success(scan, runtime, url, http_result)
         increment_count!(runtime[:stats], runtime)
         handle_runtime_adaptation!(scan, runtime)
-        handle_success_status(scan, runtime, url, http_result, redirect_is_noise)
+        handle_success_status(scan, runtime, url, http_result)
         print_progress(runtime[:count], scan[:total_urls]) if (runtime[:count] % PROGRESS_EVERY).zero?
       end
 
@@ -363,100 +361,32 @@ module Nokizaru
         UI.row(:plus, 'Dir Enum Mode', "#{runtime[:stop_state][:mode]} (adaptive downgrade)")
       end
 
-      def handle_success_status(scan, runtime, url, http_result, redirect_is_noise)
-        status = http_result.status
-        return unless INTERESTING_STATUSES.include?(status)
-        return track_filtered_redirect?(runtime[:stats], runtime[:count], scan[:total_urls]) if redirect_is_noise
-        return if filtered_soft_404?(runtime, url, http_result, status, scan)
-        return if filtered_low_signal?(runtime, url, status, scan)
-
-        runtime[:stats][:redirect_outliers] += 1 if redirect_status?(status)
-        runtime[:stats][:positive_statuses][status.to_i] += 1
+      def handle_success_status(scan, runtime, url, http_result)
+        status = http_result.status.to_i
         runtime[:responses] << [url, status]
+        track_raw_finding(runtime[:all_found], scan[:scan_target], url)
+        runtime[:signal_responses] << [url, status] if SOFT_404_SAMPLE_STATUSES.include?(status)
+        track_redirect_signal(runtime[:redirect_signals], url, http_result, status)
+        return unless INTERESTING_STATUSES.include?(status)
+
+        runtime[:stats][:positive_statuses][status] += 1
         print_finding(scan[:scan_target], url, status, runtime[:found])
       end
 
-      def filtered_low_signal?(runtime, url, status, scan)
-        return false unless namespace_noise_filter_active?(runtime)
-        return false unless [200, 401, 403].include?(status.to_i)
-        return false unless low_signal_namespace_path?(url, scan[:normalized_target])
+      def track_raw_finding(all_found, target, url)
+        return if url == "#{target}/"
 
-        runtime[:stats][:filtered_low_signal] += 1
-        print_progress(runtime[:count], scan[:total_urls]) if (runtime[:count] % PROGRESS_EVERY).zero?
-        true
+        all_found << url
       end
 
-      def namespace_noise_filter_active?(runtime)
-        mode = runtime[:stop_state][:mode].to_s
-        count = runtime[:count].to_i
-        return false if count < 120
+      def track_redirect_signal(redirect_signals, request_url, http_result, status)
+        return unless redirect_status?(status)
 
-        mode == MODE_SEEDED || mode == MODE_HOSTILE || low_signal_saturation?(count, runtime[:stats])
-      end
+        signal_type = redirect_signal_type(request_url, http_result)
+        return unless signal_type
 
-      def low_signal_namespace_path?(url, normalized_target)
-        path = URI.parse(url).path.to_s
-        target_path = URI.parse(normalized_target).path.to_s
-        path = '/' if path.empty?
-        target_path = '/' if target_path.empty?
-        return false if path == '/' || path == target_path
-
-        segment = first_path_segment(path)
-        return false unless segment_candidate?(segment)
-
-        high_signal_segment_allowlist.none? { |allowed| segment == allowed }
-      rescue StandardError
-        false
-      end
-
-      def first_path_segment(path)
-        path.to_s.split('/').reject(&:empty?).first.to_s.downcase
-      end
-
-      def segment_candidate?(segment)
-        return false if segment.empty? || segment.length > 24
-
-        segment.match?(/\A[a-z0-9-]+\z/)
-      end
-
-      def high_signal_path_tokens
-        @high_signal_path_tokens ||= HIGH_SIGNAL_PATHS.map { |path| path.delete_prefix('/').downcase }
-      end
-
-      def high_signal_segment_allowlist
-        @high_signal_segment_allowlist ||= high_signal_path_tokens.map { |token| token.split('/').first }.uniq
-      end
-
-      def track_filtered_redirect?(stats, count, total)
-        stats[:redirect_filtered] += 1
-        print_progress(count, total) if (count % PROGRESS_EVERY).zero?
-        true
-      end
-
-      def filtered_soft_404?(runtime, url, http_result, status, scan)
-        return false if redirect_status?(status)
-        return false unless soft_404_active?(runtime[:soft_404_state], runtime[:baseline])
-
-        sample = response_sample(http_result, request_url: url)
-        return false unless sample
-
-        update_soft_404_learning!(runtime, sample)
-        return false unless soft_404_match_sample?(sample, runtime[:baseline])
-
-        apply_soft_404_filter?(runtime, scan)
-      end
-
-      def update_soft_404_learning!(runtime, sample)
-        state = runtime[:soft_404_state]
-        record_soft_404_sample!(state)
-        runtime[:baseline] = learn_soft_404_baseline(sample, runtime[:baseline], runtime[:learning])
-        disable_soft_404_if_unstable!(state, runtime[:baseline], runtime[:learning])
-      end
-
-      def apply_soft_404_filter?(runtime, scan)
-        runtime[:stats][:filtered] += 1
-        print_progress(runtime[:count], scan[:total_urls]) if (runtime[:count] % PROGRESS_EVERY).zero?
-        true
+        redirect_signals[:counts][signal_type] += 1
+        push_redirect_example(redirect_signals[:examples], signal_type, status, request_url, http_result)
       end
 
       def process_worker_error(scan, runtime, url, http_result, error_streak)
@@ -1115,7 +1045,7 @@ module Nokizaru
         stop_meta = dir_stop_meta(runtime[:stop_state])
         result = dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
 
-        print_dir_summary(rps, runtime[:found], stop_meta[:reason])
+        print_dir_summary(rps, runtime[:found], stop_meta[:reason], runtime[:redirect_signals])
         store_dir_result(scan, result)
       end
 
@@ -1130,7 +1060,7 @@ module Nokizaru
       end
 
       def dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
-        high_signal_found = rank_high_signal_paths(runtime[:responses], scan[:normalized_target])
+        high_signal_found = rank_high_signal_paths(runtime[:signal_responses], scan[:normalized_target])
         {
           'target' => {
             'original' => scan[:options][:target],
@@ -1138,7 +1068,8 @@ module Nokizaru
             'reanchored' => scan[:anchor][:reanchor],
             'reason' => scan[:anchor][:reason]
           },
-          'found' => runtime[:found].uniq,
+          'found' => runtime[:all_found].uniq,
+          'stdout_found' => runtime[:found].uniq,
           'high_signal_found' => high_signal_found,
           'by_status' => grouped_response_statuses(runtime[:responses]),
           'stats' => dir_stats(stats, stop_meta, elapsed, rps)
@@ -1181,6 +1112,14 @@ module Nokizaru
         score
       end
 
+      def first_path_segment(path)
+        path.to_s.split('/').reject(&:empty?).first.to_s.downcase
+      end
+
+      def high_signal_path_tokens
+        @high_signal_path_tokens ||= HIGH_SIGNAL_PATHS.map { |seed| seed.delete_prefix('/').downcase }
+      end
+
       def high_signal_path?(path)
         HIGH_SIGNAL_PATHS.any? { |seed| path_matches_seed?(path, seed.downcase) }
       end
@@ -1209,21 +1148,81 @@ module Nokizaru
           'successful' => stats[:success],
           'errors' => stats[:errors],
           'error_breakdown' => stats[:error_kinds].to_h,
-          'low_signal_filtered' => stats[:filtered_low_signal].to_i,
           'timeout_downshifts' => stats[:timeout_downshifts].to_i,
-          'redirect_noise_filtered' => stats[:redirect_filtered].to_i,
-          'redirect_outliers' => stats[:redirect_outliers].to_i,
           'elapsed_seconds' => elapsed.round(2),
           'requests_per_second' => rps
         }
       end
 
-      def print_dir_summary(rps, found, stop_reason)
+      def print_dir_summary(rps, found, stop_reason, redirect_signals)
         puts
-        rows = [['Requests/second', rps], ['Directories Found', found.uniq.length]]
-        rows << ['Stop Reason', stop_reason] unless stop_reason.to_s.strip.empty?
-        UI.rows(:info, rows)
+        count_rows = redirect_signal_count_rows(redirect_signals)
+        labels = ['Requests/second', 'Directories Found']
+        labels << '3xx Signals' unless count_rows.empty?
+        labels << 'Stop Reason' unless stop_reason.to_s.strip.empty?
+        label_width = labels.map(&:length).max
+
+        UI.row(:info, 'Requests/second', rps, label_width: label_width)
+        UI.row(:info, 'Directories Found', found.uniq.length, label_width: label_width)
+        print_redirect_signals(redirect_signals, count_rows, label_width)
+        UI.row(:info, 'Stop Reason', stop_reason, label_width: label_width) unless stop_reason.to_s.strip.empty?
         puts
+      end
+
+      def print_redirect_signals(redirect_signals, count_rows, label_width)
+        return if count_rows.empty?
+
+        UI.row(:info, '3xx Signals', 'interesting redirects detected', label_width: label_width)
+        UI.tree_rows(count_rows)
+
+        example_rows = redirect_signal_example_rows(redirect_signals)
+        return if example_rows.empty?
+
+        UI.tree_header('3xx Examples')
+        UI.tree_rows(example_rows)
+      end
+
+      def redirect_signal_count_rows(redirect_signals)
+        counts = redirect_signal_counts(redirect_signals)
+        rows = []
+        rows << ['callback-like', counts[:callback_like]] if counts[:callback_like].positive?
+        rows << ['auth-flow', counts[:auth_flow]] if counts[:auth_flow].positive?
+        rows << ['cross-scope', counts[:cross_scope]] if counts[:cross_scope].positive?
+        rows
+      end
+
+      def redirect_signal_example_rows(redirect_signals)
+        examples = Array(redirect_signals[:examples])
+        grouped = examples.group_by { |example| example[:type].to_sym }
+
+        %i[callback_like auth_flow cross_scope].flat_map do |type|
+          Array(grouped[type]).first(3).map do |example|
+            [redirect_signal_label(type), redirect_signal_example_text(example)]
+          end
+        end
+      end
+
+      def redirect_signal_example_text(example)
+        "#{example[:status]} | #{example[:request]} -> #{example[:location]}"
+      end
+
+      def redirect_signal_label(signal_type)
+        case signal_type.to_sym
+        when :cross_scope then 'cross-scope'
+        when :callback_like then 'callback-like'
+        when :auth_flow then 'auth-flow'
+        else signal_type.to_s
+        end
+      end
+
+      def redirect_signal_counts(redirect_signals)
+        raw = redirect_signals.is_a?(Hash) ? redirect_signals[:counts] : nil
+        values = raw.is_a?(Hash) ? raw : {}
+        {
+          cross_scope: values.fetch(:cross_scope, 0).to_i,
+          callback_like: values.fetch(:callback_like, 0).to_i,
+          auth_flow: values.fetch(:auth_flow, 0).to_i
+        }
       end
 
       def store_dir_result(scan, result)
@@ -1845,6 +1844,65 @@ module Nokizaru
         normalize_location(resolved)
       end
 
+      def redirect_signal_type(request_url, http_result)
+        location_header = http_result.headers['location'].to_s
+        return nil if location_header.strip.empty?
+
+        resolved = Nokizaru::TargetIntel.resolve_location(request_url, location_header)
+        return :cross_scope if cross_scope_redirect?(request_url, resolved)
+        return :callback_like if callback_like_redirect?(location_header, resolved)
+
+        pattern = redirect_pattern(request_url, location_header)
+        return :auth_flow if pattern.to_s.start_with?('auth_entry:')
+
+        nil
+      rescue StandardError
+        nil
+      end
+
+      def cross_scope_redirect?(request_url, resolved_location)
+        req = URI.parse(request_url.to_s)
+        loc = URI.parse(resolved_location.to_s)
+        return false if req.host.to_s.empty? || loc.host.to_s.empty?
+
+        !Nokizaru::TargetIntel.same_scope_host?(req.host, loc.host)
+      rescue StandardError
+        false
+      end
+
+      def callback_like_redirect?(location_header, resolved_location)
+        value = [location_header, resolved_location].compact.join(' ').downcase
+        return false if value.empty?
+
+        callback_tokens.any? { |token| value.include?(token) }
+      end
+
+      def callback_tokens
+        @callback_tokens ||= %w[callback redirect_uri return next continue destination dest oauth state code
+                                verifier].freeze
+      end
+
+      def push_redirect_example(examples, signal_type, status, request_url, http_result)
+        return if examples.count { |entry| entry[:type].to_sym == signal_type.to_sym } >= 3
+
+        location = http_result.headers['location'].to_s.strip
+        return if location.empty?
+
+        examples << {
+          type: signal_type,
+          status: status.to_i,
+          request: summarize_redirect_url(request_url),
+          location: summarize_redirect_url(location)
+        }
+      end
+
+      def summarize_redirect_url(url)
+        value = url.to_s.strip
+        return value if value.length <= 80
+
+        "#{value[0, 77]}..."
+      end
+
       # Build a generic redirect pattern so path-preserving redirects can be recognized as one behavior class
       def redirect_pattern(request_url, location_header)
         req = URI.parse(request_url.to_s)
@@ -1891,49 +1949,9 @@ module Nokizaru
     module DirectoryEnum
       module_function
 
-      # Determine if current redirect is generic redirect noise and should be filtered
-      def redirect_noise?(url, http_result, sample, baseline, target_profile)
-        return false unless redirect_status?(http_result.status)
-        return true unless sample
-
-        if Nokizaru::TargetIntel.path_preserving_https_redirect?(url, http_result.headers['location'], target_profile)
-          return true
-        end
-
-        return true if soft_404_match_sample?(sample, baseline)
-        return false if redirect_outlier?(sample)
-
-        pattern = sample[:redirect_pattern].to_s
-        return true if generic_redirect_pattern?(pattern)
-
-        true
-      end
-
       # Generic redirect patterns are likely anti-enumeration normalizers unless they diverge from baseline
       def generic_redirect_pattern?(pattern)
         pattern.start_with?('same_path:', 'same_path_slash:', 'root:', 'auth_entry:')
-      end
-
-      # Keep only meaningful redirect outliers and suppress generic redirect noise from live findings
-      def redirect_outlier?(sample)
-        pattern = sample[:redirect_pattern].to_s
-        return false if pattern.empty?
-
-        return false if generic_redirect_pattern?(pattern)
-        return false unless pattern.start_with?('path_specific:')
-
-        location_path = sample[:location].to_s.split('/', 2)[1].to_s
-        return false if location_path.empty?
-
-        redirect_target_keyword?(location_path)
-      end
-
-      # Prefer redirect findings that route toward meaningful app entry points
-      def redirect_target_keyword?(path)
-        normalized = "/#{path}".downcase
-        %w[/admin /login /signin /auth /account /dashboard /api /graphql /wp-admin].any? do |prefix|
-          normalized.start_with?(prefix)
-        end
       end
 
       # Check whether status code represents an HTTP redirect response

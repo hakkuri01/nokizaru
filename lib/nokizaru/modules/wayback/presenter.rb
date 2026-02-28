@@ -38,10 +38,11 @@ module Nokizaru
           list = Array(urls).compact
           return if list.empty?
 
-          UI.line(:info, 'Wayback URL Preview')
-          list.first(Wayback::PREVIEW_LIMIT).each { |url| puts("    #{UI::C}#{url}#{UI::W}") }
+          UI.tree_header('Wayback URL Preview')
+          rows = list.first(Wayback::PREVIEW_LIMIT).map { |url| ['URL', url] }
+          UI.tree_rows(rows)
           remaining = list.length - Wayback::PREVIEW_LIMIT
-          puts("    #{UI::C}... #{remaining} more#{UI::W}") if remaining.positive?
+          UI.tree_rows([['More', remaining]]) if remaining.positive?
         end
 
         def row(type, label, value)

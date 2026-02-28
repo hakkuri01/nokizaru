@@ -34,6 +34,10 @@ module Nokizaru
                    found) + build_jobs(JOBS_WITH_CONF, hostname, conf_path, found)
       end
 
+      def subdomain_provider_names
+        (JOBS_WITHOUT_CONF + JOBS_WITH_CONF).map(&:first)
+      end
+
       def build_jobs(definitions, hostname, conf_path, found)
         definitions.map { |name, fn| [name, proc { |http| fn.call(hostname, conf_path, http, found) }] }
       end

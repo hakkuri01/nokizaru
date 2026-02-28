@@ -41,9 +41,11 @@ module Nokizaru
         UI.module_header('Starting Sub-Domain Enumeration...')
 
         cache_key = ctx.cache&.key_for(['subdomains', hostname]) || "subdomains:#{hostname}"
+        SubdomainModules::Base.start_output_capture(subdomain_provider_names)
         found = ctx.cache_fetch(cache_key, ttl_s: 43_200) do
           enumerate(hostname, timeout, conf_path)
         end
+        SubdomainModules::Base.flush_output_capture
         found = Array(found).sort
 
         print_results(found)
@@ -52,6 +54,8 @@ module Nokizaru
         ctx.add_artifact('subdomains', found)
 
         Log.write('[subdom] Completed')
+      ensure
+        SubdomainModules::Base.stop_output_capture
       end
 
       # Print a concise subdomain preview and final unique count
@@ -59,14 +63,18 @@ module Nokizaru
         found = Array(found).sort
 
         if found.any?
-          UI.line(:info, 'Results :')
-          puts
-          found.first(20).each { |u| puts(u) }
-          UI.line(:info, 'Results truncated...') if found.length > 20
+          UI.tree_header('Results')
+          rows = found.first(20).map { |subdomain| ['Subdomain', subdomain] }
+          UI.tree_rows(rows)
+          if found.length > 20
+            width = ['Results Truncated', 'Total Unique Sub Domains Found'].map(&:length).max
+            UI.row(:info, 'Results Truncated', "#{found.length - 20} more", label_width: width)
+          end
         end
 
         puts
-        UI.row(:info, 'Total Unique Sub Domains Found', found.length)
+        width = ['Results Truncated', 'Total Unique Sub Domains Found'].map(&:length).max
+        UI.row(:info, 'Total Unique Sub Domains Found', found.length, label_width: width)
       end
     end
   end

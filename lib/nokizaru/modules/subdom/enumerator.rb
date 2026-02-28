@@ -75,7 +75,7 @@ module Nokizaru
         http = base_http.with(timeout: timeout_profile(timeout))
         fn.call(http)
       rescue StandardError => e
-        UI.line(:error, "#{name} Exception : #{e}")
+        SubdomainModules::Base.exception(name, e)
         Log.write("[subdom.worker] #{name} unhandled exception = #{e}")
       end
 

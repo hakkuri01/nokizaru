@@ -98,7 +98,7 @@ module Nokizaru
         end
 
         def print_http_result_status(vendor, resp)
-          return UI.line(:info, "#{vendor} Status : #{resp.status}") if resp.success?
+          return Base.status_info(vendor, resp.status) if resp.success?
 
           status = resp.status || 'ERR'
           Base.status_error(vendor, status, resp.error_message)

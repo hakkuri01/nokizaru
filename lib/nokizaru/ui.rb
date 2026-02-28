@@ -71,7 +71,7 @@ module Nokizaru
     end
 
     def tree_header(label, io: $stdout)
-      io.puts("#{prefix(:info)} #{C}#{label}#{W}")
+      io.puts("#{prefix(:info)} #{W}#{label}#{W}")
     end
 
     def tree_rows(pairs, min_dots: 3, io: $stdout)
