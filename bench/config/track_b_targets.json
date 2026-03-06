@@ -1,0 +1,45 @@
+{
+  "track": "track_b",
+  "description": "Live industry canary profiles for trend visibility",
+  "targets": [
+    {
+      "id": "live_github",
+      "url": "https://github.com",
+      "args": ["--full"],
+      "quality_floors": {
+        "directory_total_requests": 100,
+        "crawler_total_unique": 20
+      },
+      "notes": "Large production platform"
+    },
+    {
+      "id": "live_mdn",
+      "url": "https://developer.mozilla.org",
+      "args": ["--headers", "--crawl", "--dir", "--wayback"],
+      "quality_floors": {
+        "crawler_total_unique": 15,
+        "directory_total_requests": 50
+      },
+      "notes": "Docs-heavy content graph"
+    },
+    {
+      "id": "live_cloudflare",
+      "url": "https://cloudflare.com",
+      "args": ["--headers", "--crawl", "--dir"],
+      "quality_floors": {
+        "directory_total_requests": 40
+      },
+      "notes": "Edge-protected target profile"
+    },
+    {
+      "id": "live_httpbin",
+      "url": "https://httpbin.org",
+      "args": ["--headers", "--crawl", "--dir", "--wayback"],
+      "quality_floors": {
+        "crawler_total_unique": 5,
+        "directory_total_requests": 40
+      },
+      "notes": "API-oriented target with utility endpoints"
+    }
+  ]
+}

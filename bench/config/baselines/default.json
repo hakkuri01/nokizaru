@@ -1,0 +1,34 @@
+{
+  "track_a": {
+    "lab_hostile": {
+      "elapsed_median_s": 4.6191,
+      "elapsed_p95_s": 5.5821
+    },
+    "lab_redirect": {
+      "elapsed_median_s": 4.5582,
+      "elapsed_p95_s": 5.4128
+    },
+    "lab_static": {
+      "elapsed_median_s": 19.9384,
+      "elapsed_p95_s": 20.2798
+    }
+  },
+  "track_b": {
+    "live_github": {
+      "elapsed_median_s": 27.9069,
+      "elapsed_p95_s": 28.2143
+    },
+    "live_mdn": {
+      "elapsed_median_s": 25.8362,
+      "elapsed_p95_s": 28.5397
+    },
+    "live_cloudflare": {
+      "elapsed_median_s": 16.1674,
+      "elapsed_p95_s": 29.2976
+    },
+    "live_httpbin": {
+      "elapsed_median_s": 48.3603,
+      "elapsed_p95_s": 48.8324
+    }
+  }
+}
