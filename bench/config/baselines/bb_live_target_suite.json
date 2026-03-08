@@ -1,4 +1,406 @@
 {
-  "canonical": {},
-  "fast": {}
+  "canonical": {
+    "adobe_com": {
+      "elapsed_median_s": 79.7063,
+      "elapsed_p95_s": 79.7063
+    },
+    "airbnb_com": {
+      "elapsed_median_s": 40.4616,
+      "elapsed_p95_s": 40.4616
+    },
+    "amazon_com": {
+      "elapsed_median_s": 58.7773,
+      "elapsed_p95_s": 58.7773
+    },
+    "atlassian_com": {
+      "elapsed_median_s": 18.2047,
+      "elapsed_p95_s": 18.2047
+    },
+    "badssl_com": {
+      "elapsed_median_s": 47.4217,
+      "elapsed_p95_s": 47.4217
+    },
+    "box_com": {
+      "elapsed_median_s": 24.1488,
+      "elapsed_p95_s": 24.1488
+    },
+    "canva_com": {
+      "elapsed_median_s": 28.1446,
+      "elapsed_p95_s": 28.1446
+    },
+    "cloudflare_com": {
+      "elapsed_median_s": 12.835,
+      "elapsed_p95_s": 12.835
+    },
+    "coinbase_com": {
+      "elapsed_median_s": 25.7376,
+      "elapsed_p95_s": 25.7376
+    },
+    "demo_owasp_juice_shop": {
+      "elapsed_median_s": 33.7451,
+      "elapsed_p95_s": 33.7451
+    },
+    "developer_mozilla_org": {
+      "elapsed_median_s": 47.0191,
+      "elapsed_p95_s": 47.0191
+    },
+    "discord_com": {
+      "elapsed_median_s": 35.6924,
+      "elapsed_p95_s": 35.6924
+    },
+    "dropbox_com": {
+      "elapsed_median_s": 21.3406,
+      "elapsed_p95_s": 21.3406
+    },
+    "epicgames_com": {
+      "elapsed_median_s": 15.9077,
+      "elapsed_p95_s": 15.9077
+    },
+    "github_com": {
+      "elapsed_median_s": 53.8299,
+      "elapsed_p95_s": 53.8299
+    },
+    "gitlab_com": {
+      "elapsed_median_s": 51.4987,
+      "elapsed_p95_s": 51.4987
+    },
+    "google_com": {
+      "elapsed_median_s": 55.3491,
+      "elapsed_p95_s": 55.3491
+    },
+    "hoyoverse_com": {
+      "elapsed_median_s": 14.7345,
+      "elapsed_p95_s": 14.7345
+    },
+    "httpbin_org": {
+      "elapsed_median_s": 56.1442,
+      "elapsed_p95_s": 56.1442
+    },
+    "httpstat_us": {
+      "elapsed_median_s": 16.9582,
+      "elapsed_p95_s": 16.9582
+    },
+    "instagram_com": {
+      "elapsed_median_s": 25.5122,
+      "elapsed_p95_s": 25.5122
+    },
+    "intel_com": {
+      "elapsed_median_s": 32.454,
+      "elapsed_p95_s": 32.454
+    },
+    "linkedin_com": {
+      "elapsed_median_s": 15.371,
+      "elapsed_p95_s": 15.371
+    },
+    "mastercard_com": {
+      "elapsed_median_s": 14.7602,
+      "elapsed_p95_s": 14.7602
+    },
+    "mastodon_social": {
+      "elapsed_median_s": 64.527,
+      "elapsed_p95_s": 64.527
+    },
+    "microsoft_com": {
+      "elapsed_median_s": 23.9543,
+      "elapsed_p95_s": 23.9543
+    },
+    "netflix_com": {
+      "elapsed_median_s": 25.7655,
+      "elapsed_p95_s": 25.7655
+    },
+    "openai_com": {
+      "elapsed_median_s": 33.968,
+      "elapsed_p95_s": 33.968
+    },
+    "paypal_com": {
+      "elapsed_median_s": 41.617,
+      "elapsed_p95_s": 41.617
+    },
+    "pinterest_com": {
+      "elapsed_median_s": 24.7152,
+      "elapsed_p95_s": 24.7152
+    },
+    "portquiz_net": {
+      "elapsed_median_s": 33.3208,
+      "elapsed_p95_s": 33.3208
+    },
+    "proton_me": {
+      "elapsed_median_s": 73.2838,
+      "elapsed_p95_s": 73.2838
+    },
+    "reddit_com": {
+      "elapsed_median_s": 17.3448,
+      "elapsed_p95_s": 17.3448
+    },
+    "riotgames_com": {
+      "elapsed_median_s": 25.2999,
+      "elapsed_p95_s": 25.2999
+    },
+    "roblox_com": {
+      "elapsed_median_s": 29.1036,
+      "elapsed_p95_s": 29.1036
+    },
+    "scanme_nmap_org": {
+      "elapsed_median_s": 41.782,
+      "elapsed_p95_s": 41.782
+    },
+    "shopify_com": {
+      "elapsed_median_s": 18.2554,
+      "elapsed_p95_s": 18.2554
+    },
+    "slack_com": {
+      "elapsed_median_s": 19.1053,
+      "elapsed_p95_s": 19.1053
+    },
+    "snapchat_com": {
+      "elapsed_median_s": 37.9106,
+      "elapsed_p95_s": 37.9106
+    },
+    "spotify_com": {
+      "elapsed_median_s": 23.5319,
+      "elapsed_p95_s": 23.5319
+    },
+    "stripe_com": {
+      "elapsed_median_s": 49.7297,
+      "elapsed_p95_s": 49.7297
+    },
+    "tiktok_com": {
+      "elapsed_median_s": 31.8683,
+      "elapsed_p95_s": 31.8683
+    },
+    "twilio_com": {
+      "elapsed_median_s": 32.1802,
+      "elapsed_p95_s": 32.1802
+    },
+    "uber_com": {
+      "elapsed_median_s": 33.0331,
+      "elapsed_p95_s": 33.0331
+    },
+    "valvesoftware_com": {
+      "elapsed_median_s": 17.5633,
+      "elapsed_p95_s": 17.5633
+    },
+    "verizon_com": {
+      "elapsed_median_s": 56.0867,
+      "elapsed_p95_s": 56.0867
+    },
+    "wikipedia_org": {
+      "elapsed_median_s": 32.1875,
+      "elapsed_p95_s": 32.1875
+    },
+    "yahoo_com": {
+      "elapsed_median_s": 41.5546,
+      "elapsed_p95_s": 41.5546
+    },
+    "zonetransfer_me": {
+      "elapsed_median_s": 30.5914,
+      "elapsed_p95_s": 30.5914
+    },
+    "zoom_us": {
+      "elapsed_median_s": 63.9186,
+      "elapsed_p95_s": 63.9186
+    }
+  },
+  "fast": {
+    "adobe_com": {
+      "elapsed_median_s": 86.561,
+      "elapsed_p95_s": 86.561
+    },
+    "airbnb_com": {
+      "elapsed_median_s": 30.5627,
+      "elapsed_p95_s": 30.5627
+    },
+    "amazon_com": {
+      "elapsed_median_s": 67.2321,
+      "elapsed_p95_s": 67.2321
+    },
+    "atlassian_com": {
+      "elapsed_median_s": 42.1913,
+      "elapsed_p95_s": 42.1913
+    },
+    "badssl_com": {
+      "elapsed_median_s": 43.0602,
+      "elapsed_p95_s": 43.0602
+    },
+    "box_com": {
+      "elapsed_median_s": 43.2214,
+      "elapsed_p95_s": 43.2214
+    },
+    "canva_com": {
+      "elapsed_median_s": 45.9372,
+      "elapsed_p95_s": 45.9372
+    },
+    "cloudflare_com": {
+      "elapsed_median_s": 31.1319,
+      "elapsed_p95_s": 31.1319
+    },
+    "coinbase_com": {
+      "elapsed_median_s": 19.25,
+      "elapsed_p95_s": 19.25
+    },
+    "demo_owasp_juice_shop": {
+      "elapsed_median_s": 41.7678,
+      "elapsed_p95_s": 41.7678
+    },
+    "developer_mozilla_org": {
+      "elapsed_median_s": 62.3273,
+      "elapsed_p95_s": 62.3273
+    },
+    "discord_com": {
+      "elapsed_median_s": 37.102,
+      "elapsed_p95_s": 37.102
+    },
+    "dropbox_com": {
+      "elapsed_median_s": 13.261,
+      "elapsed_p95_s": 13.261
+    },
+    "epicgames_com": {
+      "elapsed_median_s": 47.6981,
+      "elapsed_p95_s": 47.6981
+    },
+    "github_com": {
+      "elapsed_median_s": 25.3296,
+      "elapsed_p95_s": 25.3296
+    },
+    "gitlab_com": {
+      "elapsed_median_s": 43.9298,
+      "elapsed_p95_s": 43.9298
+    },
+    "google_com": {
+      "elapsed_median_s": 25.5243,
+      "elapsed_p95_s": 25.5243
+    },
+    "hoyoverse_com": {
+      "elapsed_median_s": 27.7457,
+      "elapsed_p95_s": 27.7457
+    },
+    "httpbin_org": {
+      "elapsed_median_s": 57.8244,
+      "elapsed_p95_s": 57.8244
+    },
+    "httpstat_us": {
+      "elapsed_median_s": 27.3128,
+      "elapsed_p95_s": 27.3128
+    },
+    "instagram_com": {
+      "elapsed_median_s": 26.0454,
+      "elapsed_p95_s": 26.0454
+    },
+    "intel_com": {
+      "elapsed_median_s": 42.409,
+      "elapsed_p95_s": 42.409
+    },
+    "linkedin_com": {
+      "elapsed_median_s": 33.5208,
+      "elapsed_p95_s": 33.5208
+    },
+    "mastercard_com": {
+      "elapsed_median_s": 43.1184,
+      "elapsed_p95_s": 43.1184
+    },
+    "mastodon_social": {
+      "elapsed_median_s": 49.0119,
+      "elapsed_p95_s": 49.0119
+    },
+    "microsoft_com": {
+      "elapsed_median_s": 55.8211,
+      "elapsed_p95_s": 55.8211
+    },
+    "netflix_com": {
+      "elapsed_median_s": 24.5573,
+      "elapsed_p95_s": 24.5573
+    },
+    "openai_com": {
+      "elapsed_median_s": 45.8514,
+      "elapsed_p95_s": 45.8514
+    },
+    "paypal_com": {
+      "elapsed_median_s": 18.1459,
+      "elapsed_p95_s": 18.1459
+    },
+    "pinterest_com": {
+      "elapsed_median_s": 37.0735,
+      "elapsed_p95_s": 37.0735
+    },
+    "portquiz_net": {
+      "elapsed_median_s": 42.5747,
+      "elapsed_p95_s": 42.5747
+    },
+    "proton_me": {
+      "elapsed_median_s": 88.5104,
+      "elapsed_p95_s": 88.5104
+    },
+    "reddit_com": {
+      "elapsed_median_s": 13.3871,
+      "elapsed_p95_s": 13.3871
+    },
+    "riotgames_com": {
+      "elapsed_median_s": 16.721,
+      "elapsed_p95_s": 16.721
+    },
+    "roblox_com": {
+      "elapsed_median_s": 30.7204,
+      "elapsed_p95_s": 30.7204
+    },
+    "scanme_nmap_org": {
+      "elapsed_median_s": 45.1067,
+      "elapsed_p95_s": 45.1067
+    },
+    "shopify_com": {
+      "elapsed_median_s": 53.4955,
+      "elapsed_p95_s": 53.4955
+    },
+    "slack_com": {
+      "elapsed_median_s": 25.1745,
+      "elapsed_p95_s": 25.1745
+    },
+    "snapchat_com": {
+      "elapsed_median_s": 75.0246,
+      "elapsed_p95_s": 75.0246
+    },
+    "spotify_com": {
+      "elapsed_median_s": 31.5035,
+      "elapsed_p95_s": 31.5035
+    },
+    "stripe_com": {
+      "elapsed_median_s": 53.6122,
+      "elapsed_p95_s": 53.6122
+    },
+    "tiktok_com": {
+      "elapsed_median_s": 20.5568,
+      "elapsed_p95_s": 20.5568
+    },
+    "twilio_com": {
+      "elapsed_median_s": 26.3992,
+      "elapsed_p95_s": 26.3992
+    },
+    "uber_com": {
+      "elapsed_median_s": 38.3074,
+      "elapsed_p95_s": 38.3074
+    },
+    "valvesoftware_com": {
+      "elapsed_median_s": 24.2229,
+      "elapsed_p95_s": 24.2229
+    },
+    "verizon_com": {
+      "elapsed_median_s": 28.2116,
+      "elapsed_p95_s": 28.2116
+    },
+    "wikipedia_org": {
+      "elapsed_median_s": 26.5767,
+      "elapsed_p95_s": 26.5767
+    },
+    "yahoo_com": {
+      "elapsed_median_s": 50.6577,
+      "elapsed_p95_s": 50.6577
+    },
+    "zonetransfer_me": {
+      "elapsed_median_s": 23.2834,
+      "elapsed_p95_s": 23.2834
+    },
+    "zoom_us": {
+      "elapsed_median_s": 61.9928,
+      "elapsed_p95_s": 61.9928
+    }
+  }
 }

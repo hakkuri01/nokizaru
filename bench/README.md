@@ -3,7 +3,7 @@
 This directory now has two benchmark suites:
 
 - `bb_live_target_suite.rb`
-  - Curated live-web suite for benchmark tooling targets, popular public sites, and bug bounty/VDP-heavy targets
+  - Curated 50-target live-web suite for benchmark tooling targets, popular public sites, and bug bounty/VDP-heavy targets
   - Supports canonical and fast profiles, sharding, rolling baseline, and resource metrics
 - `comprehensive_benchmark_suite.rb`
   - New two-track benchmark suite for performance governance

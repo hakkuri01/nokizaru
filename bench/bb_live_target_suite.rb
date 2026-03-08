@@ -34,7 +34,33 @@ class BBLiveTargetSuite
     'https://openai.com',
     'https://amazon.com',
     'https://cloudflare.com',
-    'https://riotgames.com'
+    'https://riotgames.com',
+    'https://microsoft.com',
+    'https://adobe.com',
+    'https://dropbox.com',
+    'https://slack.com',
+    'https://atlassian.com',
+    'https://paypal.com',
+    'https://stripe.com',
+    'https://twilio.com',
+    'https://uber.com',
+    'https://airbnb.com',
+    'https://coinbase.com',
+    'https://reddit.com',
+    'https://linkedin.com',
+    'https://yahoo.com',
+    'https://tiktok.com',
+    'https://snapchat.com',
+    'https://discord.com',
+    'https://zoom.us',
+    'https://epicgames.com',
+    'https://roblox.com',
+    'https://spotify.com',
+    'https://pinterest.com',
+    'https://canva.com',
+    'https://box.com',
+    'https://intel.com',
+    'https://mastercard.com'
   ].freeze
 
   PROFILE_CONFIG = {
@@ -103,15 +129,15 @@ class BBLiveTargetSuite
         '--export'
       ]
       args << '--no-cache' if no_cache
-      args.concat([
-                    '-o',
-                    'json',
-                    '--cd',
-                    out_dir,
-                    '--of',
-                    basename,
-                    '-nb'
-                  ])
+      args.push(
+        '-o',
+        'json',
+        '--cd',
+        out_dir,
+        '--of',
+        basename,
+        '-nb'
+      )
       args
     end
 
@@ -571,7 +597,7 @@ class BBLiveTargetSuite
     def rate(numerator, denominator)
       return 0.0 if denominator.to_i <= 0
 
-      (numerator.to_f / denominator.to_f).round(4)
+      (numerator.to_f / denominator).round(4)
     end
   end
 
@@ -588,8 +614,8 @@ class BBLiveTargetSuite
     end
 
     def snapshot_from_targets(targets)
-      targets.each_with_object({}) do |(target_key, row), out|
-        out[target_key] = {
+      targets.transform_values do |row|
+        {
           'elapsed_median_s' => row['elapsed_median_s'].to_f.round(4),
           'elapsed_p95_s' => row['elapsed_p95_s'].to_f.round(4)
         }
@@ -622,7 +648,7 @@ class BBLiveTargetSuite
 
     def recent_manifests(out_dir, profile, limit)
       pattern = File.join(out_dir, "bb_live_#{profile}_manifest_*.json")
-      Dir[pattern].sort.last(limit)
+      Dir[pattern].last(limit)
     end
 
     def aggregate(paths)
@@ -635,8 +661,8 @@ class BBLiveTargetSuite
         end
       end
 
-      rows.each_with_object({}) do |(target_key, values), out|
-        out[target_key] = {
+      rows.transform_values do |values|
+        {
           'elapsed_median_s' => Stats.median(values[:medians]),
           'elapsed_p95_s' => Stats.median(values[:p95s])
         }
@@ -672,13 +698,20 @@ class BBLiveTargetSuite
 
       if metrics['success_rate'].to_f < thresholds[:min_success_rate].to_f
         status = 'fail'
-        reasons << format('success_rate %.2f below minimum %.2f', metrics['success_rate'],
-                          thresholds[:min_success_rate])
+        reasons << format(
+          'success_rate %<actual>.2f below minimum %<minimum>.2f',
+          actual: metrics['success_rate'],
+          minimum: thresholds[:min_success_rate]
+        )
       end
 
       if metrics['elapsed_cv'].to_f > thresholds[:max_elapsed_cv].to_f
         status = downgrade_status(status, strict)
-        reasons << format('elapsed cv %.2f exceeds %.2f', metrics['elapsed_cv'], thresholds[:max_elapsed_cv])
+        reasons << format(
+          'elapsed cv %<actual>.2f exceeds %<maximum>.2f',
+          actual: metrics['elapsed_cv'],
+          maximum: thresholds[:max_elapsed_cv]
+        )
       end
 
       unless baseline_row.is_a?(Hash)
@@ -696,14 +729,20 @@ class BBLiveTargetSuite
 
       if median_delta > thresholds[:median_runtime_regression_pct].to_f
         status = downgrade_status(status, strict)
-        reasons << format('median runtime regression %.2f%% exceeds %.2f%%', median_delta,
-                          thresholds[:median_runtime_regression_pct])
+        reasons << format(
+          'median runtime regression %<actual>.2f%% exceeds %<maximum>.2f%%',
+          actual: median_delta,
+          maximum: thresholds[:median_runtime_regression_pct]
+        )
       end
 
       if p95_delta > thresholds[:p95_runtime_regression_pct].to_f
         status = downgrade_status(status, strict)
-        reasons << format('p95 runtime regression %.2f%% exceeds %.2f%%', p95_delta,
-                          thresholds[:p95_runtime_regression_pct])
+        reasons << format(
+          'p95 runtime regression %<actual>.2f%% exceeds %<maximum>.2f%%',
+          actual: p95_delta,
+          maximum: thresholds[:p95_runtime_regression_pct]
+        )
       end
 
       {
@@ -775,101 +814,62 @@ class BBLiveTargetSuite
       end
 
       lines << ''
-      lines << "Verdict: pass=#{manifest.dig('verdict',
-                                             'passed_targets')} warn=#{manifest.dig('verdict',
-                                                                                    'warning_targets')} fail=#{manifest.dig(
-                                                                                      'verdict', 'failed_targets'
-                                                                                    )}"
+      passed = manifest.dig('verdict', 'passed_targets')
+      warned = manifest.dig('verdict', 'warning_targets')
+      failed = manifest.dig('verdict', 'failed_targets')
+      lines << "Verdict: pass=#{passed} warn=#{warned} fail=#{failed}"
       lines.join("\n")
     end
   end
+end
+
+def configure_live_suite_option_parser(parser, opts)
+  parser.banner = 'Usage: ruby bench/bb_live_target_suite.rb [options]'
+  parser.on('--profile NAME', %w[canonical fast], 'Execution profile (canonical or fast)') do |value|
+    opts[:profile] = value
+  end
+  parser.on('--runs N', Integer, 'How many repetitions to run') { |value| opts[:runs] = [value.to_i, 1].max }
+  parser.on('--concurrency N', Integer, 'Concurrent targets to run at once') do |value|
+    opts[:concurrency] = value.to_i.clamp(1, 10)
+  end
+  parser.on('--timeout S', Integer, 'Fallback per-target timeout in seconds') do |value|
+    opts[:timeout_s] = [value.to_i, 30].max
+  end
+  parser.on('--out DIR', String, 'Output directory for JSON and logs') do |value|
+    opts[:out_dir] = File.expand_path(value)
+  end
+  parser.on('--nokizaru PATH', String, 'Path to nokizaru executable') do |value|
+    opts[:nokizaru_bin] = File.expand_path(value)
+  end
+  parser.on('--targets x,y,z', Array, 'Target key subset (example: github_com,httpbin_org)') do |value|
+    opts[:include_targets] = Array(value).map { |item| item.to_s.strip.downcase }.reject(&:empty?)
+  end
+  parser.on('--shard-count N', Integer, 'Total shard count for CI parallelization') do |value|
+    opts[:shard_count] = [value.to_i, 1].max
+  end
+  parser.on('--shard-index N', Integer, 'Shard index for this runner (0-based)') do |value|
+    opts[:shard_index] = [value.to_i, 0].max
+  end
+  parser.on('--baseline PATH', String, 'Baseline file path') { |value| opts[:baseline_path] = File.expand_path(value) }
+  parser.on('--rolling-window N', Integer, 'Use last N manifests as rolling baseline') do |value|
+    opts[:rolling_window] = [value.to_i, 0].max
+  end
+  parser.on('--write-baseline', 'Write medians/p95 from current run to baseline file') { opts[:write_baseline] = true }
+  parser.on('--strict', 'Force strict pass/fail behavior') { opts[:strict] = true }
+  parser.on('--no-strict', 'Force warning behavior for regressions') { opts[:strict] = false }
+  parser.on('--resource-metrics', 'Capture cpu/rss with /usr/bin/time') { opts[:resource_metrics] = true }
+  parser.on('--no-resource-metrics', 'Disable cpu/rss collection') { opts[:resource_metrics] = false }
+  parser.on('--skip-existing', 'Skip runs when output JSON exists (default)') { opts[:skip_existing] = true }
+  parser.on('--no-skip-existing', 'Always rerun even if output JSON exists') { opts[:skip_existing] = false }
+  parser.on('--fail-fast', 'Stop remaining queue after first non-ok result') { opts[:fail_fast] = true }
+  parser.on('--dry-run', 'Print generated commands and exit') { opts[:dry_run] = true }
 end
 
 def parse_options(argv)
   opts = BBLiveTargetSuite::DEFAULTS.dup
 
   OptionParser.new do |parser|
-    parser.banner = 'Usage: ruby bench/bb_live_target_suite.rb [options]'
-
-    parser.on('--profile NAME', %w[canonical fast], 'Execution profile (canonical or fast)') do |value|
-      opts[:profile] = value
-    end
-
-    parser.on('--runs N', Integer, 'How many repetitions to run') do |value|
-      opts[:runs] = [value.to_i, 1].max
-    end
-
-    parser.on('--concurrency N', Integer, 'Concurrent targets to run at once') do |value|
-      opts[:concurrency] = value.to_i.clamp(1, 10)
-    end
-
-    parser.on('--timeout S', Integer, 'Fallback per-target timeout in seconds') do |value|
-      opts[:timeout_s] = [value.to_i, 30].max
-    end
-
-    parser.on('--out DIR', String, 'Output directory for JSON and logs') do |value|
-      opts[:out_dir] = File.expand_path(value)
-    end
-
-    parser.on('--nokizaru PATH', String, 'Path to nokizaru executable') do |value|
-      opts[:nokizaru_bin] = File.expand_path(value)
-    end
-
-    parser.on('--targets x,y,z', Array, 'Target key subset (example: github_com,httpbin_org)') do |value|
-      opts[:include_targets] = Array(value).map { |item| item.to_s.strip.downcase }.reject(&:empty?)
-    end
-
-    parser.on('--shard-count N', Integer, 'Total shard count for CI parallelization') do |value|
-      opts[:shard_count] = [value.to_i, 1].max
-    end
-
-    parser.on('--shard-index N', Integer, 'Shard index for this runner (0-based)') do |value|
-      opts[:shard_index] = [value.to_i, 0].max
-    end
-
-    parser.on('--baseline PATH', String, 'Baseline file path') do |value|
-      opts[:baseline_path] = File.expand_path(value)
-    end
-
-    parser.on('--rolling-window N', Integer, 'Use last N manifests as rolling baseline') do |value|
-      opts[:rolling_window] = [value.to_i, 0].max
-    end
-
-    parser.on('--write-baseline', 'Write medians/p95 from current run to baseline file') do
-      opts[:write_baseline] = true
-    end
-
-    parser.on('--strict', 'Force strict pass/fail behavior') do
-      opts[:strict] = true
-    end
-
-    parser.on('--no-strict', 'Force warning behavior for regressions') do
-      opts[:strict] = false
-    end
-
-    parser.on('--resource-metrics', 'Capture cpu/rss with /usr/bin/time') do
-      opts[:resource_metrics] = true
-    end
-
-    parser.on('--no-resource-metrics', 'Disable cpu/rss collection') do
-      opts[:resource_metrics] = false
-    end
-
-    parser.on('--skip-existing', 'Skip runs when output JSON exists (default)') do
-      opts[:skip_existing] = true
-    end
-
-    parser.on('--no-skip-existing', 'Always rerun even if output JSON exists') do
-      opts[:skip_existing] = false
-    end
-
-    parser.on('--fail-fast', 'Stop remaining queue after first non-ok result') do
-      opts[:fail_fast] = true
-    end
-
-    parser.on('--dry-run', 'Print generated commands and exit') do
-      opts[:dry_run] = true
-    end
+    configure_live_suite_option_parser(parser, opts)
   end.parse!(argv)
 
   opts

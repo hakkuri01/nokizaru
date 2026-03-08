@@ -3,9 +3,31 @@
 require 'json'
 require 'minitest/autorun'
 require 'tmpdir'
+require 'uri'
 require_relative '../bb_live_target_suite'
 
 class BBLiveTargetSuiteTest < Minitest::Test
+  def test_targets_include_at_least_fifty_live_sites
+    assert_operator BBLiveTargetSuite::TARGETS.length, :>=, 50
+  end
+
+  def test_targets_have_unique_target_keys
+    keys = BBLiveTargetSuite::TARGETS.map { |target| BBLiveTargetSuite.target_key(target) }
+
+    assert_equal keys.length, keys.uniq.length
+  end
+
+  def test_targets_use_http_or_https
+    invalid_targets = BBLiveTargetSuite::TARGETS.reject do |target|
+      uri = URI.parse(target)
+      %w[http https].include?(uri.scheme)
+    rescue URI::InvalidURIError
+      false
+    end
+
+    assert_empty invalid_targets
+  end
+
   def test_build_command_profile_switches_cache_flag
     canonical = BBLiveTargetSuite.build_command(
       nokizaru_bin: '/tmp/nokizaru',
