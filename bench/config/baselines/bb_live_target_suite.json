@@ -1,204 +1,940 @@
 {
   "canonical": {
     "adobe_com": {
-      "elapsed_median_s": 79.7063,
-      "elapsed_p95_s": 79.7063
+      "elapsed_median_s": 71.9301,
+      "elapsed_p95_s": 71.9301,
+      "quality_score": 131.9195,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 6.0,
+      "wayback_count": 843.0
     },
     "airbnb_com": {
-      "elapsed_median_s": 40.4616,
-      "elapsed_p95_s": 40.4616
+      "elapsed_median_s": 25.9868,
+      "elapsed_p95_s": 25.9868,
+      "quality_score": 453.1031,
+      "crawler_total_unique": 115.0,
+      "crawler_high_signal_count": 50.0,
+      "subdomain_count": 1627.0,
+      "wayback_count": 0.0
     },
     "amazon_com": {
-      "elapsed_median_s": 58.7773,
-      "elapsed_p95_s": 58.7773
+      "elapsed_median_s": 79.6029,
+      "elapsed_p95_s": 79.6029,
+      "quality_score": 600.0303,
+      "crawler_total_unique": 481.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 16002.0,
+      "wayback_count": 0.0
     },
-    "atlassian_com": {
-      "elapsed_median_s": 18.2047,
-      "elapsed_p95_s": 18.2047
+    "amiami_com": {
+      "elapsed_median_s": 12.6865,
+      "elapsed_p95_s": 12.6865,
+      "quality_score": 159.323,
+      "crawler_total_unique": 4.0,
+      "crawler_high_signal_count": 2.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 126.0
+    },
+    "animate_co_jp": {
+      "elapsed_median_s": 14.2563,
+      "elapsed_p95_s": 14.2563,
+      "quality_score": 445.7285,
+      "crawler_total_unique": 1894.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 0.0
+    },
+    "aniplex_co_jp": {
+      "elapsed_median_s": 16.8356,
+      "elapsed_p95_s": 16.8356,
+      "quality_score": 259.0703,
+      "crawler_total_unique": 44.0,
+      "crawler_high_signal_count": 22.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 2.0
+    },
+    "apple_com": {
+      "elapsed_median_s": 17.0089,
+      "elapsed_p95_s": 17.0089,
+      "quality_score": 650.1148,
+      "crawler_total_unique": 2625.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 17656.0,
+      "wayback_count": 0.0
+    },
+    "archlinux_org": {
+      "elapsed_median_s": 32.1536,
+      "elapsed_p95_s": 32.1536,
+      "quality_score": 538.6414,
+      "crawler_total_unique": 2561.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 88.0,
+      "wayback_count": 0.0
+    },
+    "arm_com": {
+      "elapsed_median_s": 30.7783,
+      "elapsed_p95_s": 30.7783,
+      "quality_score": 498.8636,
+      "crawler_total_unique": 938.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 25.0,
+      "wayback_count": 1.0
+    },
+    "asahi_com": {
+      "elapsed_median_s": 29.1158,
+      "elapsed_p95_s": 29.1158,
+      "quality_score": 426.381,
+      "crawler_total_unique": 715.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 1.0
     },
     "badssl_com": {
-      "elapsed_median_s": 47.4217,
-      "elapsed_p95_s": 47.4217
+      "elapsed_median_s": 54.7062,
+      "elapsed_p95_s": 54.7062,
+      "quality_score": 372.5793,
+      "crawler_total_unique": 83.0,
+      "crawler_high_signal_count": 4.0,
+      "subdomain_count": 172.0,
+      "wayback_count": 104.0
+    },
+    "bandainamco_co_jp": {
+      "elapsed_median_s": 20.9027,
+      "elapsed_p95_s": 20.9027,
+      "quality_score": 454.1785,
+      "crawler_total_unique": 272.0,
+      "crawler_high_signal_count": 202.0,
+      "subdomain_count": 34.0,
+      "wayback_count": 0.0
+    },
+    "boeing_com": {
+      "elapsed_median_s": 26.8137,
+      "elapsed_p95_s": 26.8137,
+      "quality_score": 593.7777,
+      "crawler_total_unique": 1850.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 1516.0,
+      "wayback_count": 1.0
+    },
+    "booking_com": {
+      "elapsed_median_s": 36.3981,
+      "elapsed_p95_s": 36.3981,
+      "quality_score": 313.2637,
+      "crawler_total_unique": 181.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 1305.0,
+      "wayback_count": 0.0
+    },
+    "bosch_com": {
+      "elapsed_median_s": 30.4804,
+      "elapsed_p95_s": 30.4804,
+      "quality_score": 506.3768,
+      "crawler_total_unique": 1444.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 894.0
     },
     "box_com": {
-      "elapsed_median_s": 24.1488,
-      "elapsed_p95_s": 24.1488
+      "elapsed_median_s": 22.8749,
+      "elapsed_p95_s": 22.8749,
+      "quality_score": 504.0763,
+      "crawler_total_unique": 894.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 35.0,
+      "wayback_count": 1.0
     },
     "canva_com": {
-      "elapsed_median_s": 28.1446,
-      "elapsed_p95_s": 28.1446
+      "elapsed_median_s": 30.6807,
+      "elapsed_p95_s": 30.6807,
+      "quality_score": 537.1732,
+      "crawler_total_unique": 890.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 267.0,
+      "wayback_count": 0.0
+    },
+    "cisco_com": {
+      "elapsed_median_s": 25.2464,
+      "elapsed_p95_s": 25.2464,
+      "quality_score": 194.5424,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 4656.0,
+      "wayback_count": 0.0
+    },
+    "claude_ai": {
+      "elapsed_median_s": 16.3516,
+      "elapsed_p95_s": 16.3516,
+      "quality_score": 206.7808,
+      "crawler_total_unique": 14.0,
+      "crawler_high_signal_count": 6.0,
+      "subdomain_count": 3.0,
+      "wayback_count": 0.0
     },
     "cloudflare_com": {
-      "elapsed_median_s": 12.835,
-      "elapsed_p95_s": 12.835
+      "elapsed_median_s": 15.5442,
+      "elapsed_p95_s": 15.5442,
+      "quality_score": 430.6224,
+      "crawler_total_unique": 1082.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 0.0
     },
     "coinbase_com": {
-      "elapsed_median_s": 25.7376,
-      "elapsed_p95_s": 25.7376
+      "elapsed_median_s": 24.824,
+      "elapsed_p95_s": 24.824,
+      "quality_score": 131.5862,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 199.0,
+      "wayback_count": 0.0
+    },
+    "coursera_org": {
+      "elapsed_median_s": 36.4931,
+      "elapsed_p95_s": 36.4931,
+      "quality_score": 523.3255,
+      "crawler_total_unique": 876.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 136.0,
+      "wayback_count": 0.0
+    },
+    "cygames_co_jp": {
+      "elapsed_median_s": 24.9261,
+      "elapsed_p95_s": 24.9261,
+      "quality_score": 307.0787,
+      "crawler_total_unique": 119.0,
+      "crawler_high_signal_count": 52.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 0.0
     },
     "demo_owasp_juice_shop": {
-      "elapsed_median_s": 33.7451,
-      "elapsed_p95_s": 33.7451
+      "elapsed_median_s": 44.5548,
+      "elapsed_p95_s": 44.5548,
+      "quality_score": 189.235,
+      "crawler_total_unique": 8.0,
+      "crawler_high_signal_count": 1.0,
+      "subdomain_count": 1.0,
+      "wayback_count": 320.0
+    },
+    "dena_com": {
+      "elapsed_median_s": 23.2038,
+      "elapsed_p95_s": 23.2038,
+      "quality_score": 349.6317,
+      "crawler_total_unique": 130.0,
+      "crawler_high_signal_count": 126.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 1.0
     },
     "developer_mozilla_org": {
-      "elapsed_median_s": 47.0191,
-      "elapsed_p95_s": 47.0191
+      "elapsed_median_s": 67.4265,
+      "elapsed_p95_s": 67.4265,
+      "quality_score": 435.5945,
+      "crawler_total_unique": 171.0,
+      "crawler_high_signal_count": 134.0,
+      "subdomain_count": 1.0,
+      "wayback_count": 338.0
     },
     "discord_com": {
-      "elapsed_median_s": 35.6924,
-      "elapsed_p95_s": 35.6924
+      "elapsed_median_s": 36.4926,
+      "elapsed_p95_s": 36.4926,
+      "quality_score": 415.8675,
+      "crawler_total_unique": 180.0,
+      "crawler_high_signal_count": 51.0,
+      "subdomain_count": 63.0,
+      "wayback_count": 0.0
+    },
+    "docusign_com": {
+      "elapsed_median_s": 25.3468,
+      "elapsed_p95_s": 25.3468,
+      "quality_score": 555.2935,
+      "crawler_total_unique": 959.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 423.0,
+      "wayback_count": 1.0
     },
     "dropbox_com": {
-      "elapsed_median_s": 21.3406,
-      "elapsed_p95_s": 21.3406
+      "elapsed_median_s": 20.9358,
+      "elapsed_p95_s": 20.9358,
+      "quality_score": 166.377,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 1963.0,
+      "wayback_count": 0.0
+    },
+    "ecosia_org": {
+      "elapsed_median_s": 14.7879,
+      "elapsed_p95_s": 14.7879,
+      "quality_score": 276.2662,
+      "crawler_total_unique": 49.0,
+      "crawler_high_signal_count": 15.0,
+      "subdomain_count": 6.0,
+      "wayback_count": 0.0
     },
     "epicgames_com": {
-      "elapsed_median_s": 15.9077,
-      "elapsed_p95_s": 15.9077
+      "elapsed_median_s": 16.6234,
+      "elapsed_p95_s": 16.6234,
+      "quality_score": 196.2917,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 3593.0,
+      "wayback_count": 1.0
+    },
+    "fedoraproject_org": {
+      "elapsed_median_s": 25.0891,
+      "elapsed_p95_s": 25.0891,
+      "quality_score": 457.8177,
+      "crawler_total_unique": 179.0,
+      "crawler_high_signal_count": 85.0,
+      "subdomain_count": 282.0,
+      "wayback_count": 1.0
+    },
+    "fujitsu_com": {
+      "elapsed_median_s": 44.3062,
+      "elapsed_p95_s": 44.3062,
+      "quality_score": 107.906,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 714.0
     },
     "github_com": {
-      "elapsed_median_s": 53.8299,
-      "elapsed_p95_s": 53.8299
+      "elapsed_median_s": 45.814,
+      "elapsed_p95_s": 45.814,
+      "quality_score": 447.4214,
+      "crawler_total_unique": 278.0,
+      "crawler_high_signal_count": 96.0,
+      "subdomain_count": 87.0,
+      "wayback_count": 0.0
     },
     "gitlab_com": {
-      "elapsed_median_s": 51.4987,
-      "elapsed_p95_s": 51.4987
+      "elapsed_median_s": 36.2592,
+      "elapsed_p95_s": 36.2592,
+      "quality_score": 577.0069,
+      "crawler_total_unique": 2610.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 459.0,
+      "wayback_count": 0.0
+    },
+    "gmo_jp": {
+      "elapsed_median_s": 55.2166,
+      "elapsed_p95_s": 55.2166,
+      "quality_score": 91.4557,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 137.0
+    },
+    "goodsmile_com": {
+      "elapsed_median_s": 16.8104,
+      "elapsed_p95_s": 16.8104,
+      "quality_score": 413.1812,
+      "crawler_total_unique": 195.0,
+      "crawler_high_signal_count": 100.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 866.0
     },
     "google_com": {
-      "elapsed_median_s": 55.3491,
-      "elapsed_p95_s": 55.3491
+      "elapsed_median_s": 52.8192,
+      "elapsed_p95_s": 52.8192,
+      "quality_score": 606.9994,
+      "crawler_total_unique": 901.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 5198.0,
+      "wayback_count": 0.0
+    },
+    "hackthebox_com": {
+      "elapsed_median_s": 21.4901,
+      "elapsed_p95_s": 21.4901,
+      "quality_score": 400.8922,
+      "crawler_total_unique": 170.0,
+      "crawler_high_signal_count": 76.0,
+      "subdomain_count": 22.0,
+      "wayback_count": 1.0
+    },
+    "hitachi_com": {
+      "elapsed_median_s": 15.6733,
+      "elapsed_p95_s": 15.6733,
+      "quality_score": 96.0776,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 1147.0
     },
     "hoyoverse_com": {
-      "elapsed_median_s": 14.7345,
-      "elapsed_p95_s": 14.7345
+      "elapsed_median_s": 25.6825,
+      "elapsed_p95_s": 25.6825,
+      "quality_score": 162.7538,
+      "crawler_total_unique": 13.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 18.0,
+      "wayback_count": 1.0
     },
     "httpbin_org": {
-      "elapsed_median_s": 56.1442,
-      "elapsed_p95_s": 56.1442
+      "elapsed_median_s": 73.9784,
+      "elapsed_p95_s": 73.9784,
+      "quality_score": 267.7796,
+      "crawler_total_unique": 10.0,
+      "crawler_high_signal_count": 4.0,
+      "subdomain_count": 6.0,
+      "wayback_count": 435.0
     },
     "httpstat_us": {
-      "elapsed_median_s": 16.9582,
-      "elapsed_p95_s": 16.9582
+      "elapsed_median_s": 38.9122,
+      "elapsed_p95_s": 38.9122,
+      "quality_score": 82.5214,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 1.0,
+      "wayback_count": 219.0
+    },
+    "info_credly_com": {
+      "elapsed_median_s": 21.1578,
+      "elapsed_p95_s": 21.1578,
+      "quality_score": 318.8772,
+      "crawler_total_unique": 187.0,
+      "crawler_high_signal_count": 50.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 0.0
     },
     "instagram_com": {
-      "elapsed_median_s": 25.5122,
-      "elapsed_p95_s": 25.5122
+      "elapsed_median_s": 26.9105,
+      "elapsed_p95_s": 26.9105,
+      "quality_score": 295.5466,
+      "crawler_total_unique": 33.0,
+      "crawler_high_signal_count": 11.0,
+      "subdomain_count": 53.0,
+      "wayback_count": 0.0
     },
     "intel_com": {
-      "elapsed_median_s": 32.454,
-      "elapsed_p95_s": 32.454
+      "elapsed_median_s": 21.9393,
+      "elapsed_p95_s": 21.9393,
+      "quality_score": 96.9288,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 24.0,
+      "wayback_count": 1.0
+    },
+    "kadokawa_co_jp": {
+      "elapsed_median_s": 25.3168,
+      "elapsed_p95_s": 25.3168,
+      "quality_score": 421.1199,
+      "crawler_total_unique": 858.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 0.0
+    },
+    "konami_com": {
+      "elapsed_median_s": 11.2909,
+      "elapsed_p95_s": 11.2909,
+      "quality_score": 80.0251,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 43.0
+    },
+    "line_me": {
+      "elapsed_median_s": 24.245,
+      "elapsed_p95_s": 24.245,
+      "quality_score": 383.3517,
+      "crawler_total_unique": 38.0,
+      "crawler_high_signal_count": 12.0,
+      "subdomain_count": 984.0,
+      "wayback_count": 1.0
     },
     "linkedin_com": {
-      "elapsed_median_s": 15.371,
-      "elapsed_p95_s": 15.371
+      "elapsed_median_s": 18.0996,
+      "elapsed_p95_s": 18.0996,
+      "quality_score": 548.7246,
+      "crawler_total_unique": 287.0,
+      "crawler_high_signal_count": 244.0,
+      "subdomain_count": 1772.0,
+      "wayback_count": 1.0
+    },
+    "logitech_com": {
+      "elapsed_median_s": 18.6365,
+      "elapsed_p95_s": 18.6365,
+      "quality_score": 78.401,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 13.0,
+      "wayback_count": 0.0
     },
     "mastercard_com": {
-      "elapsed_median_s": 14.7602,
-      "elapsed_p95_s": 14.7602
+      "elapsed_median_s": 16.2048,
+      "elapsed_p95_s": 16.2048,
+      "quality_score": 79.0997,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 24.0,
+      "wayback_count": 0.0
     },
     "mastodon_social": {
-      "elapsed_median_s": 64.527,
-      "elapsed_p95_s": 64.527
+      "elapsed_median_s": 64.3266,
+      "elapsed_p95_s": 64.3266,
+      "quality_score": 229.5896,
+      "crawler_total_unique": 16.0,
+      "crawler_high_signal_count": 3.0,
+      "subdomain_count": 12.0,
+      "wayback_count": 1.0
+    },
+    "mercari_com": {
+      "elapsed_median_s": 35.5747,
+      "elapsed_p95_s": 35.5747,
+      "quality_score": 420.5578,
+      "crawler_total_unique": 745.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 0.0
     },
     "microsoft_com": {
-      "elapsed_median_s": 23.9543,
-      "elapsed_p95_s": 23.9543
+      "elapsed_median_s": 11.8252,
+      "elapsed_p95_s": 11.8252,
+      "quality_score": 613.5682,
+      "crawler_total_unique": 987.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 7514.0,
+      "wayback_count": 1.0
+    },
+    "mongodb_com": {
+      "elapsed_median_s": 35.9795,
+      "elapsed_p95_s": 35.9795,
+      "quality_score": 502.6771,
+      "crawler_total_unique": 1111.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 2067.0
+    },
+    "motorola_com": {
+      "elapsed_median_s": 26.49,
+      "elapsed_p95_s": 26.49,
+      "quality_score": 157.9411,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 746.0,
+      "wayback_count": 0.0
+    },
+    "nec_com": {
+      "elapsed_median_s": 16.537,
+      "elapsed_p95_s": 16.537,
+      "quality_score": 486.5578,
+      "crawler_total_unique": 823.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 561.0
     },
     "netflix_com": {
-      "elapsed_median_s": 25.7655,
-      "elapsed_p95_s": 25.7655
+      "elapsed_median_s": 36.9696,
+      "elapsed_p95_s": 36.9696,
+      "quality_score": 444.7133,
+      "crawler_total_unique": 160.0,
+      "crawler_high_signal_count": 32.0,
+      "subdomain_count": 1472.0,
+      "wayback_count": 0.0
+    },
+    "nike_com": {
+      "elapsed_median_s": 33.3808,
+      "elapsed_p95_s": 33.3808,
+      "quality_score": 588.3571,
+      "crawler_total_unique": 1206.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 3446.0,
+      "wayback_count": 0.0
+    },
+    "nintendo_co_jp": {
+      "elapsed_median_s": 19.2698,
+      "elapsed_p95_s": 19.2698,
+      "quality_score": 36.6059,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 2.0
+    },
+    "notion_com": {
+      "elapsed_median_s": 14.7438,
+      "elapsed_p95_s": 14.7438,
+      "quality_score": 432.7059,
+      "crawler_total_unique": 904.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 1.0
+    },
+    "nvidia_com": {
+      "elapsed_median_s": 24.2083,
+      "elapsed_p95_s": 24.2083,
+      "quality_score": 565.731,
+      "crawler_total_unique": 500.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 1791.0,
+      "wayback_count": 1.0
+    },
+    "okta_com": {
+      "elapsed_median_s": 35.9773,
+      "elapsed_p95_s": 35.9773,
+      "quality_score": 524.6117,
+      "crawler_total_unique": 934.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 133.0,
+      "wayback_count": 0.0
     },
     "openai_com": {
-      "elapsed_median_s": 33.968,
-      "elapsed_p95_s": 33.968
+      "elapsed_median_s": 25.4016,
+      "elapsed_p95_s": 25.4016,
+      "quality_score": 329.4789,
+      "crawler_total_unique": 166.0,
+      "crawler_high_signal_count": 62.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 1.0
+    },
+    "oracle_com": {
+      "elapsed_median_s": 33.5145,
+      "elapsed_p95_s": 33.5145,
+      "quality_score": 189.532,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 3624.0,
+      "wayback_count": 0.0
+    },
+    "panasonic_com": {
+      "elapsed_median_s": 84.9349,
+      "elapsed_p95_s": 84.9349,
+      "quality_score": 93.1659,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 857.0
     },
     "paypal_com": {
-      "elapsed_median_s": 41.617,
-      "elapsed_p95_s": 41.617
+      "elapsed_median_s": 28.3228,
+      "elapsed_p95_s": 28.3228,
+      "quality_score": 604.3886,
+      "crawler_total_unique": 797.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 6335.0,
+      "wayback_count": 1.0
     },
     "pinterest_com": {
-      "elapsed_median_s": 24.7152,
-      "elapsed_p95_s": 24.7152
+      "elapsed_median_s": 24.7468,
+      "elapsed_p95_s": 24.7468,
+      "quality_score": 469.4448,
+      "crawler_total_unique": 285.0,
+      "crawler_high_signal_count": 216.0,
+      "subdomain_count": 44.0,
+      "wayback_count": 1.0
     },
     "portquiz_net": {
-      "elapsed_median_s": 33.3208,
-      "elapsed_p95_s": 33.3208
+      "elapsed_median_s": 46.9888,
+      "elapsed_p95_s": 46.9888,
+      "quality_score": 46.5027,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 1.0,
+      "wayback_count": 5.0
     },
     "proton_me": {
-      "elapsed_median_s": 73.2838,
-      "elapsed_p95_s": 73.2838
+      "elapsed_median_s": 74.1217,
+      "elapsed_p95_s": 74.1217,
+      "quality_score": 533.9079,
+      "crawler_total_unique": 2633.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 35.0,
+      "wayback_count": 0.0
+    },
+    "rakuten_co_jp": {
+      "elapsed_median_s": 40.0111,
+      "elapsed_p95_s": 40.0111,
+      "quality_score": 580.1381,
+      "crawler_total_unique": 718.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 3112.0,
+      "wayback_count": 0.0
+    },
+    "rakuten_com": {
+      "elapsed_median_s": 29.2187,
+      "elapsed_p95_s": 29.2187,
+      "quality_score": 557.3756,
+      "crawler_total_unique": 1007.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 622.0,
+      "wayback_count": 0.0
     },
     "reddit_com": {
-      "elapsed_median_s": 17.3448,
-      "elapsed_p95_s": 17.3448
+      "elapsed_median_s": 17.9705,
+      "elapsed_p95_s": 17.9705,
+      "quality_score": 531.8612,
+      "crawler_total_unique": 133.0,
+      "crawler_high_signal_count": 81.0,
+      "subdomain_count": 20656.0,
+      "wayback_count": 1.0
     },
     "riotgames_com": {
-      "elapsed_median_s": 25.2999,
-      "elapsed_p95_s": 25.2999
+      "elapsed_median_s": 12.2029,
+      "elapsed_p95_s": 12.2029,
+      "quality_score": 424.122,
+      "crawler_total_unique": 83.0,
+      "crawler_high_signal_count": 27.0,
+      "subdomain_count": 1953.0,
+      "wayback_count": 0.0
     },
-    "roblox_com": {
-      "elapsed_median_s": 29.1036,
-      "elapsed_p95_s": 29.1036
-    },
-    "scanme_nmap_org": {
-      "elapsed_median_s": 41.782,
-      "elapsed_p95_s": 41.782
+    "salesforce_com": {
+      "elapsed_median_s": 26.1704,
+      "elapsed_p95_s": 26.1704,
+      "quality_score": 224.863,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 885.0,
+      "wayback_count": 572.0
     },
     "shopify_com": {
-      "elapsed_median_s": 18.2554,
-      "elapsed_p95_s": 18.2554
+      "elapsed_median_s": 20.4034,
+      "elapsed_p95_s": 20.4034,
+      "quality_score": 608.9491,
+      "crawler_total_unique": 1044.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 264.0,
+      "wayback_count": 870.0
     },
     "slack_com": {
-      "elapsed_median_s": 19.1053,
-      "elapsed_p95_s": 19.1053
+      "elapsed_median_s": 19.2894,
+      "elapsed_p95_s": 19.2894,
+      "quality_score": 624.9885,
+      "crawler_total_unique": 2678.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 3459.0,
+      "wayback_count": 1.0
     },
     "snapchat_com": {
-      "elapsed_median_s": 37.9106,
-      "elapsed_p95_s": 37.9106
+      "elapsed_median_s": 19.1974,
+      "elapsed_p95_s": 19.1974,
+      "quality_score": 577.8095,
+      "crawler_total_unique": 883.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 1460.0,
+      "wayback_count": 1.0
+    },
+    "snowflake_com": {
+      "elapsed_median_s": 17.1604,
+      "elapsed_p95_s": 17.1604,
+      "quality_score": 620.743,
+      "crawler_total_unique": 938.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 544.0,
+      "wayback_count": 893.0
+    },
+    "softbank_jp": {
+      "elapsed_median_s": 20.7325,
+      "elapsed_p95_s": 20.7325,
+      "quality_score": 541.4748,
+      "crawler_total_unique": 2667.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 2062.0
+    },
+    "sony_com": {
+      "elapsed_median_s": 15.7841,
+      "elapsed_p95_s": 15.7841,
+      "quality_score": 211.2773,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 7602.0,
+      "wayback_count": 1.0
+    },
+    "soundcloud_com": {
+      "elapsed_median_s": 19.2978,
+      "elapsed_p95_s": 19.2978,
+      "quality_score": 363.5026,
+      "crawler_total_unique": 76.0,
+      "crawler_high_signal_count": 25.0,
+      "subdomain_count": 64.0,
+      "wayback_count": 1.0
     },
     "spotify_com": {
-      "elapsed_median_s": 23.5319,
-      "elapsed_p95_s": 23.5319
+      "elapsed_median_s": 13.2258,
+      "elapsed_p95_s": 13.2258,
+      "quality_score": 501.9212,
+      "crawler_total_unique": 186.0,
+      "crawler_high_signal_count": 172.0,
+      "subdomain_count": 1162.0,
+      "wayback_count": 0.0
+    },
+    "square_enix_com": {
+      "elapsed_median_s": 27.26,
+      "elapsed_p95_s": 27.26,
+      "quality_score": 411.4244,
+      "crawler_total_unique": 114.0,
+      "crawler_high_signal_count": 102.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 2787.0
+    },
+    "stockx_com": {
+      "elapsed_median_s": 17.4311,
+      "elapsed_p95_s": 17.4311,
+      "quality_score": 118.7041,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 53.0,
+      "wayback_count": 1.0
     },
     "stripe_com": {
-      "elapsed_median_s": 49.7297,
-      "elapsed_p95_s": 49.7297
+      "elapsed_median_s": 54.0803,
+      "elapsed_p95_s": 54.0803,
+      "quality_score": 621.3895,
+      "crawler_total_unique": 932.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 345.0,
+      "wayback_count": 868.0
+    },
+    "tesla_com": {
+      "elapsed_median_s": 29.4132,
+      "elapsed_p95_s": 29.4132,
+      "quality_score": 163.1569,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 704.0,
+      "wayback_count": 0.0
     },
     "tiktok_com": {
-      "elapsed_median_s": 31.8683,
-      "elapsed_p95_s": 31.8683
+      "elapsed_median_s": 8.8278,
+      "elapsed_p95_s": 8.8278,
+      "quality_score": 309.0424,
+      "crawler_total_unique": 31.0,
+      "crawler_high_signal_count": 13.0,
+      "subdomain_count": 59.0,
+      "wayback_count": 1.0
+    },
+    "toyota_jp": {
+      "elapsed_median_s": 23.3566,
+      "elapsed_p95_s": 23.3566,
+      "quality_score": 412.2814,
+      "crawler_total_unique": 87.0,
+      "crawler_high_signal_count": 43.0,
+      "subdomain_count": 11.0,
+      "wayback_count": 727.0
+    },
+    "travelocity_com": {
+      "elapsed_median_s": 13.582,
+      "elapsed_p95_s": 13.582,
+      "quality_score": 148.6319,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 468.0,
+      "wayback_count": 0.0
     },
     "twilio_com": {
-      "elapsed_median_s": 32.1802,
-      "elapsed_p95_s": 32.1802
+      "elapsed_median_s": 36.0419,
+      "elapsed_p95_s": 36.0419,
+      "quality_score": 655.4872,
+      "crawler_total_unique": 919.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 1349.0,
+      "wayback_count": 4969.0
     },
     "uber_com": {
-      "elapsed_median_s": 33.0331,
-      "elapsed_p95_s": 33.0331
+      "elapsed_median_s": 34.5736,
+      "elapsed_p95_s": 34.5736,
+      "quality_score": 216.5328,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 9887.0,
+      "wayback_count": 1.0
     },
     "valvesoftware_com": {
-      "elapsed_median_s": 17.5633,
-      "elapsed_p95_s": 17.5633
+      "elapsed_median_s": 47.4664,
+      "elapsed_p95_s": 47.4664,
+      "quality_score": 364.2682,
+      "crawler_total_unique": 50.0,
+      "crawler_high_signal_count": 38.0,
+      "subdomain_count": 73.0,
+      "wayback_count": 1.0
     },
     "verizon_com": {
-      "elapsed_median_s": 56.0867,
-      "elapsed_p95_s": 56.0867
+      "elapsed_median_s": 106.5575,
+      "elapsed_p95_s": 106.5575,
+      "quality_score": 623.1452,
+      "crawler_total_unique": 1033.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 11407.0,
+      "wayback_count": 1.0
     },
     "wikipedia_org": {
-      "elapsed_median_s": 32.1875,
-      "elapsed_p95_s": 32.1875
+      "elapsed_median_s": 26.7394,
+      "elapsed_p95_s": 26.7394,
+      "quality_score": 352.8631,
+      "crawler_total_unique": 354.0,
+      "crawler_high_signal_count": 8.0,
+      "subdomain_count": 49.0,
+      "wayback_count": 1.0
+    },
+    "wise_com": {
+      "elapsed_median_s": 39.5546,
+      "elapsed_p95_s": 39.5546,
+      "quality_score": 379.756,
+      "crawler_total_unique": 287.0,
+      "crawler_high_signal_count": 128.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 0.0
+    },
+    "www_docomo_ne_jp": {
+      "elapsed_median_s": 36.5991,
+      "elapsed_p95_s": 36.5991,
+      "quality_score": 513.3611,
+      "crawler_total_unique": 1092.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 3823.0
     },
     "yahoo_com": {
-      "elapsed_median_s": 41.5546,
-      "elapsed_p95_s": 41.5546
+      "elapsed_median_s": 34.7453,
+      "elapsed_p95_s": 34.7453,
+      "quality_score": 624.1647,
+      "crawler_total_unique": 1366.0,
+      "crawler_high_signal_count": 250.0,
+      "subdomain_count": 8234.0,
+      "wayback_count": 1.0
+    },
+    "yelp_com": {
+      "elapsed_median_s": 17.1257,
+      "elapsed_p95_s": 17.1257,
+      "quality_score": 444.3952,
+      "crawler_total_unique": 261.0,
+      "crawler_high_signal_count": 103.0,
+      "subdomain_count": 86.0,
+      "wayback_count": 0.0
+    },
+    "yostar_co_jp": {
+      "elapsed_median_s": 30.8771,
+      "elapsed_p95_s": 30.8771,
+      "quality_score": 105.2581,
+      "crawler_total_unique": 3.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 0.0,
+      "wayback_count": 35.0
+    },
+    "zendesk_com": {
+      "elapsed_median_s": 20.523,
+      "elapsed_p95_s": 20.523,
+      "quality_score": 199.3556,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 4188.0,
+      "wayback_count": 1.0
     },
     "zonetransfer_me": {
-      "elapsed_median_s": 30.5914,
-      "elapsed_p95_s": 30.5914
+      "elapsed_median_s": 39.0573,
+      "elapsed_p95_s": 39.0573,
+      "quality_score": 86.3926,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 17.0,
+      "wayback_count": 3.0
     },
     "zoom_us": {
-      "elapsed_median_s": 63.9186,
-      "elapsed_p95_s": 63.9186
+      "elapsed_median_s": 64.2726,
+      "elapsed_p95_s": 64.2726,
+      "quality_score": 231.4611,
+      "crawler_total_unique": 0.0,
+      "crawler_high_signal_count": 0.0,
+      "subdomain_count": 12885.0,
+      "wayback_count": 0.0
     }
   },
   "fast": {

@@ -5,7 +5,7 @@ module Nokizaru
   module CLIClassInterface
     HELP_USAGE = <<~USAGE
       usage: nokizaru [-h] [-v] [--url URL] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--wb-raw] [--ps]
-                      [--full] [--no-MODULE] [--export] [--project NAME] [--cache] [--no-cache] [--diff last or ID] [-nb] [-dt DT] [-pt PT] [-T T] [-w W] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
+                      [--full] [--no-MODULE] [--export] [--project NAME] [--cache] [--no-cache] [--diff last or ID] [-nb] [-dt DT] [-pt PT] [-T T] [-w W] [-H HEADER] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
     USAGE
 
     HELP_ARGUMENT_ROWS = [
@@ -29,7 +29,9 @@ module Nokizaru
       ['-pt PT', 'Number of threads for port scan [ Default : 50 ]'],
       ['-T T', 'Request Timeout [ Default : 30.0 ]'],
       ['-w W', 'Path to Wordlist [ Default : wordlists/dirb_common.txt ]'],
-      ['-r', 'Allow Redirect [ Default : False ]'], ['-s', 'Toggle SSL Verification [ Default : True ]'],
+      ['-H HEADER', 'Add custom request header (repeatable)'],
+      ['-r', 'Follow redirects during directory enum [ Default : False ]'],
+      ['-s', 'Toggle SSL Verification [ Default : True ]'],
       ['-sp SP', 'Specify SSL Port [ Default : 443 ]'], ['-d D', 'Custom DNS Servers [ Default : 1.1.1.1 ]'],
       ['-e E', 'File Extensions [ Example : txt, xml, php, etc. ]'],
       ['-o O', 'Export Formats (comma-separated) [ Default : txt,json,html ]'],

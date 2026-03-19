@@ -1,5 +1,5 @@
 # frozen_string_literal: true
 
 module Nokizaru
-  VERSION = '1.12.9'
+  VERSION = '1.13.9'
 end

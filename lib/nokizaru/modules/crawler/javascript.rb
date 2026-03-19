@@ -10,27 +10,32 @@ module Nokizaru
       module JavaScript
         private
 
-        def js_crawl(js_links, page_url)
-          targets = scoped_js_targets(js_links, page_url)
+        def js_crawl(result, js_links, page_url, request_headers)
+          return [] if crawl_budget_exhausted?(result)
+
+          targets = scoped_js_targets(result, js_links, page_url)
           return [] if targets.empty?
 
           urls = []
           mutex = Mutex.new
           each_in_threads(targets) do |js|
-            extracted = extract_urls_from_javascript(js, page_url)
+            next if crawl_budget_exhausted?(result)
+
+            extracted = extract_urls_from_javascript(js, page_url, request_headers)
             mutex.synchronize do
               urls.concat(extracted)
               urls.uniq!
-              urls.slice!(Crawler::MAX_JS_URLS_TOTAL..) if urls.length > Crawler::MAX_JS_URLS_TOTAL
+              max_js_urls_total = adaptive_limit(result, :max_js_urls_total)
+              urls.slice!(max_js_urls_total..) if urls.length > max_js_urls_total
             end
           end
-          urls = urls.first(Crawler::MAX_JS_URLS_TOTAL)
+          urls = urls.first(adaptive_limit(result, :max_js_urls_total))
           step_row(:info, 'Crawling Javascripts', urls.length)
           urls
         end
 
-        def extract_urls_from_javascript(js_url, page_url)
-          response = http_get(js_url)
+        def extract_urls_from_javascript(js_url, page_url, request_headers)
+          response = http_get(js_url, request_headers: request_headers)
           return [] unless response.is_a?(Net::HTTPSuccess)
 
           found = response.body.scan(%r{https?://[\w\-.~:/?#\[\]@!$&'()*+,;=%]+})
@@ -94,7 +99,7 @@ module Nokizaru
           labels.last(2).join('.')
         end
 
-        def scoped_js_targets(js_links, page_url)
+        def scoped_js_targets(result, js_links, page_url)
           base = URI.parse(page_url)
           links = Array(js_links).compact.uniq.select do |url|
             js_uri = URI.parse(url)
@@ -102,7 +107,7 @@ module Nokizaru
           rescue StandardError
             false
           end
-          links.first(Crawler::MAX_JS_TARGETS)
+          links.first(adaptive_limit(result, :max_js_targets))
         end
       end
     end

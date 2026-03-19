@@ -23,8 +23,17 @@ module Nokizaru
           @start_time = Time.now
           @run = initial_run_payload(@target, @info, @start_time)
           @run_id = initialize_workspace_run(@workspace, @run)
-          @ctx = Nokizaru::Context.new(run: @run, options: @opts, workspace: @workspace, cache: @cache)
+          @ctx = Nokizaru::Context.new(
+            run: @run,
+            options: context_options(@opts, @info),
+            workspace: @workspace,
+            cache: @cache
+          )
           @enabled = resolve_enabled_modules
+        end
+
+        def context_options(options, info)
+          options.to_h.merge(request_headers: info[:request_headers])
         end
 
         def finalize_run!
@@ -98,7 +107,8 @@ module Nokizaru
             info[:allow_redirects],
             info[:verify_ssl],
             info[:extensions],
-            ctx
+            ctx,
+            info[:request_headers]
           )
         end
 

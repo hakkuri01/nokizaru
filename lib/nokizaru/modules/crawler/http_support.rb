@@ -26,11 +26,11 @@ module Nokizaru
           http.verify_mode = OpenSSL::SSL::VERIFY_NONE
         end
 
-        def build_request(uri)
+        def build_request(uri, request_headers = {})
           request = Net::HTTP::Get.new(uri)
           request['User-Agent'] = Crawler::USER_AGENT
           request['Accept'] = '*/*'
-          request
+          Nokizaru::RequestHeaders.apply_to_request(request, request_headers)
         end
       end
     end

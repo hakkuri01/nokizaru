@@ -72,7 +72,8 @@ OPTION	MEANING	DEFAULT / NOTES
 -pt PT	Port scan threads	50
 -T T	Request timeout (seconds)	30.0
 -w W	Path to wordlist	wordlists/dirb_common.txt
--r	Allow Redirect	False
+-H HEADER	Add custom request header (repeatable)	Example: Cookie: PHPSESSID=abc
+-r	Follow redirects during directory enum	False
 -s	Toggle SSL Verification	True
 -sp SP	Specify SSL port	443
 -d D	Custom DNS servers	1.1.1.1
@@ -129,6 +130,7 @@ nokizaru --full --url https://example.com	Full recon
 nokizaru --headers --url https://example.com	Header inspection
 nokizaru --arch --url https://example.com	Architecture fingerprinting
 nokizaru --dir --url https://example.com -e php,xml	Directory enum with extensions
+nokizaru --crawl --dir --url https://example.com -H 'Cookie: PHPSESSID=abc; uid=52'	Authenticated in-scope scan
 nokizaru --wayback --url https://example.com	Wayback URLs
 nokizaru --ps --url https://example.com -pt 80	Port scan with more threads
 .TE

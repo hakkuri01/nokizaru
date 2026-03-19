@@ -7,8 +7,8 @@ require 'uri'
 require_relative '../bb_live_target_suite'
 
 class BBLiveTargetSuiteTest < Minitest::Test
-  def test_targets_include_at_least_fifty_live_sites
-    assert_operator BBLiveTargetSuite::TARGETS.length, :>=, 50
+  def test_targets_include_at_least_seventy_live_sites
+    assert_operator BBLiveTargetSuite::TARGETS.length, :>=, 70
   end
 
   def test_targets_have_unique_target_keys
@@ -88,13 +88,19 @@ class BBLiveTargetSuiteTest < Minitest::Test
         'success_rate' => 1.0,
         'elapsed_median_s' => 60.0,
         'elapsed_p95_s' => 62.0,
-        'elapsed_cv' => 0.1
+        'elapsed_cv' => 0.1,
+        'quality_score' => 100.0,
+        'crawler_high_signal_count' => 50.0,
+        'crawler_total_unique' => 100.0
       }
     }
     baseline = {
       'github_com' => {
         'elapsed_median_s' => 30.0,
-        'elapsed_p95_s' => 35.0
+        'elapsed_p95_s' => 35.0,
+        'quality_score' => 100.0,
+        'crawler_high_signal_count' => 50.0,
+        'crawler_total_unique' => 100.0
       }
     }
     thresholds = BBLiveTargetSuite::PROFILE_CONFIG['fast'][:thresholds]
@@ -103,6 +109,42 @@ class BBLiveTargetSuiteTest < Minitest::Test
     assert_equal 'warn', verdict.dig('targets', 'github_com', 'status')
     assert_equal 1, verdict['warning_targets']
     assert_equal 0, verdict['failed_targets']
+  end
+
+  def test_verdict_tracks_speed_and_quality_failures_separately
+    targets = {
+      'github_com' => {
+        'success_rate' => 1.0,
+        'elapsed_median_s' => 60.0,
+        'elapsed_p95_s' => 62.0,
+        'elapsed_cv' => 0.1,
+        'quality_score' => 50.0,
+        'crawler_high_signal_count' => 10.0,
+        'crawler_total_unique' => 30.0
+      }
+    }
+    baseline = {
+      'github_com' => {
+        'elapsed_median_s' => 30.0,
+        'elapsed_p95_s' => 35.0,
+        'quality_score' => 100.0,
+        'crawler_high_signal_count' => 40.0,
+        'crawler_total_unique' => 100.0
+      }
+    }
+
+    verdict = BBLiveTargetSuite::Verdict.evaluate(
+      targets,
+      baseline,
+      thresholds: BBLiveTargetSuite::PROFILE_CONFIG['canonical'][:thresholds],
+      strict: true
+    )
+
+    assert_equal 'fail', verdict.dig('targets', 'github_com', 'speed_status')
+    assert_equal 'fail', verdict.dig('targets', 'github_com', 'quality_status')
+    assert_operator verdict.dig('targets', 'github_com', 'balance', 'balanced_score'), :<, 100.0
+    assert_equal 1, verdict['speed_failed_targets']
+    assert_equal 1, verdict['quality_failed_targets']
   end
 
   def test_rolling_baseline_aggregates_recent_manifests
@@ -120,6 +162,98 @@ class BBLiveTargetSuiteTest < Minitest::Test
       assert_equal 13.0, baseline.dig(:baseline, 'github_com', 'elapsed_median_s')
       assert_equal 17.0, baseline.dig(:baseline, 'github_com', 'elapsed_p95_s')
     end
+  end
+
+  def test_baseline_snapshot_skips_failed_zero_rows
+    snapshot = BBLiveTargetSuite::Baseline.snapshot_from_targets(
+      'github_com' => {
+        'success_rate' => 1.0,
+        'elapsed_median_s' => 12.5,
+        'elapsed_p95_s' => 14.0,
+        'quality_score' => 95.0,
+        'crawler_total_unique' => 120.0,
+        'crawler_high_signal_count' => 30.0,
+        'subdomain_count' => 12.0,
+        'wayback_count' => 2.0
+      },
+      'nike_com' => {
+        'success_rate' => 0.0,
+        'elapsed_median_s' => 0.0,
+        'elapsed_p95_s' => 0.0,
+        'quality_score' => 0.0,
+        'crawler_total_unique' => 0.0,
+        'crawler_high_signal_count' => 0.0,
+        'subdomain_count' => 0.0,
+        'wayback_count' => 0.0
+      }
+    )
+
+    assert_equal ['github_com'], snapshot.keys
+    assert_equal 95.0, snapshot.dig('github_com', 'quality_score')
+  end
+
+  def test_baseline_write_merges_existing_profile_entries
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'baseline.json')
+      File.write(path, JSON.pretty_generate('canonical' => {
+                                              'github_com' => {
+                                                'elapsed_median_s' => 10.0,
+                                                'elapsed_p95_s' => 12.0,
+                                                'quality_score' => 90.0
+                                              }
+                                            }))
+
+      BBLiveTargetSuite::Baseline.write(path, 'canonical', {
+                                          'google_com' => {
+                                            'elapsed_median_s' => 11.0,
+                                            'elapsed_p95_s' => 13.0,
+                                            'quality_score' => 80.0
+                                          }
+                                        })
+
+      payload = JSON.parse(File.read(path))
+      assert_equal 10.0, payload.dig('canonical', 'github_com', 'elapsed_median_s')
+      assert_equal 11.0, payload.dig('canonical', 'google_com', 'elapsed_median_s')
+      assert_equal 90.0, payload.dig('canonical', 'github_com', 'quality_score')
+      assert_equal 80.0, payload.dig('canonical', 'google_com', 'quality_score')
+    end
+  end
+
+  def test_summary_surfaces_speed_quality_and_balance_columns
+    manifest = {
+      'generated_at' => '2026-03-15T00:00:00Z',
+      'config' => { 'profile' => 'canonical', 'strict' => true, 'runs' => 1 },
+      'targets' => {
+        'github_com' => {
+          'success_rate' => 1.0,
+          'elapsed_median_s' => 30.0,
+          'quality_score' => 120.0
+        }
+      },
+      'verdict' => {
+        'targets' => {
+          'github_com' => {
+            'status' => 'warn',
+            'speed_status' => 'pass',
+            'quality_status' => 'warn',
+            'balance' => { 'balanced_score' => 88.0 },
+            'reasons' => ['quality score drop 25.00% exceeds 20.00%']
+          }
+        },
+        'passed_targets' => 0,
+        'warning_targets' => 1,
+        'failed_targets' => 0,
+        'speed_failed_targets' => 0,
+        'quality_failed_targets' => 0,
+        'balanced_score_median' => 88.0
+      }
+    }
+
+    summary = BBLiveTargetSuite::Summary.markdown(manifest)
+
+    assert_includes summary,
+                    '| Target | Success Rate | Median (s) | Quality | Balance | Speed | Quality | Verdict | Notes |'
+    assert_includes summary, 'speed_fail=0 quality_fail=0 balance_median=88.00'
   end
 
   private

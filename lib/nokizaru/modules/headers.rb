@@ -19,27 +19,27 @@ module Nokizaru
         result = { 'headers' => {}, 'target_profile' => {} }
         UI.module_header('Headers :')
 
-        populate_headers_result!(target, result)
+        populate_headers_result!(target, result, ctx.options[:request_headers] || {})
         ctx.run['modules']['headers'] = result
         Log.write('[headers] Completed')
       end
 
-      def populate_headers_result!(target, result)
-        response = fetch(URI.parse(target))
-        return apply_missing_headers!(target, result) unless response
+      def populate_headers_result!(target, result, request_headers)
+        response = fetch(URI.parse(target), request_headers: request_headers)
+        return apply_missing_headers!(target, result, request_headers) unless response
 
         apply_header_pairs!(response, result)
-        result['target_profile'] = profile_for(target, response: response)
+        result['target_profile'] = profile_for(target, response: response, request_headers: request_headers)
       rescue OpenSSL::SSL::SSLError => e
         handle_ssl_error(e, target, result)
       rescue StandardError => e
         handle_generic_error(e, result)
       end
 
-      def apply_missing_headers!(target, result)
+      def apply_missing_headers!(target, result, request_headers = {})
         UI.line(:error, 'Failed to retrieve headers')
         result['error'] = 'Failed to retrieve headers'
-        result['target_profile'] = profile_for(target)
+        result['target_profile'] = profile_for(target, request_headers: request_headers)
       end
 
       def apply_header_pairs!(response, result)
@@ -93,8 +93,14 @@ module Nokizaru
         value.split(',').map(&:strip).reject(&:empty?).map { |segment| ['value', segment] }
       end
 
-      def profile_for(target, response: nil)
-        Nokizaru::TargetIntel.profile(target, verify_ssl: false, timeout_s: TIMEOUT, response: response)
+      def profile_for(target, response: nil, request_headers: {})
+        Nokizaru::TargetIntel.profile(
+          target,
+          verify_ssl: false,
+          timeout_s: TIMEOUT,
+          response: response,
+          request_headers: request_headers
+        )
       end
 
       def handle_ssl_error(error, target, result)
@@ -112,22 +118,22 @@ module Nokizaru
       end
 
       # Read key values from env first, then keys file, and seed missing key slots
-      def fetch(uri)
+      def fetch(uri, request_headers: {})
         http = Net::HTTP.new(uri.host, uri.port)
         http.open_timeout = TIMEOUT
         http.read_timeout = TIMEOUT
         enable_ssl!(http) if uri.scheme == 'https'
-        http.request(build_request(uri))
+        http.request(build_request(uri, request_headers))
       rescue StandardError => e
         Log.write("[headers] HTTP error: #{e.message}")
         nil
       end
 
-      def build_request(uri)
+      def build_request(uri, request_headers = {})
         request = Net::HTTP::Get.new(uri)
         request['User-Agent'] = 'Nokizaru'
         request['Accept'] = '*/*'
-        request
+        Nokizaru::RequestHeaders.apply_to_request(request, request_headers)
       end
 
       def enable_ssl!(http)

@@ -6,9 +6,9 @@ module Nokizaru
     module HTTPHelpers
       module_function
 
-      def fetch(uri, verify_ssl:, timeout_s:)
+      def fetch(uri, verify_ssl:, timeout_s:, request_headers: {})
         http = build_http(uri, verify_ssl: verify_ssl, timeout_s: timeout_s)
-        request = build_request(uri)
+        request = build_request(uri, request_headers)
         http.request(request)
       rescue StandardError
         nil
@@ -25,11 +25,11 @@ module Nokizaru
         http
       end
 
-      def build_request(uri)
+      def build_request(uri, request_headers = {})
         request = Net::HTTP::Get.new(uri)
         request['User-Agent'] = TargetIntel::USER_AGENT
         request['Accept'] = '*/*'
-        request
+        Nokizaru::RequestHeaders.apply_to_request(request, request_headers)
       end
     end
   end

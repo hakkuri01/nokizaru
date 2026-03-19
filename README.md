@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v1.12.9-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v1.13.9-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -30,6 +30,7 @@ FinalRecon’s Python implementation achieves speed through an async-first appro
 Nokizaru treats early recon results (especially initial headers) as shared target context that can influence later modules. The goal is simple: stay fast while avoiding low-signal brute forcing on targets that intentionally normalize responses (CDNs/WAFs, redirect-heavy setups, etc.).
 
 - **Headers -> Target Profile:** the Headers module collects response headers and derives a lightweight target profile (redirect behavior, canonical scheme/host hints)
+- **Custom Request Headers:** repeatable `-H/--header` values are applied across in-scope web requests so authenticated or role-specific scans can observe the target as that session sees it
 - **Re-Anchor:** Crawler and Directory Enum consume that profile and may automatically “re-anchor” to the most appropriate in-scope URL (for example, HTTP -> HTTPS canonicalization). You’ll see this as:
   - `⟦+⟧ Re-Anchor...⟦ https://target.tld (http->https) ⟧`
   - `⟦+⟧ Re-Anchor...⟦ https://target.tld (same-scope) ⟧`
@@ -203,7 +204,8 @@ Extra Options:
   -pt PT      Number of threads for port scan [ Default : 50 ]
   -T T        Request Timeout [ Default : 30.0 ]
   -w W        Path to Wordlist [ Default : wordlists/dirb_common.txt ]
-  -r          Allow Redirect [ Default : False ]
+  -H HEADER   Add custom request header (repeatable)
+  -r          Follow redirects during directory enum [ Default : False ]
   -s          Toggle SSL Verification [ Default : True ]
   -sp SP      Specify SSL Port [ Default : 443 ]
   -d D        Custom DNS Servers [ Default : 1.1.1.1 ]
@@ -228,7 +230,14 @@ nokizaru --crawl --url https://example.com
 
 # Directory enumeration
 nokizaru --dir --url https://example.com -e txt,php -w /path/to/wordlist
+
+# Authenticated crawl + dir enum with a session cookie
+nokizaru --crawl --dir --url https://example.com \
+  -H 'Cookie: PHPSESSID=abc123; uid=52' \
+  -H 'X-Role: admin'
 ```
+
+Custom headers are applied only to in-scope target requests. Nokizaru does not echo supplied header values back in module banners.
 
 ## Output / Exports
 

@@ -13,7 +13,6 @@ class BBLiveTargetSuite
   TARGETS = [
     'https://demo.owasp-juice.shop',
     'https://httpbin.org',
-    'http://scanme.nmap.org',
     'http://portquiz.net',
     'https://badssl.com',
     'https://httpstat.us',
@@ -39,7 +38,6 @@ class BBLiveTargetSuite
     'https://adobe.com',
     'https://dropbox.com',
     'https://slack.com',
-    'https://atlassian.com',
     'https://paypal.com',
     'https://stripe.com',
     'https://twilio.com',
@@ -54,13 +52,69 @@ class BBLiveTargetSuite
     'https://discord.com',
     'https://zoom.us',
     'https://epicgames.com',
-    'https://roblox.com',
     'https://spotify.com',
     'https://pinterest.com',
     'https://canva.com',
     'https://box.com',
     'https://intel.com',
-    'https://mastercard.com'
+    'https://mastercard.com',
+    'https://hackthebox.com',
+    'https://ecosia.org',
+    'https://claude.ai',
+    'https://apple.com',
+    'https://oracle.com',
+    'https://nvidia.com',
+    'https://tesla.com',
+    'https://okta.com',
+    'https://cisco.com',
+    'https://zendesk.com',
+    'https://boeing.com',
+    'https://yelp.com',
+    'https://travelocity.com',
+    'https://logitech.com',
+    'https://arm.com',
+    'https://motorola.com',
+    'https://docusign.com',
+    'https://info.credly.com',
+    'https://coursera.org',
+    'https://fedoraproject.org',
+    'https://archlinux.org',
+    'https://notion.com',
+    'https://nike.com',
+    'https://stockx.com',
+    'https://soundcloud.com',
+    'https://rakuten.com',
+    'https://bosch.com',
+    'https://booking.com',
+    'https://wise.com',
+    'https://mongodb.com',
+    'https://salesforce.com',
+    'https://snowflake.com',
+    'https://asahi.com',
+    'https://rakuten.co.jp',
+    'https://line.me',
+    'https://mercari.com',
+    'https://dena.com',
+    'https://gmo.jp',
+    'https://sony.com',
+    'https://panasonic.com',
+    'https://toyota.jp',
+    'https://nintendo.co.jp',
+    'https://softbank.jp',
+    'https://www.docomo.ne.jp',
+    'https://fujitsu.com',
+    'https://nec.com',
+    'https://hitachi.com',
+    'https://konami.com',
+    'https://square-enix.com',
+    'https://bandainamco.co.jp',
+    'https://aniplex.co.jp',
+    'https://cygames.co.jp',
+    'https://animate.co.jp',
+    'https://amiami.com',
+    'https://kadokawa.co.jp',
+    'https://yostar.co.jp',
+    'https://goodsmile.com'
   ].freeze
 
   PROFILE_CONFIG = {
@@ -73,7 +127,10 @@ class BBLiveTargetSuite
         median_runtime_regression_pct: 30.0,
         p95_runtime_regression_pct: 40.0,
         min_success_rate: 0.9,
-        max_elapsed_cv: 0.6
+        max_elapsed_cv: 0.6,
+        quality_score_drop_pct: 20.0,
+        high_signal_drop_pct: 25.0,
+        total_unique_drop_pct: 30.0
       }
     },
     'fast' => {
@@ -85,7 +142,10 @@ class BBLiveTargetSuite
         median_runtime_regression_pct: 35.0,
         p95_runtime_regression_pct: 45.0,
         min_success_rate: 0.85,
-        max_elapsed_cv: 0.8
+        max_elapsed_cv: 0.8,
+        quality_score_drop_pct: 25.0,
+        high_signal_drop_pct: 30.0,
+        total_unique_drop_pct: 35.0
       }
     }
   }.freeze
@@ -577,6 +637,8 @@ class BBLiveTargetSuite
         runs = grouped[target_key]
         successful = runs.select { |row| row[:status] == 'ok' }
         elapsed = successful.map { |row| row[:elapsed_s].to_f }
+        discovery = successful.filter_map { |row| DiscoveryMetrics.extract(row[:json_path]) }
+        discovery_summary = DiscoveryMetrics.aggregate(discovery)
 
         out[target_key] = {
           'target_key' => target_key,
@@ -590,7 +652,7 @@ class BBLiveTargetSuite
           'rss_kb_median' => Stats.median(successful.map { |row| row.dig(:resources, 'max_rss_kb').to_f }),
           'cpu_user_s_median' => Stats.median(successful.map { |row| row.dig(:resources, 'cpu_user_s').to_f }),
           'cpu_system_s_median' => Stats.median(successful.map { |row| row.dig(:resources, 'cpu_system_s').to_f })
-        }
+        }.merge(discovery_summary)
       end
     end
 
@@ -598,6 +660,62 @@ class BBLiveTargetSuite
       return 0.0 if denominator.to_i <= 0
 
       (numerator.to_f / denominator).round(4)
+    end
+  end
+
+  module DiscoveryMetrics
+    module_function
+
+    DEFAULTS = {
+      'crawler_total_unique' => 0.0,
+      'crawler_high_signal_count' => 0.0,
+      'subdomain_count' => 0.0,
+      'wayback_count' => 0.0,
+      'directory_requests' => 0.0,
+      'quality_score' => 0.0
+    }.freeze
+
+    def extract(path)
+      payload = JSON.parse(File.read(path))
+      modules = payload.fetch('modules', {})
+      crawler_stats = modules.dig('crawler', 'stats') || {}
+      subdomains = Array(modules.dig('subdomains', 'subdomains'))
+      wayback = Array(modules.dig('wayback', 'urls'))
+      dir_stats = modules.dig('directory_enum', 'stats') || {}
+
+      metrics = {
+        'crawler_total_unique' => crawler_stats['total_unique'].to_f,
+        'crawler_high_signal_count' => crawler_stats['high_signal_count'].to_f,
+        'subdomain_count' => subdomains.length.to_f,
+        'wayback_count' => wayback.length.to_f,
+        'directory_requests' => dir_stats['total_requests'].to_f
+      }
+      metrics['quality_score'] = quality_score(metrics)
+      metrics
+    rescue StandardError
+      nil
+    end
+
+    def aggregate(rows)
+      return DEFAULTS.dup if rows.empty?
+
+      DEFAULTS.keys.each_with_object({}) do |key, out|
+        out[key] = Stats.median(rows.map { |row| row[key].to_f })
+      end
+    end
+
+    def quality_score(metrics)
+      (
+        weighted_component(metrics['crawler_high_signal_count'], 0.38) +
+        weighted_component(metrics['crawler_total_unique'], 0.27) +
+        weighted_component(metrics['subdomain_count'], 0.20) +
+        weighted_component(metrics['wayback_count'], 0.10) +
+        weighted_component(metrics['directory_requests'], 0.05)
+      ).round(4)
+    end
+
+    def weighted_component(value, weight)
+      Math.log(value.to_f + 1.0) * 100.0 * weight
     end
   end
 
@@ -614,22 +732,40 @@ class BBLiveTargetSuite
     end
 
     def snapshot_from_targets(targets)
-      targets.transform_values do |row|
-        {
+      targets.each_with_object({}) do |(target_key, row), snapshot|
+        next unless valid_snapshot_row?(row)
+
+        snapshot[target_key] = {
           'elapsed_median_s' => row['elapsed_median_s'].to_f.round(4),
-          'elapsed_p95_s' => row['elapsed_p95_s'].to_f.round(4)
+          'elapsed_p95_s' => row['elapsed_p95_s'].to_f.round(4),
+          'quality_score' => row['quality_score'].to_f.round(4),
+          'crawler_total_unique' => row['crawler_total_unique'].to_f.round(4),
+          'crawler_high_signal_count' => row['crawler_high_signal_count'].to_f.round(4),
+          'subdomain_count' => row['subdomain_count'].to_f.round(4),
+          'wayback_count' => row['wayback_count'].to_f.round(4)
         }
       end
     end
 
+    def valid_snapshot_row?(row)
+      row['success_rate'].to_f.positive? &&
+        row['elapsed_median_s'].to_f.positive? &&
+        row['elapsed_p95_s'].to_f.positive?
+    end
+
     def write(path, profile, snapshot)
       payload = File.exist?(path) ? JSON.parse(File.read(path)) : {}
-      payload[profile] = snapshot
+      payload[profile] = merged_profile_rows(payload[profile], snapshot)
       FileUtils.mkdir_p(File.dirname(path))
       File.write(path, JSON.pretty_generate(payload))
       path
     rescue StandardError
       nil
+    end
+
+    def merged_profile_rows(existing, snapshot)
+      normalized_existing = existing.is_a?(Hash) ? existing : {}
+      normalized_existing.merge(snapshot)
     end
   end
 
@@ -688,17 +824,24 @@ class BBLiveTargetSuite
         'passed_targets' => counts[:pass],
         'warning_targets' => counts[:warn],
         'failed_targets' => counts[:fail],
+        'speed_failed_targets' => rows.values.count { |row| row['speed_status'] == 'fail' },
+        'quality_failed_targets' => rows.values.count { |row| row['quality_status'] == 'fail' },
+        'balanced_score_median' => Stats.median(rows.values.map { |row| row.dig('balance', 'balanced_score').to_f }),
         'exit_code' => exit_code
       }
     end
 
     def evaluate_target(target_key, metrics, baseline_row, thresholds, strict)
-      status = 'pass'
-      reasons = []
+      overall_status = 'pass'
+      speed_status = 'pass'
+      quality_status = 'pass'
+      speed_reasons = []
+      quality_reasons = []
 
       if metrics['success_rate'].to_f < thresholds[:min_success_rate].to_f
-        status = 'fail'
-        reasons << format(
+        overall_status = 'fail'
+        speed_status = 'fail'
+        speed_reasons << format(
           'success_rate %<actual>.2f below minimum %<minimum>.2f',
           actual: metrics['success_rate'],
           minimum: thresholds[:min_success_rate]
@@ -706,8 +849,9 @@ class BBLiveTargetSuite
       end
 
       if metrics['elapsed_cv'].to_f > thresholds[:max_elapsed_cv].to_f
-        status = downgrade_status(status, strict)
-        reasons << format(
+        speed_status = downgrade_status(speed_status, strict)
+        overall_status = combine_statuses(overall_status, speed_status)
+        speed_reasons << format(
           'elapsed cv %<actual>.2f exceeds %<maximum>.2f',
           actual: metrics['elapsed_cv'],
           maximum: thresholds[:max_elapsed_cv]
@@ -715,21 +859,32 @@ class BBLiveTargetSuite
       end
 
       unless baseline_row.is_a?(Hash)
+        balance = balance_metrics(metrics, nil)
         return {
           'target_key' => target_key,
-          'status' => (status == 'fail' ? 'fail' : 'warn'),
-          'reasons' => reasons + ['no baseline available'],
+          'status' => (overall_status == 'fail' ? 'fail' : 'warn'),
+          'speed_status' => speed_status,
+          'quality_status' => quality_status,
+          'speed_reasons' => speed_reasons,
+          'quality_reasons' => quality_reasons,
+          'reasons' => speed_reasons + quality_reasons + ['no baseline available'],
           'baseline' => nil,
-          'regression_pct' => { 'elapsed_median_s' => 0.0, 'elapsed_p95_s' => 0.0 }
+          'regression_pct' => regression_hash(0.0, 0.0, 0.0, 0.0, 0.0),
+          'balance' => balance
         }
       end
 
       median_delta = regression_pct(metrics['elapsed_median_s'], baseline_row['elapsed_median_s'])
       p95_delta = regression_pct(metrics['elapsed_p95_s'], baseline_row['elapsed_p95_s'])
+      quality_score_delta = regression_pct_drop(metrics['quality_score'], baseline_row['quality_score'])
+      high_signal_delta = regression_pct_drop(metrics['crawler_high_signal_count'],
+                                              baseline_row['crawler_high_signal_count'])
+      total_unique_delta = regression_pct_drop(metrics['crawler_total_unique'], baseline_row['crawler_total_unique'])
 
       if median_delta > thresholds[:median_runtime_regression_pct].to_f
-        status = downgrade_status(status, strict)
-        reasons << format(
+        speed_status = downgrade_status(speed_status, strict)
+        overall_status = combine_statuses(overall_status, speed_status)
+        speed_reasons << format(
           'median runtime regression %<actual>.2f%% exceeds %<maximum>.2f%%',
           actual: median_delta,
           maximum: thresholds[:median_runtime_regression_pct]
@@ -737,23 +892,74 @@ class BBLiveTargetSuite
       end
 
       if p95_delta > thresholds[:p95_runtime_regression_pct].to_f
-        status = downgrade_status(status, strict)
-        reasons << format(
+        speed_status = downgrade_status(speed_status, strict)
+        overall_status = combine_statuses(overall_status, speed_status)
+        speed_reasons << format(
           'p95 runtime regression %<actual>.2f%% exceeds %<maximum>.2f%%',
           actual: p95_delta,
           maximum: thresholds[:p95_runtime_regression_pct]
         )
       end
 
+      if quality_score_delta > thresholds[:quality_score_drop_pct].to_f
+        quality_status = downgrade_status(quality_status, strict)
+        overall_status = combine_statuses(overall_status, quality_status)
+        quality_reasons << format(
+          'quality score drop %<actual>.2f%% exceeds %<maximum>.2f%%',
+          actual: quality_score_delta,
+          maximum: thresholds[:quality_score_drop_pct]
+        )
+      end
+
+      if high_signal_delta > thresholds[:high_signal_drop_pct].to_f
+        quality_status = downgrade_status(quality_status, strict)
+        overall_status = combine_statuses(overall_status, quality_status)
+        quality_reasons << format(
+          'high-signal drop %<actual>.2f%% exceeds %<maximum>.2f%%',
+          actual: high_signal_delta,
+          maximum: thresholds[:high_signal_drop_pct]
+        )
+      end
+
+      if total_unique_delta > thresholds[:total_unique_drop_pct].to_f
+        quality_status = downgrade_status(quality_status, strict)
+        overall_status = combine_statuses(overall_status, quality_status)
+        quality_reasons << format(
+          'unique-url drop %<actual>.2f%% exceeds %<maximum>.2f%%',
+          actual: total_unique_delta,
+          maximum: thresholds[:total_unique_drop_pct]
+        )
+      end
+
+      balance = balance_metrics(metrics, baseline_row)
+
       {
         'target_key' => target_key,
-        'status' => status,
-        'reasons' => reasons,
+        'status' => overall_status,
+        'speed_status' => speed_status,
+        'quality_status' => quality_status,
+        'speed_reasons' => speed_reasons,
+        'quality_reasons' => quality_reasons,
+        'reasons' => speed_reasons + quality_reasons,
         'baseline' => baseline_row,
-        'regression_pct' => {
-          'elapsed_median_s' => median_delta.round(4),
-          'elapsed_p95_s' => p95_delta.round(4)
-        }
+        'regression_pct' => regression_hash(
+          median_delta,
+          p95_delta,
+          quality_score_delta,
+          high_signal_delta,
+          total_unique_delta
+        ),
+        'balance' => balance
+      }
+    end
+
+    def regression_hash(median_delta, p95_delta, quality_score_delta, high_signal_delta, total_unique_delta)
+      {
+        'elapsed_median_s' => median_delta.round(4),
+        'elapsed_p95_s' => p95_delta.round(4),
+        'quality_score' => quality_score_delta.round(4),
+        'crawler_high_signal_count' => high_signal_delta.round(4),
+        'crawler_total_unique' => total_unique_delta.round(4)
       }
     end
 
@@ -764,10 +970,45 @@ class BBLiveTargetSuite
       ((current.to_f - base) / base) * 100.0
     end
 
+    def regression_pct_drop(current, baseline)
+      base = baseline.to_f
+      return 0.0 if base <= 0.0
+
+      [((base - current.to_f) / base) * 100.0, 0.0].max
+    end
+
+    def balance_metrics(metrics, baseline_row)
+      speed_retention = retention_pct(baseline_row&.[]('elapsed_median_s'), metrics['elapsed_median_s'], inverse: true)
+      quality_retention = retention_pct(baseline_row&.[]('quality_score'), metrics['quality_score'])
+      {
+        'speed_retention_pct' => speed_retention.round(4),
+        'quality_retention_pct' => quality_retention.round(4),
+        'balanced_score' => Math.sqrt(speed_retention * quality_retention).round(4)
+      }
+    end
+
+    def retention_pct(baseline, current, inverse: false)
+      base = baseline.to_f
+      return 100.0 if base <= 0.0
+
+      current_value = current.to_f
+      return 0.0 if inverse && current_value <= 0.0
+
+      ratio = inverse ? (base / current_value) : (current_value / base)
+      (ratio * 100.0).clamp(0.0, 200.0)
+    end
+
     def downgrade_status(current_status, strict)
       return 'fail' if current_status == 'fail'
 
       strict ? 'fail' : 'warn'
+    end
+
+    def combine_statuses(current_status, new_status)
+      return 'fail' if [current_status, new_status].include?('fail')
+      return 'warn' if [current_status, new_status].include?('warn')
+
+      'pass'
     end
 
     def count_statuses(rows)
@@ -794,8 +1035,8 @@ class BBLiveTargetSuite
                                                                                 'strict')} | Runs: #{manifest.dig(
                                                                                   'config', 'runs'
                                                                                 )}"
-      lines << '| Target | Success Rate | Median (s) | p95 (s) | CV | RSS KB | Verdict | Notes |'
-      lines << '| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |'
+      lines << '| Target | Success Rate | Median (s) | Quality | Balance | Speed | Quality | Verdict | Notes |'
+      lines << '| --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |'
 
       rows.keys.sort.each do |target_key|
         row = rows.fetch(target_key)
@@ -805,9 +1046,10 @@ class BBLiveTargetSuite
           target_key,
           format('%.2f', row['success_rate'].to_f),
           format('%.2f', row['elapsed_median_s'].to_f),
-          format('%.2f', row['elapsed_p95_s'].to_f),
-          format('%.2f', row['elapsed_cv'].to_f),
-          format('%.0f', row['rss_kb_median'].to_f),
+          format('%.2f', row['quality_score'].to_f),
+          format('%.2f', verdict.dig('balance', 'balanced_score').to_f),
+          verdict.fetch('speed_status', 'n/a'),
+          verdict.fetch('quality_status', 'n/a'),
           verdict.fetch('status', 'n/a'),
           notes.empty? ? '-' : notes
         ].join(' | ').prepend('| ').concat(' |')
@@ -817,7 +1059,23 @@ class BBLiveTargetSuite
       passed = manifest.dig('verdict', 'passed_targets')
       warned = manifest.dig('verdict', 'warning_targets')
       failed = manifest.dig('verdict', 'failed_targets')
-      lines << "Verdict: pass=#{passed} warn=#{warned} fail=#{failed}"
+      speed_failed = manifest.dig('verdict', 'speed_failed_targets')
+      quality_failed = manifest.dig('verdict', 'quality_failed_targets')
+      balance_median = manifest.dig('verdict', 'balanced_score_median')
+      verdict_line = [
+        'Verdict: pass=%<passed>d warn=%<warned>d fail=%<failed>d',
+        'speed_fail=%<speed>d quality_fail=%<quality>d',
+        'balance_median=%<balance>.2f'
+      ].join(' ')
+      lines << format(
+        verdict_line,
+        passed: passed,
+        warned: warned,
+        failed: failed,
+        speed: speed_failed,
+        quality: quality_failed,
+        balance: balance_median.to_f
+      )
       lines.join("\n")
     end
   end

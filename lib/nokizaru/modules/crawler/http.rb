@@ -13,6 +13,7 @@ module Nokizaru
         private
 
         def crawl_main_page(target, ctx, result)
+          request_headers = ctx.options[:request_headers] || {}
           anchor = resolve_anchor(target, ctx)
           scan_target = anchor[:effective_target]
           step_row(:plus, 'Re-Anchor', "#{scan_target} (#{anchor[:reason_code]})")
@@ -23,7 +24,7 @@ module Nokizaru
             'reason' => anchor[:reason],
             'reason_code' => anchor[:reason_code]
           }
-          run_fetch_loop(scan_target, result, ctx)
+          run_fetch_loop(scan_target, result, ctx, request_headers: request_headers)
         rescue StandardError => e
           crawl_exception(result, ctx, e)
         end
@@ -32,7 +33,8 @@ module Nokizaru
           profile = ctx.run.dig('modules', 'headers', 'target_profile')
           unless profile.is_a?(Hash)
             profile = Nokizaru::TargetIntel.profile(target, verify_ssl: false,
-                                                            timeout_s: Crawler::TIMEOUT)
+                                                            timeout_s: Crawler::TIMEOUT,
+                                                            request_headers: ctx.options[:request_headers] || {})
           end
           decision = Nokizaru::TargetIntel.reanchor_decision(target, profile)
           decision[:reason] = profile['reason'].to_s
@@ -40,11 +42,11 @@ module Nokizaru
           decision
         end
 
-        def run_fetch_loop(target, result, ctx)
+        def run_fetch_loop(target, result, ctx, request_headers: {})
           current = target
           redirects = 0
           loop do
-            status = fetch_page_status(current, redirects)
+            status = fetch_page_status(current, redirects, request_headers: request_headers)
             page = page_or_failure(status, current, result, ctx)
             return page unless page == :redirect
 
@@ -54,16 +56,16 @@ module Nokizaru
         end
 
         def page_or_failure(status, current, result, ctx)
-          return page_hash(current, status[:response]) if status[:ok]
+          return page_hash(current, status[:response], status[:request_headers]) if status[:ok]
           return fail_crawl(result, ctx, status[:message], status: status[:status]) if status[:fail]
 
           :redirect
         end
 
-        def fetch_page_status(current, redirects)
-          response = http_get(current)
+        def fetch_page_status(current, redirects, request_headers: {})
+          response = http_get(current, request_headers: request_headers)
           return { fail: true, message: 'Failed to fetch target' } unless response
-          return { ok: true, response: response } if response.is_a?(Net::HTTPSuccess)
+          return { ok: true, response: response, request_headers: request_headers } if response.is_a?(Net::HTTPSuccess)
 
           next_url = followable_redirect(current, response, redirects)
           return { next_url: next_url } if next_url
@@ -71,8 +73,8 @@ module Nokizaru
           { fail: true, message: "HTTP status #{response.code}", status: response.code }
         end
 
-        def page_hash(url, response)
-          { soup: Nokogiri::HTML(response.body), url: url }
+        def page_hash(url, response, request_headers)
+          { soup: Nokogiri::HTML(response.body), url: url, request_headers: request_headers }
         end
 
         def followable_redirect(current, response, redirects)
@@ -102,17 +104,17 @@ module Nokizaru
           nil
         end
 
-        def http_get(url)
-          with_http_retries(url) { perform_http_get(url) }
+        def http_get(url, request_headers: {})
+          with_http_retries(url) { perform_http_get(url, request_headers: request_headers) }
         end
 
-        def perform_http_get(url)
+        def perform_http_get(url, request_headers: {})
           uri = URI.parse(url)
           http = Net::HTTP.new(uri.host, uri.port)
           http.open_timeout = Crawler::TIMEOUT
           http.read_timeout = Crawler::TIMEOUT
           enable_ssl!(http) if uri.scheme == 'https'
-          http.request(build_request(uri))
+          http.request(build_request(uri, request_headers))
         end
 
         def with_http_retries(url)

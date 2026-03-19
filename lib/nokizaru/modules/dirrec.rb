@@ -81,7 +81,7 @@ module Nokizaru
 
       # Run this module and store normalized results in the run context
       def call(target, threads, timeout_s, wdlist, *args)
-        options = build_call_options(target, threads, timeout_s, wdlist, args)
+        options = build_call_options(target, threads, timeout_s, wdlist, *args)
         scan = prepare_scan(options)
         print_banner(scan)
 
@@ -90,16 +90,18 @@ module Nokizaru
         finalize_scan(scan, runtime)
       end
 
-      def build_call_options(target, threads, timeout_s, wdlist, args)
+      def build_call_options(target, threads, timeout_s, wdlist, *args)
+        allow_redirects, verify_ssl, filext, ctx, request_headers = args
         {
           target: target,
           threads: threads,
           timeout_s: timeout_s,
           wdlist: wdlist,
-          allow_redirects: args.fetch(0),
-          verify_ssl: args.fetch(1),
-          filext: args.fetch(2),
-          ctx: args.fetch(3)
+          allow_redirects: allow_redirects,
+          verify_ssl: verify_ssl,
+          filext: filext,
+          ctx: ctx,
+          request_headers: request_headers || {}
         }
       end
     end
@@ -119,7 +121,8 @@ module Nokizaru
         preflight = preflight_probe(
           normalized_target,
           verify_ssl: options[:verify_ssl],
-          allow_redirects: options[:allow_redirects]
+          allow_redirects: options[:allow_redirects],
+          request_headers: options[:request_headers]
         )
         word_data = load_words(options[:wdlist])
         scan_mode = mode_data(preflight, options, anchor)
@@ -225,6 +228,8 @@ module Nokizaru
           preflight: scan[:preflight],
           request_method: request_method_for_mode(scan[:mode]),
           request_timeout: scan[:timeout],
+          request_headers: scan[:options][:request_headers],
+          allow_redirects: scan[:options][:allow_redirects],
           client_closed: false
         }
       end
@@ -253,11 +258,16 @@ module Nokizaru
           scan[:scan_target],
           timeout_s: scan[:timeout],
           headers: { 'User-Agent' => DEFAULT_UA },
-          follow_redirects: scan[:options][:allow_redirects],
+          follow_redirects: follow_redirects_for_client(scan[:options][:allow_redirects],
+                                                        scan[:options][:request_headers]),
           verify_ssl: scan[:options][:verify_ssl],
           max_concurrent: num_workers,
           retries: 0
         )
+      end
+
+      def follow_redirects_for_client(allow_redirects, request_headers)
+        allow_redirects && Nokizaru::RequestHeaders.none?(request_headers)
       end
     end
   end
@@ -449,6 +459,7 @@ module Nokizaru
           timeout_state: runtime[:timeout_state],
           target: scan[:scan_target],
           allow_redirects: scan[:options][:allow_redirects],
+          request_headers: scan[:options][:request_headers],
           verify_ssl: scan[:options][:verify_ssl],
           threads: thread_cap_for_mode(runtime[:stop_state][:mode], scan[:options][:threads].to_i)
         }
@@ -466,7 +477,12 @@ module Nokizaru
       def resolve_anchor(target, ctx, verify_ssl, timeout_s)
         profile = ctx.run.dig('modules', 'headers', 'target_profile')
         unless profile.is_a?(Hash)
-          profile = Nokizaru::TargetIntel.profile(target, verify_ssl: verify_ssl, timeout_s: [timeout_s.to_f, 10.0].min)
+          profile = Nokizaru::TargetIntel.profile(
+            target,
+            verify_ssl: verify_ssl,
+            timeout_s: [timeout_s.to_f, 10.0].min,
+            request_headers: ctx.options[:request_headers] || {}
+          )
         end
 
         decision = Nokizaru::TargetIntel.reanchor_decision(target, profile)
@@ -534,6 +550,7 @@ module Nokizaru
           ['Threads', scan[:options][:threads]],
           ['Timeout', scan[:options][:timeout_s]],
           ['Wordlist', scan[:options][:wdlist]],
+          ['Custom Headers', Nokizaru::RequestHeaders.summary(scan[:options][:request_headers])],
           ['Allow Redirects', scan[:options][:allow_redirects]],
           ['SSL Verification', scan[:options][:verify_ssl]],
           ['Wordlist Lines', scan[:word_data][:total_lines]],
@@ -614,10 +631,15 @@ module Nokizaru
       module_function
 
       # Probe the target shape quickly so we can select an enumeration mode
-      def preflight_probe(target, verify_ssl:, allow_redirects:)
-        probe_client = build_preflight_client(target, verify_ssl: verify_ssl, allow_redirects: allow_redirects)
+      def preflight_probe(target, verify_ssl:, allow_redirects:, request_headers: {})
+        probe_client = build_preflight_client(
+          target,
+          verify_ssl: verify_ssl,
+          allow_redirects: allow_redirects,
+          request_headers: request_headers
+        )
         metrics = empty_preflight_metrics
-        run_preflight_workers(preflight_urls(target), probe_client, metrics)
+        run_preflight_workers(preflight_urls(target), probe_client, metrics, request_headers, allow_redirects)
         metrics
       rescue StandardError
         preflight_fallback_metrics
@@ -625,12 +647,12 @@ module Nokizaru
         probe_client.close if probe_client.respond_to?(:close)
       end
 
-      def build_preflight_client(target, verify_ssl:, allow_redirects:)
+      def build_preflight_client(target, verify_ssl:, allow_redirects:, request_headers: {})
         Nokizaru::HTTPClient.for_bulk_requests(
           target,
           timeout_s: PREFLIGHT_TIMEOUT_S,
           headers: { 'User-Agent' => DEFAULT_UA },
-          follow_redirects: allow_redirects,
+          follow_redirects: follow_redirects_for_client(allow_redirects, request_headers),
           verify_ssl: verify_ssl,
           max_concurrent: 8,
           retries: 0
@@ -652,31 +674,38 @@ module Nokizaru
         empty_preflight_metrics.merge(statuses: {})
       end
 
-      def run_preflight_workers(urls, probe_client, metrics)
+      def run_preflight_workers(urls, probe_client, metrics, request_headers, allow_redirects)
         queue = build_work_queue(urls)
         mutex = Mutex.new
-        workers = Array.new(8) { Thread.new { preflight_worker_loop(queue, probe_client, metrics, mutex) } }
+        workers = Array.new(8) do
+          Thread.new { preflight_worker_loop(queue, probe_client, metrics, mutex, request_headers, allow_redirects) }
+        end
         workers.each(&:join)
       end
 
-      def preflight_worker_loop(queue, probe_client, metrics, mutex)
+      def preflight_worker_loop(queue, probe_client, metrics, mutex, request_headers, allow_redirects)
         loop do
           url = pop_queue_url(queue)
           break if url.nil? || Nokizaru::InterruptState.interrupted?
 
-          process_preflight_url(url, probe_client, metrics, mutex)
+          process_preflight_url(url, probe_client, metrics, mutex, request_headers, allow_redirects)
         end
       end
 
-      def process_preflight_url(url, probe_client, metrics, mutex)
-        result = preflight_result(probe_client, url)
+      def process_preflight_url(url, probe_client, metrics, mutex, request_headers, allow_redirects)
+        result = preflight_result(probe_client, url, request_headers, allow_redirects)
         mutex.synchronize { update_preflight_metrics!(metrics, result, url) }
       rescue StandardError
         mutex.synchronize { record_preflight_error!(metrics) }
       end
 
-      def preflight_result(probe_client, url)
-        raw = request_url(probe_client, url, { request_method: :head })
+      def preflight_result(probe_client, url, request_headers, allow_redirects)
+        raw = request_url(probe_client, url, {
+                            request_method: :head,
+                            request_timeout: PREFLIGHT_TIMEOUT_S,
+                            request_headers: request_headers,
+                            allow_redirects: allow_redirects
+                          })
         result = HttpResult.new(raw)
         { response: result, error_kind: result.success? ? nil : classify_error(result) }
       end
@@ -829,17 +858,71 @@ module Nokizaru
       def request_url(client, url, stop_state)
         hard_timeout = request_hard_timeout_s(stop_state)
         Timeout.timeout(hard_timeout) do
-          method = stop_state[:request_method].to_s
-          if method == 'head' && client.respond_to?(:head)
-            client.head(url)
-          else
-            client.get(url)
-          end
+          return request_url_with_custom_headers(client, url, stop_state) if custom_request_headers?(stop_state)
+
+          perform_client_request(client, url, stop_state)
         end
       rescue Timeout::Error
         raise Errno::ETIMEDOUT, 'directory request hard timeout reached'
       rescue NoMethodError
         client.get(url)
+      end
+
+      def custom_request_headers?(stop_state)
+        Nokizaru::RequestHeaders.any?(stop_state[:request_headers])
+      end
+
+      def request_url_with_custom_headers(client, url, stop_state)
+        unless stop_state[:allow_redirects]
+          return perform_client_request(client, url, stop_state,
+                                        headers: stop_state[:request_headers])
+        end
+
+        request_url_following_same_scope_redirects(client, url, stop_state)
+      end
+
+      def request_url_following_same_scope_redirects(client, url, stop_state)
+        current = url
+        redirects = 0
+
+        loop do
+          response = perform_client_request(client, current, stop_state, headers: stop_state[:request_headers])
+          next_url = same_scope_redirect_url(current, response)
+          return response unless next_url && redirects < Crawler::MAX_MAIN_REDIRECTS
+
+          current = next_url
+          redirects += 1
+        end
+      end
+
+      def perform_client_request(client, url, stop_state, headers: nil)
+        method = stop_state[:request_method].to_s
+        request_headers = headers || {}
+
+        if method == 'head' && client.respond_to?(:head)
+          client.head(url, headers: request_headers)
+        else
+          client.get(url, headers: request_headers)
+        end
+      rescue ArgumentError
+        if method == 'head' && client.respond_to?(:head)
+          client.head(url)
+        else
+          client.get(url)
+        end
+      end
+
+      def same_scope_redirect_url(current_url, response)
+        return nil unless response.respond_to?(:status)
+        return nil unless redirect_status?(response.status)
+
+        location = response.headers['location']
+        return nil if location.to_s.strip.empty?
+
+        next_url = Nokizaru::TargetIntel.resolve_location(current_url, location)
+        Nokizaru::TargetIntel.same_scope_host?(URI.parse(current_url).host, URI.parse(next_url).host) ? next_url : nil
+      rescue StandardError
+        nil
       end
 
       def request_hard_timeout_s(stop_state)
@@ -1322,7 +1405,7 @@ module Nokizaru
           config[:target],
           timeout_s: timeout,
           headers: { 'User-Agent' => DEFAULT_UA },
-          follow_redirects: config[:allow_redirects],
+          follow_redirects: follow_redirects_for_client(config[:allow_redirects], config[:request_headers]),
           verify_ssl: config[:verify_ssl],
           max_concurrent: [config[:threads].to_i, 1].max,
           retries: 0

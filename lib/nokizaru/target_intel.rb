@@ -40,9 +40,9 @@ module Nokizaru
     end
 
     # Build a lightweight target profile used by scan modules for context-aware anchoring
-    def profile(target, verify_ssl: false, timeout_s: 10, response: nil)
+    def profile(target, verify_ssl: false, timeout_s: 10, response: nil, request_headers: {})
       original_uri = URI.parse(target)
-      response ||= fetch(original_uri, verify_ssl: verify_ssl, timeout_s: timeout_s)
+      response ||= fetch(original_uri, verify_ssl: verify_ssl, timeout_s: timeout_s, request_headers: request_headers)
       profile = default_profile(target)
       return profile unless response
 

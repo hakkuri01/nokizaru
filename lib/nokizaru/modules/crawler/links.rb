@@ -7,10 +7,10 @@ module Nokizaru
       module Links
         private
 
-        def populate_page_links!(result, page_url, base_url, soup)
-          robots_links, discovered = robots("#{base_url}/robots.txt", base_url)
+        def populate_page_links!(result, page_url, base_url, soup, request_headers)
+          robots_links, discovered = robots("#{base_url}/robots.txt", base_url, request_headers)
           result['robots_links'] = robots_links
-          result['sitemap_links'] = sitemap("#{base_url}/sitemap.xml", discovered)
+          result['sitemap_links'] = sitemap(result, "#{base_url}/sitemap.xml", discovered, request_headers)
           result['css_links'] = collect_links(
             soup,
             'link[rel="stylesheet"]',
@@ -39,8 +39,8 @@ module Nokizaru
           )
         end
 
-        def robots(url, base_url)
-          response = http_get(url)
+        def robots(url, base_url, request_headers)
+          response = http_get(url, request_headers: request_headers)
           return handle_missing_robots(response) unless response.is_a?(Net::HTTPSuccess)
 
           links, sitemaps = parse_robots_body(response.body, base_url)
@@ -81,11 +81,11 @@ module Nokizaru
           { url: url_filter(base_url, value), sitemap: value.end_with?('xml') ? value : nil }
         end
 
-        def sitemap(url, discovered)
-          links = cap_links(Array(discovered), Crawler::MAX_SITEMAP_LINKS)
-          response = http_get(url)
+        def sitemap(result, url, discovered, request_headers)
+          links = cap_links(Array(discovered), adaptive_limit(result, :max_sitemap_links))
+          response = http_get(url, request_headers: request_headers)
           apply_sitemap_status(response, url, links)
-          cap_links(links, Crawler::MAX_SITEMAP_LINKS)
+          cap_links(links, adaptive_limit(result, :max_sitemap_links))
         end
 
         def apply_sitemap_status(response, sitemap_url, links)

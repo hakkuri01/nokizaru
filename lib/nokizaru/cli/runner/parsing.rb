@@ -79,7 +79,7 @@ module Nokizaru
         end
 
         def base_runtime_options
-          timeout_and_dns_options.merge(scan_thread_options).merge(wordlist_option)
+          timeout_and_dns_options.merge(scan_thread_options).merge(wordlist_option).merge(request_header_option)
         end
 
         def timeout_and_dns_options
@@ -99,6 +99,17 @@ module Nokizaru
 
         def wordlist_option
           { wordlist: (@opts[:w] || Settings.dir_enum_wordlist).to_s }
+        end
+
+        def request_header_option
+          { request_headers: parsed_request_headers }
+        end
+
+        def parsed_request_headers
+          Nokizaru::RequestHeaders.parse_argv(@argv)
+        rescue ArgumentError => e
+          UI.line(:error, e.message)
+          exit(1)
         end
 
         def directory_runtime_options
