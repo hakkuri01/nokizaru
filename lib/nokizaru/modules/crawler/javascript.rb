@@ -11,6 +11,7 @@ module Nokizaru
         private
 
         def js_crawl(result, js_links, page_url, request_headers)
+          apply_adaptive_budget!(result)
           return [] if crawl_budget_exhausted?(result)
 
           targets = scoped_js_targets(result, js_links, page_url)

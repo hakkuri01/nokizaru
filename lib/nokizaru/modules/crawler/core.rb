@@ -89,10 +89,10 @@ module Nokizaru
           control = crawler_control(result)
           return if control[:degraded]
 
-          return unless heavy_crawl_surface?(result)
+          return unless heavy_crawl_surface?(result) || nearing_deadline_on_large_surface?(result)
 
           control[:degraded] = true
-          control[:notes] << 'heavy_target'
+          control[:notes] << degradation_reason(result)
           control[:limits][:max_sitemaps] = Crawler::DEGRADED_MAX_SITEMAPS
           control[:limits][:max_sitemap_links] = Crawler::DEGRADED_MAX_SITEMAP_LINKS
           control[:limits][:max_sitemap_urls] = Crawler::DEGRADED_MAX_SITEMAP_URLS
@@ -102,9 +102,34 @@ module Nokizaru
         end
 
         def heavy_crawl_surface?(result)
-          Array(result['internal_links']).length >= Crawler::HEAVY_INTERNAL_LINKS_THRESHOLD ||
-            Array(result['js_links']).length >= Crawler::HEAVY_JS_LINKS_THRESHOLD ||
+          indicators = [
+            Array(result['internal_links']).length >= Crawler::HEAVY_INTERNAL_LINKS_THRESHOLD,
+            Array(result['js_links']).length >= Crawler::HEAVY_JS_LINKS_THRESHOLD,
             Array(result['robots_links']).length >= Crawler::HEAVY_ROBOTS_LINKS_THRESHOLD
+          ]
+          extreme = Array(result['internal_links']).length >= Crawler::EXTREME_INTERNAL_LINKS_THRESHOLD ||
+                    Array(result['robots_links']).length >= Crawler::EXTREME_ROBOTS_LINKS_THRESHOLD
+
+          extreme || indicators.count(true) >= 2
+        end
+
+        def nearing_deadline_on_large_surface?(result)
+          control = crawler_control(result)
+          elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - control[:started_at]
+          elapsed_ratio = elapsed / Crawler::MAX_WALL_CLOCK_S
+          discovered_urls = Array(result['internal_links']).length +
+                            Array(result['external_links']).length +
+                            Array(result['images']).length +
+                            Array(result['sitemap_links']).length
+
+          elapsed_ratio >= Crawler::DEGRADE_ELAPSED_RATIO_THRESHOLD &&
+            discovered_urls >= Crawler::DEGRADE_DISCOVERED_URLS_THRESHOLD
+        end
+
+        def degradation_reason(result)
+          return 'heavy_target' if heavy_crawl_surface?(result)
+
+          'budget_pressure'
         end
 
         def append_crawl_control_stats!(result)

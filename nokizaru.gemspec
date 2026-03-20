@@ -39,6 +39,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'concurrent-ruby', '~> 1.3'
   spec.add_dependency 'dnsruby', '~> 1.72'
   spec.add_dependency 'httpx', '~> 1.3'
+  spec.add_dependency 'json', '>= 2.19.2', '< 3.0'
   spec.add_dependency 'nokogiri', '~> 1.16'
   spec.add_dependency 'public_suffix', '~> 5.0'
   spec.add_dependency 'thor', '~> 1.3'

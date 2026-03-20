@@ -147,6 +147,78 @@ class BBLiveTargetSuiteTest < Minitest::Test
     assert_equal 1, verdict['quality_failed_targets']
   end
 
+  def test_quality_score_drop_without_active_signal_drop_stays_pass
+    targets = {
+      'github_com' => {
+        'success_rate' => 1.0,
+        'elapsed_median_s' => 30.0,
+        'elapsed_p95_s' => 32.0,
+        'elapsed_cv' => 0.1,
+        'quality_score' => 75.0,
+        'crawler_high_signal_count' => 50.0,
+        'crawler_total_unique' => 100.0,
+        'findings_count' => 40.0,
+        'crawler_blocked' => 0.0
+      }
+    }
+    baseline = {
+      'github_com' => {
+        'elapsed_median_s' => 30.0,
+        'elapsed_p95_s' => 35.0,
+        'quality_score' => 100.0,
+        'crawler_high_signal_count' => 50.0,
+        'crawler_total_unique' => 100.0,
+        'findings_count' => 40.0,
+        'crawler_blocked' => 0.0
+      }
+    }
+
+    verdict = BBLiveTargetSuite::Verdict.evaluate(
+      targets,
+      baseline,
+      thresholds: BBLiveTargetSuite::PROFILE_CONFIG['canonical'][:thresholds],
+      strict: true
+    )
+
+    assert_equal 'pass', verdict.dig('targets', 'github_com', 'quality_status')
+  end
+
+  def test_blocked_crawler_does_not_trigger_active_signal_quality_drops
+    targets = {
+      'github_com' => {
+        'success_rate' => 1.0,
+        'elapsed_median_s' => 30.0,
+        'elapsed_p95_s' => 32.0,
+        'elapsed_cv' => 0.1,
+        'quality_score' => 90.0,
+        'crawler_high_signal_count' => 0.0,
+        'crawler_total_unique' => 0.0,
+        'findings_count' => 40.0,
+        'crawler_blocked' => 1.0
+      }
+    }
+    baseline = {
+      'github_com' => {
+        'elapsed_median_s' => 30.0,
+        'elapsed_p95_s' => 35.0,
+        'quality_score' => 100.0,
+        'crawler_high_signal_count' => 50.0,
+        'crawler_total_unique' => 100.0,
+        'findings_count' => 40.0,
+        'crawler_blocked' => 0.0
+      }
+    }
+
+    verdict = BBLiveTargetSuite::Verdict.evaluate(
+      targets,
+      baseline,
+      thresholds: BBLiveTargetSuite::PROFILE_CONFIG['canonical'][:thresholds],
+      strict: true
+    )
+
+    assert_equal 'pass', verdict.dig('targets', 'github_com', 'quality_status')
+  end
+
   def test_rolling_baseline_aggregates_recent_manifests
     Dir.mktmpdir do |dir|
       write_manifest(dir, 'bb_live_canonical_manifest_20260306T100000Z.json',
@@ -174,7 +246,8 @@ class BBLiveTargetSuiteTest < Minitest::Test
         'crawler_total_unique' => 120.0,
         'crawler_high_signal_count' => 30.0,
         'subdomain_count' => 12.0,
-        'wayback_count' => 2.0
+        'wayback_count' => 2.0,
+        'crawler_blocked' => 0.0
       },
       'nike_com' => {
         'success_rate' => 0.0,
@@ -184,7 +257,8 @@ class BBLiveTargetSuiteTest < Minitest::Test
         'crawler_total_unique' => 0.0,
         'crawler_high_signal_count' => 0.0,
         'subdomain_count' => 0.0,
-        'wayback_count' => 0.0
+        'wayback_count' => 0.0,
+        'crawler_blocked' => 1.0
       }
     )
 

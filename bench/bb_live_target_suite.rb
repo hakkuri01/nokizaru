@@ -123,12 +123,14 @@ class BBLiveTargetSuite
       default_timeout: 420,
       min_timeout: 90,
       max_timeout: 600,
+      retry_attempts: 1,
       thresholds: {
         median_runtime_regression_pct: 30.0,
         p95_runtime_regression_pct: 40.0,
         min_success_rate: 0.9,
         max_elapsed_cv: 0.6,
         quality_score_drop_pct: 20.0,
+        quality_score_drop_hard_pct: 55.0,
         high_signal_drop_pct: 25.0,
         total_unique_drop_pct: 30.0
       }
@@ -138,12 +140,14 @@ class BBLiveTargetSuite
       default_timeout: 240,
       min_timeout: 60,
       max_timeout: 360,
+      retry_attempts: 0,
       thresholds: {
         median_runtime_regression_pct: 35.0,
         p95_runtime_regression_pct: 45.0,
         min_success_rate: 0.85,
         max_elapsed_cv: 0.8,
         quality_score_drop_pct: 25.0,
+        quality_score_drop_hard_pct: 60.0,
         high_signal_drop_pct: 30.0,
         total_unique_drop_pct: 35.0
       }
@@ -257,7 +261,8 @@ class BBLiveTargetSuite
       timeout_s: timeout_s,
       strict: opts[:strict].nil? ? strict_default : opts[:strict],
       thresholds: profile_cfg[:thresholds],
-      no_cache: profile_cfg[:no_cache]
+      no_cache: profile_cfg[:no_cache],
+      retry_attempts: profile_cfg[:retry_attempts]
     )
   end
 
@@ -367,23 +372,14 @@ class BBLiveTargetSuite
   end
 
   def run_job(job, worker_id)
-    cleanup_previous_outputs(job)
     command = build_command(job)
-    wrapped_command = command_for_execution(command)
     started_at = Time.now.utc
     start_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     puts "[bench][w#{worker_id}] run=#{job[:run]} target=#{job[:target]} timeout=#{job[:timeout_s]}s"
 
-    output, status, timed_out, resources = run_command_with_timeout(wrapped_command, job[:timeout_s])
-    File.write(job[:log_path], output)
+    final_status, resources, attempts, exit_code = run_job_attempts(job, command)
 
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_monotonic
-    success = status&.success? && File.exist?(job[:json_path])
-    final_status = if success
-                     'ok'
-                   else
-                     (timed_out ? 'timeout' : 'failed')
-                   end
 
     puts "[bench][w#{worker_id}] #{job[:basename]} => #{final_status} (#{format('%.2f', elapsed)}s)"
 
@@ -395,15 +391,55 @@ class BBLiveTargetSuite
       json_path: job[:json_path],
       log_path: job[:log_path],
       command: command,
+      attempts: attempts,
       timeout_s: job[:timeout_s],
       status: final_status,
-      timed_out: timed_out,
-      exit_code: status&.exitstatus,
+      timed_out: final_status == 'timeout',
+      exit_code: exit_code,
       elapsed_s: elapsed.round(4),
       started_at: started_at.iso8601,
       ended_at: Time.now.utc.iso8601,
       resources: resources
     }
+  end
+
+  def run_job_attempts(job, command)
+    wrapped_command = command_for_execution(command)
+    max_attempts = [@opts[:retry_attempts].to_i + 1, 1].max
+    attempts = 0
+    logs = []
+    final_status = 'failed'
+    final_resources = {}
+    final_exit_code = nil
+
+    while attempts < max_attempts
+      attempts += 1
+      cleanup_previous_outputs(job)
+      output, status, timed_out, resources = run_command_with_timeout(wrapped_command, job[:timeout_s])
+      status_name = classify_status(status, timed_out, job[:json_path])
+      logs << "\n[bench-attempt=#{attempts} status=#{status_name}]\n#{output}"
+
+      final_status = status_name
+      final_resources = resources
+      final_exit_code = status&.exitstatus
+      break unless retryable_status?(status_name)
+      break if attempts >= max_attempts
+
+      puts "[bench] retrying #{job[:basename]} after #{status_name} (attempt #{attempts + 1}/#{max_attempts})"
+    end
+
+    File.write(job[:log_path], logs.join)
+    [final_status, final_resources, attempts, final_exit_code]
+  end
+
+  def classify_status(status, timed_out, json_path)
+    return 'ok' if status&.success? && File.exist?(json_path)
+
+    timed_out ? 'timeout' : 'failed'
+  end
+
+  def retryable_status?(status_name)
+    %w[timeout failed].include?(status_name)
   end
 
   def build_command(job)
@@ -669,11 +705,15 @@ class BBLiveTargetSuite
     DEFAULTS = {
       'crawler_total_unique' => 0.0,
       'crawler_high_signal_count' => 0.0,
+      'findings_count' => 0.0,
       'subdomain_count' => 0.0,
       'wayback_count' => 0.0,
       'directory_requests' => 0.0,
+      'crawler_blocked' => 0.0,
       'quality_score' => 0.0
     }.freeze
+
+    CRAWLER_BLOCK_STATUS_RE = /HTTP status (403|405|429)\b/
 
     def extract(path)
       payload = JSON.parse(File.read(path))
@@ -682,13 +722,17 @@ class BBLiveTargetSuite
       subdomains = Array(modules.dig('subdomains', 'subdomains'))
       wayback = Array(modules.dig('wayback', 'urls'))
       dir_stats = modules.dig('directory_enum', 'stats') || {}
+      findings = Array(payload['findings'])
+      crawler_error = modules.dig('crawler', 'error').to_s
 
       metrics = {
         'crawler_total_unique' => crawler_stats['total_unique'].to_f,
         'crawler_high_signal_count' => crawler_stats['high_signal_count'].to_f,
+        'findings_count' => findings.length.to_f,
         'subdomain_count' => subdomains.length.to_f,
         'wayback_count' => wayback.length.to_f,
-        'directory_requests' => dir_stats['total_requests'].to_f
+        'directory_requests' => dir_stats['total_requests'].to_f,
+        'crawler_blocked' => crawler_error.match?(CRAWLER_BLOCK_STATUS_RE) ? 1.0 : 0.0
       }
       metrics['quality_score'] = quality_score(metrics)
       metrics
@@ -708,9 +752,10 @@ class BBLiveTargetSuite
       (
         weighted_component(metrics['crawler_high_signal_count'], 0.38) +
         weighted_component(metrics['crawler_total_unique'], 0.27) +
-        weighted_component(metrics['subdomain_count'], 0.20) +
-        weighted_component(metrics['wayback_count'], 0.10) +
-        weighted_component(metrics['directory_requests'], 0.05)
+        weighted_component(metrics['findings_count'], 0.20) +
+        weighted_component(metrics['subdomain_count'], 0.10) +
+        weighted_component(metrics['wayback_count'], 0.03) +
+        weighted_component(metrics['directory_requests'], 0.02)
       ).round(4)
     end
 
@@ -741,8 +786,10 @@ class BBLiveTargetSuite
           'quality_score' => row['quality_score'].to_f.round(4),
           'crawler_total_unique' => row['crawler_total_unique'].to_f.round(4),
           'crawler_high_signal_count' => row['crawler_high_signal_count'].to_f.round(4),
+          'findings_count' => row['findings_count'].to_f.round(4),
           'subdomain_count' => row['subdomain_count'].to_f.round(4),
-          'wayback_count' => row['wayback_count'].to_f.round(4)
+          'wayback_count' => row['wayback_count'].to_f.round(4),
+          'crawler_blocked' => row['crawler_blocked'].to_f.round(4)
         }
       end
     end
@@ -869,7 +916,7 @@ class BBLiveTargetSuite
           'quality_reasons' => quality_reasons,
           'reasons' => speed_reasons + quality_reasons + ['no baseline available'],
           'baseline' => nil,
-          'regression_pct' => regression_hash(0.0, 0.0, 0.0, 0.0, 0.0),
+          'regression_pct' => regression_hash(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
           'balance' => balance
         }
       end
@@ -880,6 +927,7 @@ class BBLiveTargetSuite
       high_signal_delta = regression_pct_drop(metrics['crawler_high_signal_count'],
                                               baseline_row['crawler_high_signal_count'])
       total_unique_delta = regression_pct_drop(metrics['crawler_total_unique'], baseline_row['crawler_total_unique'])
+      findings_delta = regression_pct_drop(metrics['findings_count'], baseline_row['findings_count'])
 
       if median_delta > thresholds[:median_runtime_regression_pct].to_f
         speed_status = downgrade_status(speed_status, strict)
@@ -901,35 +949,20 @@ class BBLiveTargetSuite
         )
       end
 
-      if quality_score_delta > thresholds[:quality_score_drop_pct].to_f
-        quality_status = downgrade_status(quality_status, strict)
-        overall_status = combine_statuses(overall_status, quality_status)
-        quality_reasons << format(
-          'quality score drop %<actual>.2f%% exceeds %<maximum>.2f%%',
-          actual: quality_score_delta,
-          maximum: thresholds[:quality_score_drop_pct]
-        )
-      end
-
-      if high_signal_delta > thresholds[:high_signal_drop_pct].to_f
-        quality_status = downgrade_status(quality_status, strict)
-        overall_status = combine_statuses(overall_status, quality_status)
-        quality_reasons << format(
-          'high-signal drop %<actual>.2f%% exceeds %<maximum>.2f%%',
-          actual: high_signal_delta,
-          maximum: thresholds[:high_signal_drop_pct]
-        )
-      end
-
-      if total_unique_delta > thresholds[:total_unique_drop_pct].to_f
-        quality_status = downgrade_status(quality_status, strict)
-        overall_status = combine_statuses(overall_status, quality_status)
-        quality_reasons << format(
-          'unique-url drop %<actual>.2f%% exceeds %<maximum>.2f%%',
-          actual: total_unique_delta,
-          maximum: thresholds[:total_unique_drop_pct]
-        )
-      end
+      quality_status, overall_status, quality_reasons = apply_quality_checks(
+        quality_status,
+        overall_status,
+        quality_reasons,
+        {
+          crawler_blocked: metrics['crawler_blocked'].to_f >= 0.5,
+          quality_score: quality_score_delta,
+          high_signal: high_signal_delta,
+          total_unique: total_unique_delta,
+          findings: findings_delta
+        },
+        thresholds,
+        strict
+      )
 
       balance = balance_metrics(metrics, baseline_row)
 
@@ -947,20 +980,65 @@ class BBLiveTargetSuite
           p95_delta,
           quality_score_delta,
           high_signal_delta,
-          total_unique_delta
+          total_unique_delta,
+          findings_delta
         ),
         'balance' => balance
       }
     end
 
-    def regression_hash(median_delta, p95_delta, quality_score_delta, high_signal_delta, total_unique_delta)
+    def regression_hash(median_delta, p95_delta, quality_score_delta, high_signal_delta, total_unique_delta,
+                        findings_delta)
       {
         'elapsed_median_s' => median_delta.round(4),
         'elapsed_p95_s' => p95_delta.round(4),
         'quality_score' => quality_score_delta.round(4),
         'crawler_high_signal_count' => high_signal_delta.round(4),
-        'crawler_total_unique' => total_unique_delta.round(4)
+        'crawler_total_unique' => total_unique_delta.round(4),
+        'findings_count' => findings_delta.round(4)
       }
+    end
+
+    def quality_drop_actionable?(deltas, thresholds)
+      quality_score_delta = deltas[:quality_score]
+      high_signal_delta = deltas[:high_signal]
+      total_unique_delta = deltas[:total_unique]
+      findings_delta = deltas[:findings]
+      return false unless quality_score_delta > thresholds[:quality_score_drop_pct].to_f
+      return quality_score_delta > thresholds[:quality_score_drop_hard_pct].to_f if deltas[:crawler_blocked]
+
+      high_signal_delta > thresholds[:high_signal_drop_pct].to_f ||
+        total_unique_delta > thresholds[:total_unique_drop_pct].to_f ||
+        findings_delta > thresholds[:total_unique_drop_pct].to_f ||
+        quality_score_delta > thresholds[:quality_score_drop_hard_pct].to_f
+    end
+
+    def apply_quality_checks(quality_status, overall_status, quality_reasons, deltas, thresholds, strict)
+      checks = []
+      if quality_drop_actionable?(deltas, thresholds)
+        checks << ['quality score drop %<actual>.2f%% exceeds %<maximum>.2f%%', deltas[:quality_score],
+                   thresholds[:quality_score_drop_pct]]
+      end
+      if !deltas[:crawler_blocked] && deltas[:high_signal] > thresholds[:high_signal_drop_pct].to_f
+        checks << ['high-signal drop %<actual>.2f%% exceeds %<maximum>.2f%%', deltas[:high_signal],
+                   thresholds[:high_signal_drop_pct]]
+      end
+      if !deltas[:crawler_blocked] && deltas[:total_unique] > thresholds[:total_unique_drop_pct].to_f
+        checks << ['unique-url drop %<actual>.2f%% exceeds %<maximum>.2f%%', deltas[:total_unique],
+                   thresholds[:total_unique_drop_pct]]
+      end
+      if !deltas[:crawler_blocked] && deltas[:findings] > thresholds[:total_unique_drop_pct].to_f
+        checks << ['findings drop %<actual>.2f%% exceeds %<maximum>.2f%%', deltas[:findings],
+                   thresholds[:total_unique_drop_pct]]
+      end
+
+      checks.each do |template, actual, maximum|
+        quality_status = downgrade_status(quality_status, strict)
+        overall_status = combine_statuses(overall_status, quality_status)
+        quality_reasons << format(template, actual: actual, maximum: maximum)
+      end
+
+      [quality_status, overall_status, quality_reasons]
     end
 
     def regression_pct(current, baseline)

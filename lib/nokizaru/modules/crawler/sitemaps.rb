@@ -16,6 +16,7 @@ module Nokizaru
         end
 
         def sm_crawl(result, sitemap_links, request_headers)
+          apply_adaptive_budget!(result)
           return [] if crawl_budget_exhausted?(result)
 
           state = init_sitemap_state(sitemap_links)
@@ -38,6 +39,7 @@ module Nokizaru
 
         def crawl_sitemap_graph(result, state, request_headers)
           while state[:pending].any? && state[:seen].length < adaptive_limit(result, :max_sitemaps)
+            apply_adaptive_budget!(result)
             break if crawl_budget_exhausted?(result)
             break if state[:links].length >= adaptive_limit(result, :max_sitemap_urls)
 

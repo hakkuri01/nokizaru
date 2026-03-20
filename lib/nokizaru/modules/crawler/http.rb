@@ -67,10 +67,33 @@ module Nokizaru
           return { fail: true, message: 'Failed to fetch target' } unless response
           return { ok: true, response: response, request_headers: request_headers } if response.is_a?(Net::HTTPSuccess)
 
+          fallback = fallback_page_status(current, response, request_headers)
+          return fallback if fallback
+
           next_url = followable_redirect(current, response, redirects)
           return { next_url: next_url } if next_url
 
           { fail: true, message: "HTTP status #{response.code}", status: response.code }
+        end
+
+        def fallback_page_status(current, response, request_headers)
+          return nil unless bot_block_status?(response)
+
+          fallback_response = http_get(
+            current,
+            request_headers: request_headers,
+            user_agent: Crawler::FALLBACK_USER_AGENT
+          )
+          return nil unless fallback_response.is_a?(Net::HTTPSuccess)
+
+          Log.write("[crawler] Fallback user-agent succeeded for #{current}")
+          { ok: true, response: fallback_response, request_headers: request_headers }
+        end
+
+        def bot_block_status?(response)
+          Crawler::BOT_BLOCK_CODES.include?(response.code.to_i)
+        rescue StandardError
+          false
         end
 
         def page_hash(url, response, request_headers)
@@ -104,17 +127,17 @@ module Nokizaru
           nil
         end
 
-        def http_get(url, request_headers: {})
-          with_http_retries(url) { perform_http_get(url, request_headers: request_headers) }
+        def http_get(url, request_headers: {}, user_agent: Crawler::USER_AGENT)
+          with_http_retries(url) { perform_http_get(url, request_headers: request_headers, user_agent: user_agent) }
         end
 
-        def perform_http_get(url, request_headers: {})
+        def perform_http_get(url, request_headers: {}, user_agent: Crawler::USER_AGENT)
           uri = URI.parse(url)
           http = Net::HTTP.new(uri.host, uri.port)
           http.open_timeout = Crawler::TIMEOUT
           http.read_timeout = Crawler::TIMEOUT
           enable_ssl!(http) if uri.scheme == 'https'
-          http.request(build_request(uri, request_headers))
+          http.request(build_request(uri, request_headers, user_agent: user_agent))
         end
 
         def with_http_retries(url)

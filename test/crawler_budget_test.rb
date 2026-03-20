@@ -6,6 +6,7 @@ class CrawlerBudgetTest < Minitest::Test
   def test_apply_adaptive_budget_degrades_heavy_target_limits
     result = Nokizaru::Modules::Crawler.send(:initialize_result)
     result['internal_links'] = Array.new(Nokizaru::Modules::Crawler::HEAVY_INTERNAL_LINKS_THRESHOLD, 'https://example.com/a')
+    result['js_links'] = Array.new(Nokizaru::Modules::Crawler::HEAVY_JS_LINKS_THRESHOLD, 'https://example.com/app.js')
 
     Nokizaru::Modules::Crawler.send(:apply_adaptive_budget!, result)
 
