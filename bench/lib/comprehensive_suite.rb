@@ -16,7 +16,7 @@ module Bench
       track: 'track_a',
       runs: nil,
       concurrency: 1,
-      timeout_s: 300,
+      timeout_s: nil,
       root_dir: File.expand_path('../..', __dir__),
       out_dir: File.expand_path('../results/comprehensive', __dir__),
       nokizaru_bin: File.expand_path('../../bin/nokizaru', __dir__),
@@ -34,6 +34,7 @@ module Bench
     TRACK_CONFIG = {
       'track_a' => {
         default_runs: 5,
+        default_timeout_s: 300,
         default_strict: true,
         targets_path: File.expand_path('../config/track_a_targets.json', __dir__),
         thresholds: {
@@ -45,6 +46,7 @@ module Bench
       },
       'track_b' => {
         default_runs: 2,
+        default_timeout_s: 120,
         default_strict: false,
         targets_path: File.expand_path('../config/track_b_targets.json', __dir__),
         thresholds: {
@@ -184,7 +186,7 @@ module Bench
           track: track,
           runs: options[:runs] || track_cfg[:default_runs],
           concurrency: options[:concurrency],
-          timeout_s: options[:timeout_s],
+          timeout_s: options[:timeout_s] || track_cfg[:default_timeout_s],
           root_dir: options[:root_dir],
           out_dir: output_root,
           nokizaru_bin: options[:nokizaru_bin],
@@ -231,6 +233,7 @@ module Bench
           id: id,
           url: url,
           args: args,
+          timeout_s: row['timeout_s'].to_i.positive? ? row['timeout_s'].to_i : nil,
           quality_floors: quality_floors,
           notes: row['notes'].to_s
         }
@@ -249,7 +252,8 @@ module Bench
               target: target,
               basename: basename,
               output_path: output_path,
-              log_path: File.join(log_dir, "#{basename}.log")
+              log_path: File.join(log_dir, "#{basename}.log"),
+              timeout_s: target[:timeout_s] || @options[:timeout_s]
             }
           end
         end
@@ -302,7 +306,7 @@ module Bench
         start_t = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         puts "[bench][w#{worker_id}] run=#{job[:run]} profile=#{job[:target][:id]}"
 
-        output, status, timed_out, resources = run_command_with_timeout(wrapped_command, @options[:timeout_s])
+        output, status, timed_out, resources = run_command_with_timeout(wrapped_command, job[:timeout_s])
         File.write(job[:log_path], output)
 
         elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_t
@@ -321,6 +325,7 @@ module Bench
           profile_id: job[:target][:id],
           target_url: job[:target][:url],
           command: command,
+          timeout_s: job[:timeout_s],
           status: final_status,
           timed_out: timed_out,
           exit_code: status&.exitstatus,
@@ -508,6 +513,8 @@ module Bench
           directory_total_requests: modules.dig('directory_enum', 'stats', 'total_requests').to_i,
           directory_errors: modules.dig('directory_enum', 'stats', 'errors').to_i,
           directory_mode: modules.dig('directory_enum', 'stats', 'mode').to_s,
+          directory_found_count: Array(modules.dig('directory_enum', 'found')).length,
+          directory_prioritized_count: Array(modules.dig('directory_enum', 'prioritized_found')).length,
           crawler_total_unique: modules.dig('crawler', 'stats', 'total_unique').to_i,
           crawler_high_signal_count: modules.dig('crawler', 'stats', 'high_signal_count').to_i,
           subdomains_count: Array(modules.dig('subdomains', 'subdomains')).length,

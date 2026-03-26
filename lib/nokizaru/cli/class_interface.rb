@@ -28,7 +28,7 @@ module Nokizaru
       ['-nb', 'Hide Banner'], ['-dt DT', 'Number of threads for directory enum [ Default : 30 ]'],
       ['-pt PT', 'Number of threads for port scan [ Default : 50 ]'],
       ['-T T', 'Request Timeout [ Default : 30.0 ]'],
-      ['-w W', 'Path to Wordlist [ Default : wordlists/dirb_common.txt ]'],
+      ['-w W', 'Path to Wordlist [ Default : wordlists/raft_med-dir_5k.txt ]'],
       ['-H HEADER', 'Add custom request header (repeatable)'],
       ['-r', 'Follow redirects during directory enum [ Default : False ]'],
       ['-s', 'Toggle SSL Verification [ Default : True ]'],

@@ -17,6 +17,27 @@ class BBLiveTargetSuiteTest < Minitest::Test
     assert_equal keys.length, keys.uniq.length
   end
 
+  def test_stable_tier_keys_are_known_targets
+    all_keys = BBLiveTargetSuite::TARGETS.map { |target| BBLiveTargetSuite.target_key(target) }
+    missing = BBLiveTargetSuite::STABLE_TARGET_KEYS - all_keys
+
+    assert_empty missing
+  end
+
+  def test_canonical_profile_defaults_to_stable_tier
+    suite = BBLiveTargetSuite.new(profile: 'canonical', dry_run: true)
+    targets = suite.send(:selected_targets)
+
+    assert_equal BBLiveTargetSuite::STABLE_TARGET_KEYS.length, targets.length
+  end
+
+  def test_fast_profile_defaults_to_full_tier
+    suite = BBLiveTargetSuite.new(profile: 'fast', dry_run: true)
+    targets = suite.send(:selected_targets)
+
+    assert_equal BBLiveTargetSuite::TARGETS.length, targets.length
+  end
+
   def test_targets_use_http_or_https
     invalid_targets = BBLiveTargetSuite::TARGETS.reject do |target|
       uri = URI.parse(target)
@@ -109,6 +130,40 @@ class BBLiveTargetSuiteTest < Minitest::Test
     assert_equal 'warn', verdict.dig('targets', 'github_com', 'status')
     assert_equal 1, verdict['warning_targets']
     assert_equal 0, verdict['failed_targets']
+  end
+
+  def test_verdict_non_strict_downgrades_low_success_rate_to_warn
+    targets = {
+      'github_com' => {
+        'success_rate' => 0.5,
+        'elapsed_median_s' => 30.0,
+        'elapsed_p95_s' => 32.0,
+        'elapsed_cv' => 0.1,
+        'quality_score' => 100.0,
+        'crawler_high_signal_count' => 50.0,
+        'crawler_total_unique' => 100.0
+      }
+    }
+
+    baseline = {
+      'github_com' => {
+        'elapsed_median_s' => 30.0,
+        'elapsed_p95_s' => 35.0,
+        'quality_score' => 100.0,
+        'crawler_high_signal_count' => 50.0,
+        'crawler_total_unique' => 100.0
+      }
+    }
+
+    verdict = BBLiveTargetSuite::Verdict.evaluate(
+      targets,
+      baseline,
+      thresholds: BBLiveTargetSuite::PROFILE_CONFIG['fast'][:thresholds],
+      strict: false
+    )
+
+    assert_equal 'warn', verdict.dig('targets', 'github_com', 'status')
+    assert_equal 'warn', verdict.dig('targets', 'github_com', 'speed_status')
   end
 
   def test_verdict_tracks_speed_and_quality_failures_separately
@@ -328,6 +383,104 @@ class BBLiveTargetSuiteTest < Minitest::Test
     assert_includes summary,
                     '| Target | Success Rate | Median (s) | Quality | Balance | Speed | Quality | Verdict | Notes |'
     assert_includes summary, 'speed_fail=0 quality_fail=0 balance_median=88.00'
+  end
+
+  def test_verdict_includes_directory_outlier_diagnostics
+    targets = {
+      'cloudflare_com' => {
+        'success_rate' => 1.0,
+        'elapsed_median_s' => 50.0,
+        'elapsed_p95_s' => 55.0,
+        'elapsed_cv' => 0.1,
+        'quality_score' => 300.0,
+        'crawler_total_unique' => 2800.0,
+        'crawler_high_signal_count' => 250.0,
+        'directory_found_count' => 7800.0,
+        'directory_prioritized_count' => 0.0,
+        'directory_prioritized_ratio' => 0.0,
+        'directory_low_confidence_ratio' => 1.0,
+        'directory_soft_404_reason_ratio' => 1.0,
+        'redirect_cluster_dominance_ratio' => 0.99,
+        'waf_likelihood_score' => 0.95,
+        'sensitive_status_promotion_ratio' => 0.8,
+        'sensitive_status_unique_fingerprint_ratio' => 0.1,
+        'wayback_count' => 0.0,
+        'findings_count' => 5.0,
+        'crawler_blocked' => 0.0
+      }
+    }
+    baseline = {
+      'cloudflare_com' => {
+        'elapsed_median_s' => 45.0,
+        'elapsed_p95_s' => 50.0,
+        'quality_score' => 320.0,
+        'crawler_total_unique' => 2800.0,
+        'crawler_high_signal_count' => 250.0,
+        'findings_count' => 5.0
+      }
+    }
+
+    verdict = BBLiveTargetSuite::Verdict.evaluate(
+      targets,
+      baseline,
+      thresholds: BBLiveTargetSuite::PROFILE_CONFIG['fast'][:thresholds],
+      strict: false
+    )
+
+    diagnostics = verdict.dig('targets', 'cloudflare_com', 'diagnostics')
+    assert_includes diagnostics, 'diag: directory candidates saturated with low prioritization ratio'
+    assert_includes diagnostics, 'diag: soft-404 signature dominates directory confidence reasons'
+    assert_includes diagnostics, 'diag: redirect cluster dominance suggests canonicalized/WAF-shaped responses'
+    assert_includes diagnostics, 'diag: probable WAF-shaped response landscape'
+    assert_includes diagnostics,
+                    'diag: sensitive-status promotion likely over-triggered by uniform protection responses'
+  end
+
+  def test_discovery_metrics_include_directory_prioritization_signals
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'sample.json')
+      payload = {
+        'modules' => {
+          'crawler' => { 'stats' => { 'total_unique' => 10, 'high_signal_count' => 4 } },
+          'subdomains' => { 'subdomains' => ['a.example.com'] },
+          'wayback' => { 'urls' => ['https://example.com'] },
+          'directory_enum' => {
+            'found' => %w[/a /b /c /d],
+            'prioritized_found' => %w[/a /b],
+            'confirmed_found' => ['/a'],
+            'low_confidence_found' => ['/c', '/d'],
+            'stats' => {
+              'total_requests' => 500,
+              'confidence_reasons' => { 'soft_404_signature_match' => 2 },
+              'waf_sensitive_promotion_count' => 1,
+              'redirect_cluster_dominance_ratio' => 0.75,
+              'waf_likelihood_score' => 0.6,
+              'sensitive_status_fingerprint_uniqueness_ratio' => 0.3
+            }
+          }
+        },
+        'findings' => [{ 'title' => 'one' }]
+      }
+      File.write(path, JSON.pretty_generate(payload))
+
+      metrics = BBLiveTargetSuite::DiscoveryMetrics.extract(path)
+      assert_equal 4.0, metrics['directory_found_count']
+      assert_equal 2.0, metrics['directory_prioritized_count']
+      assert_equal 0.5, metrics['directory_prioritized_ratio']
+      assert_equal 0.5, metrics['directory_low_confidence_ratio']
+      assert_equal 0.25, metrics['directory_confirmed_ratio']
+      assert_equal 0.5, metrics['directory_soft_404_reason_ratio']
+      assert_equal 0.75, metrics['redirect_cluster_dominance_ratio']
+      assert_equal 0.6, metrics['waf_likelihood_score']
+      assert_equal 0.5, metrics['sensitive_status_promotion_ratio']
+      assert_equal 0.3, metrics['sensitive_status_unique_fingerprint_ratio']
+      assert_operator metrics['quality_score'], :>, 0.0
+    end
+  end
+
+  def test_parse_options_defaults_to_rerunning_existing_outputs
+    opts = parse_options([])
+    assert_equal false, opts[:skip_existing]
   end
 
   private

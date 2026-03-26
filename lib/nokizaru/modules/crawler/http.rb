@@ -131,6 +131,45 @@ module Nokizaru
           with_http_retries(url) { perform_http_get(url, request_headers: request_headers, user_agent: user_agent) }
         end
 
+        def fetch_following_same_scope_redirects(url, request_headers: {}, user_agent: Crawler::USER_AGENT,
+                                                 max_redirects: Crawler::MAX_MAIN_REDIRECTS)
+          current_url = url
+          redirects = 0
+          visited = Set.new([current_url])
+
+          loop do
+            response = http_get(current_url, request_headers: request_headers, user_agent: user_agent)
+            return fetch_result(response, current_url, redirects, :request_failed) unless response
+            return fetch_result(response, current_url, redirects, nil) unless redirect_response?(response)
+
+            location = response['location'].to_s.strip
+            return fetch_result(response, current_url, redirects, :missing_location) if location.empty?
+            return fetch_result(response, current_url, redirects, :max_redirects) if redirects >= max_redirects
+
+            next_url = Nokizaru::TargetIntel.resolve_location(current_url, location)
+            # Security: prevent cross-scope redirect crawling to avoid attacker-controlled pivot expansion
+            return fetch_result(response, current_url, redirects, :cross_scope) unless same_scope_redirect?(current_url,
+                                                                                                            next_url)
+            return fetch_result(response, current_url, redirects, :redirect_loop) if visited.include?(next_url)
+
+            visited << next_url
+            current_url = next_url
+            redirects += 1
+          end
+        rescue StandardError => e
+          Log.write("[crawler] Redirect-follow fetch error for #{url}: #{e.message}")
+          fetch_result(nil, current_url, redirects, :exception)
+        end
+
+        def fetch_result(response, effective_url, redirect_hops, stop_reason)
+          {
+            response: response,
+            effective_url: effective_url,
+            redirect_hops: redirect_hops,
+            stop_reason: stop_reason
+          }
+        end
+
         def perform_http_get(url, request_headers: {}, user_agent: Crawler::USER_AGENT)
           uri = URI.parse(url)
           http = Net::HTTP.new(uri.host, uri.port)

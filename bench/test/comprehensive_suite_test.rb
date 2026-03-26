@@ -17,6 +17,8 @@ class ComprehensiveSuiteTest < Minitest::Test
       assert_equal 120, metrics[:directory_total_requests]
       assert_equal 2, metrics[:directory_errors]
       assert_equal 'seeded', metrics[:directory_mode]
+      assert_equal 3, metrics[:directory_found_count]
+      assert_equal 2, metrics[:directory_prioritized_count]
       assert_equal 41, metrics[:crawler_total_unique]
       assert_equal 18, metrics[:crawler_high_signal_count]
       assert_equal 3, metrics[:subdomains_count]
@@ -202,6 +204,23 @@ class ComprehensiveSuiteTest < Minitest::Test
     end
   end
 
+  def test_floor_check_supports_directory_confidence_metrics
+    metrics = {
+      directory_found_count: 2,
+      directory_prioritized_count: 1
+    }
+    floors = {
+      'directory_found_count' => 2,
+      'directory_prioritized_count' => 1
+    }
+
+    result = Bench::ComprehensiveSuite::FloorCheck.check(metrics, floors)
+
+    assert_equal true, result['passed']
+    assert_equal true, result.dig('checks', 'directory_found_count', 'passed')
+    assert_equal true, result.dig('checks', 'directory_prioritized_count', 'passed')
+  end
+
   private
 
   def write_manifest(dir, name, profiles)
@@ -216,6 +235,8 @@ class ComprehensiveSuiteTest < Minitest::Test
       'meta' => { 'elapsed_s' => 12.4 },
       'modules' => {
         'directory_enum' => {
+          'found' => %w[/a /b /c],
+          'prioritized_found' => %w[/a /b],
           'stats' => {
             'requests_per_second' => 33.3,
             'total_requests' => 120,

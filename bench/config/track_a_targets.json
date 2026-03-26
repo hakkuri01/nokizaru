@@ -9,7 +9,9 @@
       "quality_floors": {
         "crawler_total_unique": 8,
         "crawler_high_signal_count": 4,
-        "directory_requests_per_second": 200
+        "directory_requests_per_second": 200,
+        "directory_found_count": 2,
+        "directory_prioritized_count": 2
       },
       "notes": "Static app style target with deterministic robots and link graph"
     },
@@ -29,7 +31,8 @@
       "args": ["--headers", "--crawl", "--dir"],
       "quality_floors": {
         "directory_total_requests": 40,
-        "directory_requests_per_second": 200
+        "directory_requests_per_second": 200,
+        "directory_found_count": 1
       },
       "notes": "Timeout and challenge-like behavior for adaptive directory runtime"
     }

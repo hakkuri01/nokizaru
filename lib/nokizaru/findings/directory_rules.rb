@@ -18,25 +18,19 @@ module Nokizaru
       end
 
       def discovered_paths(dir_result)
-        status_map = dir_result['by_status'].is_a?(Hash) ? dir_result['by_status'] : {}
-        found = high_signal_paths(status_map)
-        return found unless found.empty?
+        prioritized = Array(dir_result['prioritized_found']).map(&:to_s)
+        return prioritized unless prioritized.empty?
 
-        Array(dir_result['found']).map(&:to_s)
-      end
-
-      def high_signal_paths(status_map)
-        statuses = %w[200 204 401 403 405 500]
-        statuses.flat_map { |status| Array(status_map[status]) }.map(&:to_s)
+        Array(dir_result['confirmed_found']).map(&:to_s)
       end
 
       def interesting_paths_finding(interesting)
         {
           'id' => 'dir.interesting_paths',
           'severity' => 'low',
-          'title' => 'Interesting paths discovered',
+          'title' => 'Prioritized interesting paths discovered',
           'evidence' => preview_interesting_paths(interesting),
-          'recommendation' => 'Review discovered endpoints for unintended exposure.',
+          'recommendation' => 'Review prioritized endpoints first and validate low-confidence paths via export output.',
           'module' => 'directory_enum',
           'tags' => %w[content discovery]
         }

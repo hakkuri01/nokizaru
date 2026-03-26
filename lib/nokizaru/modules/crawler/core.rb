@@ -43,13 +43,24 @@ module Nokizaru
 
         def finalize_crawl!(ctx, result)
           result.delete('__control__')
-          print_links_preview('JavaScript Links', result['js_links'])
-          print_links_preview('URLs inside JavaScript', result['urls_inside_js'])
-          print_links_preview('URLs inside Sitemaps', result['urls_inside_sitemap'])
+          preview_sections.each { |(label, key)| print_links_preview(label, result[key]) }
           ctx.run['modules']['crawler'] = result
           ctx.add_artifact('urls', result['stats']['total_urls'])
           ctx.add_artifact('high_signal_urls', result['high_signal_urls']) if Array(result['high_signal_urls']).any?
           Log.write('[crawler] Completed')
+        end
+
+        def preview_sections
+          [
+            ['Robots Links', 'robots_links'],
+            ['Sitemap Links', 'sitemap_links'],
+            ['Internal Links', 'internal_links'],
+            ['External Links', 'external_links'],
+            ['Image Links', 'images'],
+            ['JavaScript Links', 'js_links'],
+            ['URLs inside JavaScript', 'urls_inside_js'],
+            ['URLs inside Sitemaps', 'urls_inside_sitemap']
+          ]
         end
 
         def crawler_control_state

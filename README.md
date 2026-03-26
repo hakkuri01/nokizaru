@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v1.14.10-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v1.15.10-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -203,7 +203,7 @@ Extra Options:
   -dt DT      Number of threads for directory enum [ Default : 30 ]
   -pt PT      Number of threads for port scan [ Default : 50 ]
   -T T        Request Timeout [ Default : 30.0 ]
-  -w W        Path to Wordlist [ Default : wordlists/dirb_common.txt ]
+  -w W        Path to Wordlist [ Default : wordlists/raft_med-dir_5k.txt ]
   -H HEADER   Add custom request header (repeatable)
   -r          Follow redirects during directory enum [ Default : False ]
   -s          Toggle SSL Verification [ Default : True ]

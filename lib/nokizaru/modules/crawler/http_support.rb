@@ -7,6 +7,12 @@ module Nokizaru
       module HttpSupport
         private
 
+        def http_success?(response)
+          (200..299).cover?(response&.code.to_i)
+        rescue StandardError
+          false
+        end
+
         def redirect_response?(response)
           Crawler::REDIRECT_CODES.include?(response.code.to_i)
         rescue StandardError

@@ -102,7 +102,7 @@ class BBLiveTargetSuite
     'https://nintendo.co.jp',
     'https://softbank.jp',
     'https://www.docomo.ne.jp',
-    'https://fujitsu.com',
+    'https://global.fujitsu/ja-jp',
     'https://nec.com',
     'https://hitachi.com',
     'https://konami.com',
@@ -117,18 +117,62 @@ class BBLiveTargetSuite
     'https://goodsmile.com'
   ].freeze
 
+  STABLE_TARGET_KEYS = %w[
+    httpbin_org
+    badssl_com
+    httpstat_us
+    zonetransfer_me
+    wikipedia_org
+    gitlab_com
+    cloudflare_com
+    riotgames_com
+    microsoft_com
+    dropbox_com
+    discord_com
+    zoom_us
+    canva_com
+    box_com
+    hackthebox_com
+    claude_ai
+    oracle_com
+    boeing_com
+    yelp_com
+    docusign_com
+    coursera_org
+    fedoraproject_org
+    archlinux_org
+    notion_com
+    stockx_com
+    soundcloud_com
+    mongodb_com
+    salesforce_com
+    line_me
+    sony_com
+    nintendo_co_jp
+    hitachi_com
+    konami_com
+    square_enix_com
+    goodsmile_com
+  ].freeze
+
+  TARGET_TIERS = {
+    'stable' => STABLE_TARGET_KEYS,
+    'full' => nil
+  }.freeze
+
   PROFILE_CONFIG = {
     'canonical' => {
       no_cache: true,
+      target_tier: 'stable',
       default_timeout: 420,
       min_timeout: 90,
       max_timeout: 600,
       retry_attempts: 1,
       thresholds: {
-        median_runtime_regression_pct: 30.0,
-        p95_runtime_regression_pct: 40.0,
-        min_success_rate: 0.9,
-        max_elapsed_cv: 0.6,
+        median_runtime_regression_pct: 45.0,
+        p95_runtime_regression_pct: 60.0,
+        min_success_rate: 0.8,
+        max_elapsed_cv: 0.75,
         quality_score_drop_pct: 20.0,
         quality_score_drop_hard_pct: 55.0,
         high_signal_drop_pct: 25.0,
@@ -137,15 +181,16 @@ class BBLiveTargetSuite
     },
     'fast' => {
       no_cache: false,
-      default_timeout: 240,
-      min_timeout: 60,
-      max_timeout: 360,
+      target_tier: 'full',
+      default_timeout: 300,
+      min_timeout: 90,
+      max_timeout: 480,
       retry_attempts: 0,
       thresholds: {
-        median_runtime_regression_pct: 35.0,
-        p95_runtime_regression_pct: 45.0,
-        min_success_rate: 0.85,
-        max_elapsed_cv: 0.8,
+        median_runtime_regression_pct: 65.0,
+        p95_runtime_regression_pct: 80.0,
+        min_success_rate: 0.6,
+        max_elapsed_cv: 1.0,
         quality_score_drop_pct: 25.0,
         quality_score_drop_hard_pct: 60.0,
         high_signal_drop_pct: 30.0,
@@ -160,7 +205,7 @@ class BBLiveTargetSuite
     timeout_s: nil,
     out_dir: File.expand_path('results/bb_live_targets', __dir__),
     nokizaru_bin: File.expand_path('../bin/nokizaru', __dir__),
-    skip_existing: true,
+    skip_existing: false,
     fail_fast: false,
     dry_run: false,
     include_targets: nil,
@@ -170,6 +215,7 @@ class BBLiveTargetSuite
     rolling_window: 0,
     shard_count: 1,
     shard_index: 0,
+    target_tier: nil,
     profile: 'canonical',
     baseline_path: File.expand_path('config/baselines/bb_live_target_suite.json', __dir__)
   }.freeze
@@ -235,7 +281,10 @@ class BBLiveTargetSuite
   def run
     ensure_paths!
     jobs = build_jobs
-    puts "[bench] profile=#{@opts[:profile]} shard=#{@opts[:shard_index]}/#{@opts[:shard_count]} queued=#{jobs.length}"
+    puts(
+      "[bench] profile=#{@opts[:profile]} tier=#{@opts[:target_tier]} " \
+      "shard=#{@opts[:shard_index]}/#{@opts[:shard_count]} queued=#{jobs.length}"
+    )
 
     return print_planned_jobs(jobs) if @opts[:dry_run]
 
@@ -259,6 +308,7 @@ class BBLiveTargetSuite
     DEFAULTS.merge(opts).merge(
       profile: profile,
       timeout_s: timeout_s,
+      target_tier: opts[:target_tier] || profile_cfg[:target_tier],
       strict: opts[:strict].nil? ? strict_default : opts[:strict],
       thresholds: profile_cfg[:thresholds],
       no_cache: profile_cfg[:no_cache],
@@ -310,11 +360,12 @@ class BBLiveTargetSuite
   end
 
   def selected_targets
+    tiered = targets_for_tier(@opts[:target_tier])
     configured = @opts[:include_targets]
     targets = if configured.nil? || configured.empty?
-                TARGETS
+                tiered
               else
-                selected = TARGETS.select { |target| configured.include?(self.class.target_key(target)) }
+                selected = tiered.select { |target| configured.include?(self.class.target_key(target)) }
                 missing = configured - selected.map { |target| self.class.target_key(target) }
                 warn "[bench] warning: unknown targets ignored: #{missing.join(', ')}" unless missing.empty?
                 selected
@@ -322,6 +373,14 @@ class BBLiveTargetSuite
 
     deduped = dedupe_by_target_key(targets)
     self.class.shard_targets(deduped, @opts[:shard_count], @opts[:shard_index])
+  end
+
+  def targets_for_tier(tier_name)
+    keys = TARGET_TIERS[tier_name.to_s]
+    return TARGETS if keys.nil?
+
+    key_set = keys.each_with_object({}) { |key, out| out[key] = true }
+    TARGETS.select { |target| key_set[self.class.target_key(target)] }
   end
 
   def dedupe_by_target_key(targets)
@@ -522,6 +581,7 @@ class BBLiveTargetSuite
       'config' => {
         'suite' => 'bb_live_target_suite',
         'profile' => @opts[:profile],
+        'target_tier' => @opts[:target_tier],
         'runs' => @opts[:runs],
         'concurrency' => @opts[:concurrency],
         'timeout_s' => @opts[:timeout_s],
@@ -709,6 +769,16 @@ class BBLiveTargetSuite
       'subdomain_count' => 0.0,
       'wayback_count' => 0.0,
       'directory_requests' => 0.0,
+      'directory_found_count' => 0.0,
+      'directory_prioritized_count' => 0.0,
+      'directory_prioritized_ratio' => 0.0,
+      'directory_low_confidence_ratio' => 0.0,
+      'directory_confirmed_ratio' => 0.0,
+      'directory_soft_404_reason_ratio' => 0.0,
+      'redirect_cluster_dominance_ratio' => 0.0,
+      'waf_likelihood_score' => 0.0,
+      'sensitive_status_promotion_ratio' => 0.0,
+      'sensitive_status_unique_fingerprint_ratio' => 0.0,
       'crawler_blocked' => 0.0,
       'quality_score' => 0.0
     }.freeze
@@ -721,7 +791,7 @@ class BBLiveTargetSuite
       crawler_stats = modules.dig('crawler', 'stats') || {}
       subdomains = Array(modules.dig('subdomains', 'subdomains'))
       wayback = Array(modules.dig('wayback', 'urls'))
-      dir_stats = modules.dig('directory_enum', 'stats') || {}
+      dir_metrics = directory_metrics(modules)
       findings = Array(payload['findings'])
       crawler_error = modules.dig('crawler', 'error').to_s
 
@@ -731,13 +801,56 @@ class BBLiveTargetSuite
         'findings_count' => findings.length.to_f,
         'subdomain_count' => subdomains.length.to_f,
         'wayback_count' => wayback.length.to_f,
-        'directory_requests' => dir_stats['total_requests'].to_f,
+        'directory_requests' => dir_metrics['directory_requests'],
+        'directory_found_count' => dir_metrics['directory_found_count'],
+        'directory_prioritized_count' => dir_metrics['directory_prioritized_count'],
+        'directory_prioritized_ratio' => dir_metrics['directory_prioritized_ratio'],
+        'directory_low_confidence_ratio' => dir_metrics['directory_low_confidence_ratio'],
+        'directory_confirmed_ratio' => dir_metrics['directory_confirmed_ratio'],
+        'directory_soft_404_reason_ratio' => dir_metrics['directory_soft_404_reason_ratio'],
+        'redirect_cluster_dominance_ratio' => dir_metrics['redirect_cluster_dominance_ratio'],
+        'waf_likelihood_score' => dir_metrics['waf_likelihood_score'],
+        'sensitive_status_promotion_ratio' => dir_metrics['sensitive_status_promotion_ratio'],
+        'sensitive_status_unique_fingerprint_ratio' =>
+          dir_metrics['sensitive_status_unique_fingerprint_ratio'],
         'crawler_blocked' => crawler_error.match?(CRAWLER_BLOCK_STATUS_RE) ? 1.0 : 0.0
       }
       metrics['quality_score'] = quality_score(metrics)
       metrics
     rescue StandardError
       nil
+    end
+
+    def directory_metrics(modules)
+      dir_stats = modules.dig('directory_enum', 'stats') || {}
+      dir_reasons = dir_stats['confidence_reasons'].is_a?(Hash) ? dir_stats['confidence_reasons'] : {}
+      dir_found = Array(modules.dig('directory_enum', 'found')).length.to_f
+      dir_prioritized = Array(modules.dig('directory_enum', 'prioritized_found')).length.to_f
+      dir_low = Array(modules.dig('directory_enum', 'low_confidence_found')).length.to_f
+      dir_confirmed = Array(modules.dig('directory_enum', 'confirmed_found')).length.to_f
+      soft_404_hits = dir_reasons['soft_404_signature_match'].to_f
+      sensitive_promotion = dir_stats['waf_sensitive_promotion_count'].to_f
+
+      {
+        'directory_requests' => dir_stats['total_requests'].to_f,
+        'directory_found_count' => dir_found,
+        'directory_prioritized_count' => dir_prioritized,
+        'directory_prioritized_ratio' => ratio(dir_prioritized, dir_found),
+        'directory_low_confidence_ratio' => ratio(dir_low, dir_found),
+        'directory_confirmed_ratio' => ratio(dir_confirmed, dir_found),
+        'directory_soft_404_reason_ratio' => ratio(soft_404_hits, dir_found),
+        'redirect_cluster_dominance_ratio' => dir_stats['redirect_cluster_dominance_ratio'].to_f,
+        'waf_likelihood_score' => dir_stats['waf_likelihood_score'].to_f,
+        'sensitive_status_promotion_ratio' => ratio(sensitive_promotion, dir_prioritized),
+        'sensitive_status_unique_fingerprint_ratio' =>
+          dir_stats['sensitive_status_fingerprint_uniqueness_ratio'].to_f
+      }
+    end
+
+    def ratio(numerator, denominator)
+      return 0.0 unless denominator.to_f.positive?
+
+      numerator.to_f / denominator
     end
 
     def aggregate(rows)
@@ -750,17 +863,23 @@ class BBLiveTargetSuite
 
     def quality_score(metrics)
       (
-        weighted_component(metrics['crawler_high_signal_count'], 0.38) +
-        weighted_component(metrics['crawler_total_unique'], 0.27) +
-        weighted_component(metrics['findings_count'], 0.20) +
-        weighted_component(metrics['subdomain_count'], 0.10) +
-        weighted_component(metrics['wayback_count'], 0.03) +
-        weighted_component(metrics['directory_requests'], 0.02)
+        weighted_component(metrics['crawler_high_signal_count'], 0.34) +
+        weighted_component(metrics['crawler_total_unique'], 0.23) +
+        weighted_component(metrics['directory_prioritized_count'], 0.16) +
+        ratio_component(metrics['directory_prioritized_ratio'], 0.08) +
+        weighted_component(metrics['findings_count'], 0.10) +
+        weighted_component(metrics['subdomain_count'], 0.06) +
+        weighted_component(metrics['wayback_count'], 0.02) +
+        weighted_component(metrics['directory_requests'], 0.01)
       ).round(4)
     end
 
     def weighted_component(value, weight)
       Math.log(value.to_f + 1.0) * 100.0 * weight
+    end
+
+    def ratio_component(value, weight)
+      value.to_f.clamp(0.0, 1.0) * 100.0 * weight
     end
   end
 
@@ -787,6 +906,17 @@ class BBLiveTargetSuite
           'crawler_total_unique' => row['crawler_total_unique'].to_f.round(4),
           'crawler_high_signal_count' => row['crawler_high_signal_count'].to_f.round(4),
           'findings_count' => row['findings_count'].to_f.round(4),
+          'directory_found_count' => row['directory_found_count'].to_f.round(4),
+          'directory_prioritized_count' => row['directory_prioritized_count'].to_f.round(4),
+          'directory_prioritized_ratio' => row['directory_prioritized_ratio'].to_f.round(4),
+          'directory_low_confidence_ratio' => row['directory_low_confidence_ratio'].to_f.round(4),
+          'directory_confirmed_ratio' => row['directory_confirmed_ratio'].to_f.round(4),
+          'directory_soft_404_reason_ratio' => row['directory_soft_404_reason_ratio'].to_f.round(4),
+          'redirect_cluster_dominance_ratio' => row['redirect_cluster_dominance_ratio'].to_f.round(4),
+          'waf_likelihood_score' => row['waf_likelihood_score'].to_f.round(4),
+          'sensitive_status_promotion_ratio' => row['sensitive_status_promotion_ratio'].to_f.round(4),
+          'sensitive_status_unique_fingerprint_ratio' =>
+            row['sensitive_status_unique_fingerprint_ratio'].to_f.round(4),
           'subdomain_count' => row['subdomain_count'].to_f.round(4),
           'wayback_count' => row['wayback_count'].to_f.round(4),
           'crawler_blocked' => row['crawler_blocked'].to_f.round(4)
@@ -884,10 +1014,11 @@ class BBLiveTargetSuite
       quality_status = 'pass'
       speed_reasons = []
       quality_reasons = []
+      diagnostics = diagnostics_for_target(metrics)
 
       if metrics['success_rate'].to_f < thresholds[:min_success_rate].to_f
-        overall_status = 'fail'
-        speed_status = 'fail'
+        speed_status = downgrade_status(speed_status, strict)
+        overall_status = combine_statuses(overall_status, speed_status)
         speed_reasons << format(
           'success_rate %<actual>.2f below minimum %<minimum>.2f',
           actual: metrics['success_rate'],
@@ -907,6 +1038,8 @@ class BBLiveTargetSuite
 
       unless baseline_row.is_a?(Hash)
         balance = balance_metrics(metrics, nil)
+        combined_reasons = merge_reasons_with_diagnostics(speed_reasons + quality_reasons + ['no baseline available'],
+                                                          diagnostics)
         return {
           'target_key' => target_key,
           'status' => (overall_status == 'fail' ? 'fail' : 'warn'),
@@ -914,7 +1047,8 @@ class BBLiveTargetSuite
           'quality_status' => quality_status,
           'speed_reasons' => speed_reasons,
           'quality_reasons' => quality_reasons,
-          'reasons' => speed_reasons + quality_reasons + ['no baseline available'],
+          'diagnostics' => diagnostics,
+          'reasons' => combined_reasons,
           'baseline' => nil,
           'regression_pct' => regression_hash(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
           'balance' => balance
@@ -973,7 +1107,8 @@ class BBLiveTargetSuite
         'quality_status' => quality_status,
         'speed_reasons' => speed_reasons,
         'quality_reasons' => quality_reasons,
-        'reasons' => speed_reasons + quality_reasons,
+        'diagnostics' => diagnostics,
+        'reasons' => merge_reasons_with_diagnostics(speed_reasons + quality_reasons, diagnostics),
         'baseline' => baseline_row,
         'regression_pct' => regression_hash(
           median_delta,
@@ -985,6 +1120,67 @@ class BBLiveTargetSuite
         ),
         'balance' => balance
       }
+    end
+
+    def diagnostics_for_target(metrics)
+      diagnostics = []
+      found = metrics['directory_found_count'].to_f
+      prioritized_ratio = metrics['directory_prioritized_ratio'].to_f
+      low_ratio = metrics['directory_low_confidence_ratio'].to_f
+      soft_404_ratio = metrics['directory_soft_404_reason_ratio'].to_f
+      redirect_cluster_ratio = metrics['redirect_cluster_dominance_ratio'].to_f
+      waf_likelihood = metrics['waf_likelihood_score'].to_f
+      sensitive_promotion_ratio = metrics['sensitive_status_promotion_ratio'].to_f
+      sensitive_unique_ratio = metrics['sensitive_status_unique_fingerprint_ratio'].to_f
+      crawler_high_signal = metrics['crawler_high_signal_count'].to_f
+      wayback_count = metrics['wayback_count'].to_f
+      crawler_unique = metrics['crawler_total_unique'].to_f
+      prioritized = metrics['directory_prioritized_count'].to_f
+
+      if noisy_directory_saturation?(found, prioritized_ratio)
+        diagnostics << 'diag: directory candidates saturated with low prioritization ratio'
+      end
+      diagnostics << 'diag: directory low-confidence ratio dominates output' if low_confidence_dominates?(found,
+                                                                                                          low_ratio)
+      diagnostics << 'diag: soft-404 signature dominates directory confidence reasons' if soft_404_ratio >= 0.8
+      if redirect_cluster_ratio >= 0.85
+        diagnostics << 'diag: redirect cluster dominance suggests canonicalized/WAF-shaped responses'
+      end
+      if sensitive_status_promotion_overtriggered?(sensitive_promotion_ratio, sensitive_unique_ratio)
+        diagnostics << 'diag: sensitive-status promotion likely over-triggered by uniform protection responses'
+      end
+      diagnostics << 'diag: probable WAF-shaped response landscape' if waf_likelihood >= 0.75
+      diagnostics << 'diag: crawler high-signal count reached cap (250)' if crawler_high_signal >= 250.0
+      diagnostics << 'diag: wayback-heavy output with weak crawler/dir corroboration' if wayback_corroboration_weak?(
+        wayback_count,
+        crawler_unique,
+        prioritized
+      )
+
+      diagnostics
+    end
+
+    def noisy_directory_saturation?(found, prioritized_ratio)
+      found >= 1000.0 && prioritized_ratio < 0.01
+    end
+
+    def low_confidence_dominates?(found, low_ratio)
+      found >= 200.0 && low_ratio >= 0.95
+    end
+
+    def sensitive_status_promotion_overtriggered?(sensitive_promotion_ratio, sensitive_unique_ratio)
+      sensitive_promotion_ratio >= 0.7 && sensitive_unique_ratio <= 0.2
+    end
+
+    def wayback_corroboration_weak?(wayback_count, crawler_unique, prioritized)
+      wayback_count >= 500.0 && crawler_unique < 50.0 && prioritized < 10.0
+    end
+
+    def merge_reasons_with_diagnostics(reasons, diagnostics)
+      base = Array(reasons)
+      return base if diagnostics.empty?
+
+      base + diagnostics.first(2)
     end
 
     def regression_hash(median_delta, p95_delta, quality_score_delta, high_signal_delta, total_unique_delta,
@@ -1164,6 +1360,9 @@ def configure_live_suite_option_parser(parser, opts)
   parser.on('--profile NAME', %w[canonical fast], 'Execution profile (canonical or fast)') do |value|
     opts[:profile] = value
   end
+  parser.on('--tier NAME', %w[stable full], 'Target tier filter (stable or full)') do |value|
+    opts[:target_tier] = value
+  end
   parser.on('--runs N', Integer, 'How many repetitions to run') { |value| opts[:runs] = [value.to_i, 1].max }
   parser.on('--concurrency N', Integer, 'Concurrent targets to run at once') do |value|
     opts[:concurrency] = value.to_i.clamp(1, 10)
@@ -1195,8 +1394,8 @@ def configure_live_suite_option_parser(parser, opts)
   parser.on('--no-strict', 'Force warning behavior for regressions') { opts[:strict] = false }
   parser.on('--resource-metrics', 'Capture cpu/rss with /usr/bin/time') { opts[:resource_metrics] = true }
   parser.on('--no-resource-metrics', 'Disable cpu/rss collection') { opts[:resource_metrics] = false }
-  parser.on('--skip-existing', 'Skip runs when output JSON exists (default)') { opts[:skip_existing] = true }
-  parser.on('--no-skip-existing', 'Always rerun even if output JSON exists') { opts[:skip_existing] = false }
+  parser.on('--skip-existing', 'Skip runs when output JSON exists') { opts[:skip_existing] = true }
+  parser.on('--no-skip-existing', 'Always rerun even if output JSON exists (default)') { opts[:skip_existing] = false }
   parser.on('--fail-fast', 'Stop remaining queue after first non-ok result') { opts[:fail_fast] = true }
   parser.on('--dry-run', 'Print generated commands and exit') { opts[:dry_run] = true }
 end

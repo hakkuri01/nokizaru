@@ -3,24 +3,24 @@
   "description": "Live industry canary profiles for trend visibility",
   "targets": [
     {
-      "id": "live_github",
-      "url": "https://github.com",
-      "args": ["--full"],
+      "id": "live_wikipedia",
+      "url": "https://wikipedia.org",
+      "args": ["--headers", "--crawl", "--dir"],
       "quality_floors": {
-        "directory_total_requests": 100,
-        "crawler_total_unique": 20
+        "directory_total_requests": 40,
+        "crawler_total_unique": 10
       },
-      "notes": "Large production platform"
+      "notes": "Global multilingual portal with stable crawl and directory signal"
     },
     {
-      "id": "live_mdn",
-      "url": "https://developer.mozilla.org",
-      "args": ["--headers", "--crawl", "--dir", "--wayback"],
+      "id": "live_badssl",
+      "url": "https://badssl.com",
+      "args": ["--headers", "--crawl", "--dir"],
       "quality_floors": {
-        "crawler_total_unique": 15,
-        "directory_total_requests": 50
+        "crawler_total_unique": 5,
+        "directory_total_requests": 40
       },
-      "notes": "Docs-heavy content graph"
+      "notes": "TLS and edge behavior target with bounded directory runtime"
     },
     {
       "id": "live_cloudflare",

@@ -2,6 +2,8 @@
 
 require 'nokogiri'
 require 'set'
+require 'stringio'
+require 'zlib'
 
 module Nokizaru
   module Modules
@@ -32,7 +34,7 @@ module Nokizaru
           normalized = Array(sitemap_links).compact.map(&:strip).uniq
           {
             links: [],
-            pending: normalized.select { |url| url.downcase.end_with?('.xml') },
+            pending: normalized.select { |url| sitemap_candidate?(url) },
             seen: Set.new
           }
         end
@@ -82,15 +84,48 @@ module Nokizaru
         def parse_sitemap_document(result, sitemap_url, request_headers)
           return [[], []] if crawl_budget_exhausted?(result)
 
-          response = http_get(sitemap_url, request_headers: request_headers)
-          return [[], []] unless response.is_a?(Net::HTTPSuccess)
+          fetch = fetch_following_same_scope_redirects(sitemap_url, request_headers: request_headers)
+          response = fetch[:response]
+          unless http_success?(response)
+            log_sitemap_fetch_skip(sitemap_url, fetch)
+            return [[], []]
+          end
 
-          doc = Nokogiri::XML(response.body)
+          doc = Nokogiri::XML(sitemap_body(response, fetch[:effective_url] || sitemap_url))
           doc.remove_namespaces!
-          [xml_links(doc, '//url/loc'), xml_links(doc, '//sitemap/loc').select { |url| url.downcase.end_with?('.xml') }]
+          [xml_links(doc, '//url/loc'), xml_links(doc, '//sitemap/loc').select { |url| sitemap_candidate?(url) }]
         rescue StandardError => e
           Log.write("[crawler.sm_crawl] Exception = #{e}")
           [[], []]
+        end
+
+        def sitemap_candidate?(url)
+          lowered = url.to_s.downcase
+          lowered.end_with?('.xml') || lowered.end_with?('.xml.gz')
+        end
+
+        def sitemap_body(response, sitemap_url)
+          body = response.body.to_s
+          return body if body.empty?
+
+          return body unless gzip_sitemap_body?(response, sitemap_url)
+
+          Zlib::GzipReader.new(StringIO.new(body)).read
+        rescue StandardError => e
+          Log.write("[crawler.sm_crawl] Failed to decode gzip sitemap #{sitemap_url}: #{e.message}")
+          ''
+        end
+
+        def gzip_sitemap_body?(response, sitemap_url)
+          encoding = response['content-encoding'].to_s.downcase
+          encoding.include?('gzip') || sitemap_url.to_s.downcase.end_with?('.gz')
+        rescue StandardError
+          sitemap_url.to_s.downcase.end_with?('.gz')
+        end
+
+        def log_sitemap_fetch_skip(sitemap_url, fetch)
+          status = fetch[:response]&.code || fetch[:stop_reason]
+          Log.write("[crawler.sm_crawl] Skipping sitemap #{sitemap_url} (#{status})")
         end
 
         def xml_links(doc, xpath)

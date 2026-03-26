@@ -29,7 +29,7 @@ module Nokizaru
       def whois_result(domain, tld, db_json, ctx)
         query = build_query(domain, tld)
         whois_server = db_json.fetch(tld)
-        raw = cached_whois(ctx, query, whois_server)
+        raw = normalize_whois_text(cached_whois(ctx, query, whois_server))
         print_whois(raw)
         { 'whois' => raw }
       end
@@ -84,6 +84,18 @@ module Nokizaru
         end
         # Keep as raw text
         resp.split('>>>', 2).first
+      end
+
+      def normalize_whois_text(raw)
+        text = raw.to_s.dup
+        return '' if text.empty?
+
+        return text if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+
+        text.force_encoding(Encoding::BINARY)
+            .encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: '?')
+      rescue EncodingError
+        text.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: '?')
       end
 
       # Print whois text as aligned key/value rows when possible

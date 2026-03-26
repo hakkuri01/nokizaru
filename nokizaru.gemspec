@@ -34,6 +34,7 @@ Gem::Specification.new do |spec|
   spec.executables   = ['nokizaru']
   spec.require_paths = ['lib']
 
+  spec.add_dependency 'activesupport', '>= 7.2.3.1'
   spec.add_dependency 'async', '~> 2.10'
   spec.add_dependency 'async-io', '~> 1.35'
   spec.add_dependency 'concurrent-ruby', '~> 1.3'

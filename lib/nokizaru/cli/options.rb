@@ -27,7 +27,7 @@ module Nokizaru
       pt: { type: :numeric, default: nil, desc: 'Number of threads for port scan [ Default : 50 ]' },
       T: { type: :numeric, default: nil, aliases: '-T', desc: 'Request Timeout [ Default : 30.0 ]' },
       w: { type: :string, default: nil, aliases: '-w',
-           desc: 'Path to Wordlist [ Default : wordlists/dirb_common.txt ]' },
+           desc: 'Path to Wordlist [ Default : wordlists/raft_med-dir_5k.txt ]' },
       header: { type: :string, default: nil, aliases: '-H',
                 desc: 'Add custom request header (repeatable) [ Example : Cookie: PHPSESSID=abc ]' },
       r: { type: :boolean, default: nil, aliases: '-r',

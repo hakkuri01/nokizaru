@@ -60,6 +60,32 @@ The manifest includes:
 - baseline comparison verdicts
 - process exit code (`0` pass/warn, `2` strict fail)
 
+## Post-run evidence review (required)
+
+Benchmark verdicts are only the first gate. After every run, review emitted recon evidence from live target exports to decide whether module output is actionable or noisy.
+
+Focus review on modules with the most user-visible performance and quality impact:
+
+- crawler
+- directory enum
+- wayback
+
+Recommended review loop:
+
+1. Run the suite (`track_a`, `track_b`, and `bb_live_target_suite` profile needed for the cycle)
+2. Open the latest manifest and identify outliers:
+   - very high directory candidate counts with very low `directory_prioritized_ratio`
+   - crawler runs with low `crawler_total_unique` or saturated `crawler_high_signal_count`
+   - wayback runs with large counts that do not improve actionable paths/findings
+3. Inspect exported per-target JSON for those outliers and label outputs as:
+   - actionable
+   - mixed
+   - mostly false positives
+4. Convert labels into tuning tasks for Nokizaru modules (not just benchmark thresholds)
+5. Re-run and compare against previous manifest snapshots
+
+This keeps the suite useful as a data collection system for product tuning, not only as a binary pass/fail gate
+
 ## Baseline management
 
 Default baseline file:
@@ -101,11 +127,15 @@ Canonical run:
 ruby bench/bb_live_target_suite.rb --profile canonical --runs 1
 ```
 
+Canonical defaults to the `stable` tier for governance-style regression gating
+
 Fast feedback run:
 
 ```bash
 ruby bench/bb_live_target_suite.rb --profile fast --concurrency 3 --rolling-window 5
 ```
+
+Fast defaults to the `full` tier for broad observability and trend tracking
 
 Shard across CI runners:
 
@@ -117,6 +147,7 @@ Common flags:
 
 ```bash
 --profile canonical|fast
+--tier stable|full
 --runs N
 --concurrency N
 --targets x,y,z
@@ -124,6 +155,8 @@ Common flags:
 --shard-index N
 --rolling-window N
 --write-baseline
+--skip-existing
+--no-skip-existing  # default
 --strict / --no-strict
 --resource-metrics / --no-resource-metrics
 --dry-run

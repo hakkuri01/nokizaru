@@ -40,8 +40,9 @@ module Nokizaru
         end
 
         def robots(url, base_url, request_headers)
-          response = http_get(url, request_headers: request_headers)
-          return handle_missing_robots(response) unless response.is_a?(Net::HTTPSuccess)
+          fetch = fetch_following_same_scope_redirects(url, request_headers: request_headers)
+          response = fetch[:response]
+          return handle_missing_robots(response) unless http_success?(response)
 
           links, sitemaps = parse_robots_body(response.body, base_url)
           step_row(:info, 'Looking for robots.txt', 'Found')
@@ -83,21 +84,39 @@ module Nokizaru
 
         def sitemap(result, url, discovered, request_headers)
           links = cap_links(Array(discovered), adaptive_limit(result, :max_sitemap_links))
-          response = http_get(url, request_headers: request_headers)
-          apply_sitemap_status(response, url, links)
+          fetch = fetch_following_same_scope_redirects(url, request_headers: request_headers)
+          apply_sitemap_status(fetch, url, links)
           cap_links(links, adaptive_limit(result, :max_sitemap_links))
         end
 
-        def apply_sitemap_status(response, sitemap_url, links)
-          if response.is_a?(Net::HTTPSuccess)
-            step_row(:info, 'Looking for sitemap.xml', 'Found')
-            links << sitemap_url
+        def apply_sitemap_status(fetch, sitemap_url, links)
+          response = fetch[:response]
+          if http_success?(response)
+            label = if fetch[:redirect_hops].to_i.positive?
+                      "Found (followed #{fetch[:redirect_hops]} redirects)"
+                    else
+                      'Found'
+                    end
+            step_row(:info, 'Looking for sitemap.xml', label)
+            links << (fetch[:effective_url] || sitemap_url)
             return
           end
 
-          status = response&.code == '404' ? 'Not Found' : (response&.code || 'Error')
+          status = sitemap_status_label(fetch)
           level = status == 'Not Found' ? :info : :error
           step_row(level, 'Looking for sitemap.xml', status)
+        end
+
+        def sitemap_status_label(fetch)
+          response = fetch[:response]
+          return 'Not Found' if response&.code == '404'
+
+          return response.code if response&.code
+
+          reason = fetch[:stop_reason].to_s
+          return reason.tr('_', ' ').capitalize unless reason.empty?
+
+          'Error'
         end
 
         def collect_links(soup, selector, attr, target, label, limit)

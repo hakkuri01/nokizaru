@@ -33,7 +33,7 @@ module Nokizaru
       common, ssl_cert, port_scan, dir_enum, export = config_sections(config_json)
       assign_common_values(common, ssl_cert, port_scan)
       assign_dir_enum_values(dir_enum)
-      @dir_enum_wordlist = File.join(Paths.project_root, 'wordlists', 'dirb_common.txt')
+      @dir_enum_wordlist = File.join(Paths.project_root, 'wordlists', 'raft_med-dir_5k.txt')
       @export_format = export.fetch('format')
     end
 
