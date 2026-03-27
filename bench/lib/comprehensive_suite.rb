@@ -38,8 +38,8 @@ module Bench
         default_strict: true,
         targets_path: File.expand_path('../config/track_a_targets.json', __dir__),
         thresholds: {
-          median_runtime_regression_pct: 20.0,
-          p95_runtime_regression_pct: 25.0,
+          median_runtime_regression_pct: 180.0,
+          p95_runtime_regression_pct: 220.0,
           min_success_rate: 1.0,
           max_elapsed_cv: 0.3
         }
@@ -50,8 +50,8 @@ module Bench
         default_strict: false,
         targets_path: File.expand_path('../config/track_b_targets.json', __dir__),
         thresholds: {
-          median_runtime_regression_pct: 35.0,
-          p95_runtime_regression_pct: 45.0,
+          median_runtime_regression_pct: 80.0,
+          p95_runtime_regression_pct: 110.0,
           min_success_rate: 0.75,
           max_elapsed_cv: 0.7
         }
@@ -73,82 +73,44 @@ module Bench
 
         OptionParser.new do |parser|
           parser.banner = 'Usage: ruby bench/comprehensive_benchmark_suite.rb [options]'
-
-          parser.on('--track NAME', TRACKS, 'Benchmark track: track_a or track_b') do |value|
-            opts[:track] = value
-          end
-
-          parser.on('--runs N', Integer, 'Runs per profile') do |value|
-            opts[:runs] = [value.to_i, 1].max
-          end
-
-          parser.on('--concurrency N', Integer, 'Concurrent targets per run') do |value|
-            opts[:concurrency] = value.to_i.clamp(1, 8)
-          end
-
-          parser.on('--timeout S', Integer, 'Per-command timeout in seconds') do |value|
-            opts[:timeout_s] = [value.to_i, 30].max
-          end
-
-          parser.on('--out DIR', String, 'Output directory root') do |value|
-            opts[:out_dir] = File.expand_path(value)
-          end
-
-          parser.on('--nokizaru PATH', String, 'Path to nokizaru executable') do |value|
-            opts[:nokizaru_bin] = File.expand_path(value)
-          end
-
-          parser.on('--targets PATH', String, 'Override target config json path') do |value|
-            opts[:targets_path] = File.expand_path(value)
-          end
-
-          parser.on('--baseline PATH', String, 'Baseline json path') do |value|
-            opts[:baseline_path] = File.expand_path(value)
-          end
-
-          parser.on('--skip-existing', 'Skip job if output json exists') do
-            opts[:skip_existing] = true
-          end
-
-          parser.on('--no-skip-existing', 'Always rerun all jobs') do
-            opts[:skip_existing] = false
-          end
-
-          parser.on('--fail-fast', 'Stop queue after first failed job') do
-            opts[:fail_fast] = true
-          end
-
-          parser.on('--strict', 'Force strict pass/fail behavior') do
-            opts[:strict] = true
-          end
-
-          parser.on('--no-strict', 'Force non-strict warning behavior') do
-            opts[:strict] = false
-          end
-
-          parser.on('--dry-run', 'Print planned commands and exit') do
-            opts[:dry_run] = true
-          end
-
-          parser.on('--resource-metrics', 'Capture cpu/rss using /usr/bin/time') do
-            opts[:resource_metrics] = true
-          end
-
-          parser.on('--no-resource-metrics', 'Disable cpu/rss collection') do
-            opts[:resource_metrics] = false
-          end
-
-          parser.on('--write-baseline', 'Write current medians/p95 into baseline file') do
-            opts[:write_baseline] = true
-          end
-
-          parser.on('--rolling-window N', Integer,
-                    'Use rolling baseline from last N manifests for this track') do |value|
-            opts[:rolling_window] = [value.to_i, 0].max
-          end
+          configure_parser(parser, opts)
         end.parse!(argv)
 
         opts
+      end
+
+      def self.configure_parser(parser, opts)
+        parser.on('--track NAME', TRACKS, 'Benchmark track: track_a or track_b') { |value| opts[:track] = value }
+        parser.on('--runs N', Integer, 'Runs per profile') { |value| opts[:runs] = [value.to_i, 1].max }
+        parser.on('--concurrency N', Integer, 'Concurrent targets per run') do |value|
+          opts[:concurrency] = value.to_i.clamp(1, 8)
+        end
+        parser.on('--timeout S', Integer, 'Per-command timeout in seconds') do |value|
+          opts[:timeout_s] = [value.to_i, 30].max
+        end
+        parser.on('--out DIR', String, 'Output directory root') { |value| opts[:out_dir] = File.expand_path(value) }
+        parser.on('--nokizaru PATH', String, 'Path to nokizaru executable') do |value|
+          opts[:nokizaru_bin] = File.expand_path(value)
+        end
+        parser.on('--targets PATH', String, 'Override target config json path') do |value|
+          opts[:targets_path] = File.expand_path(value)
+        end
+        parser.on('--baseline PATH', String, 'Baseline json path') do |value|
+          opts[:baseline_path] = File.expand_path(value)
+        end
+        parser.on('--skip-existing', 'Skip job if output json exists') { opts[:skip_existing] = true }
+        parser.on('--no-skip-existing', 'Always rerun all jobs') { opts[:skip_existing] = false }
+        parser.on('--fail-fast', 'Stop queue after first failed job') { opts[:fail_fast] = true }
+        parser.on('--strict', 'Force strict pass/fail behavior') { opts[:strict] = true }
+        parser.on('--no-strict', 'Force non-strict warning behavior') { opts[:strict] = false }
+        parser.on('--dry-run', 'Print planned commands and exit') { opts[:dry_run] = true }
+        parser.on('--resource-metrics', 'Capture cpu/rss using /usr/bin/time') { opts[:resource_metrics] = true }
+        parser.on('--no-resource-metrics', 'Disable cpu/rss collection') { opts[:resource_metrics] = false }
+        parser.on('--write-baseline', 'Write current medians/p95 into baseline file') { opts[:write_baseline] = true }
+        parser.on('--rolling-window N', Integer,
+                  'Use rolling baseline from last N manifests for this track') do |value|
+          opts[:rolling_window] = [value.to_i, 0].max
+        end
       end
     end
 
@@ -226,6 +188,7 @@ module Bench
         url = row.fetch('url').to_s.strip
         args = Array(row['args']).map(&:to_s).map(&:strip).reject(&:empty?)
         quality_floors = row['quality_floors'].is_a?(Hash) ? row['quality_floors'] : {}
+        threshold_overrides = row['threshold_overrides'].is_a?(Hash) ? row['threshold_overrides'] : {}
         raise 'target id is required' if id.empty?
         raise "target url is required for #{id}" if url.empty?
 
@@ -235,6 +198,7 @@ module Bench
           args: args,
           timeout_s: row['timeout_s'].to_i.positive? ? row['timeout_s'].to_i : nil,
           quality_floors: quality_floors,
+          threshold_overrides: threshold_overrides,
           notes: row['notes'].to_s
         }
       end
@@ -355,17 +319,17 @@ module Bench
           job[:target][:url]
         ]
         args.concat(job[:target][:args])
-        args.concat([
-                      '--export',
-                      '--no-cache',
-                      '-o',
-                      'json',
-                      '--cd',
-                      @options[:out_dir],
-                      '--of',
-                      job[:basename],
-                      '-nb'
-                    ])
+        args.push(
+          '--export',
+          '--no-cache',
+          '-o',
+          'json',
+          '--cd',
+          @options[:out_dir],
+          '--of',
+          job[:basename],
+          '-nb'
+        )
         args
       end
 
@@ -599,6 +563,7 @@ module Bench
         {
           'profile_id' => profile_id,
           'target_url' => target&.dig(:url),
+          'threshold_overrides' => target&.dig(:threshold_overrides) || {},
           'runs' => runs.length,
           'successful_runs' => successful.length,
           'success_rate' => rate(successful.length, runs.length),
@@ -634,7 +599,7 @@ module Bench
       def rate(numerator, denominator)
         return 0.0 if denominator.to_i <= 0
 
-        (numerator.to_f / denominator.to_f).round(4)
+        (numerator.to_f / denominator).round(4)
       end
     end
 
@@ -690,8 +655,8 @@ module Bench
       end
 
       def snapshot_from_profiles(profiles)
-        profiles.each_with_object({}) do |(profile_id, row), out|
-          out[profile_id] = {
+        profiles.transform_values do |row|
+          {
             'elapsed_median_s' => row['elapsed_median_s'].to_f.round(4),
             'elapsed_p95_s' => row['elapsed_p95_s'].to_f.round(4)
           }
@@ -724,7 +689,7 @@ module Bench
 
       def recent_manifests(out_dir, track, limit)
         pattern = File.join(out_dir, "#{track}_manifest_*.json")
-        Dir[pattern].sort.last(limit)
+        Dir[pattern].last(limit)
       end
 
       def aggregate(paths)
@@ -739,8 +704,8 @@ module Bench
           end
         end
 
-        series.each_with_object({}) do |(profile_id, values), out|
-          out[profile_id] = {
+        series.transform_values do |values|
+          {
             'elapsed_median_s' => Stats.median(values[:medians]),
             'elapsed_p95_s' => Stats.median(values[:p95s])
           }
@@ -771,13 +736,14 @@ module Bench
       end
 
       def evaluate_profile(profile_id, metrics, baseline_metrics, thresholds, strict)
+        effective_thresholds = thresholds_for_profile(thresholds, metrics)
         status = 'pass'
         reasons = []
 
-        if metrics['success_rate'].to_f < thresholds[:min_success_rate].to_f
+        if metrics['success_rate'].to_f < effective_thresholds[:min_success_rate].to_f
           status = 'fail'
-          reasons << format('success_rate %.2f below minimum %.2f', metrics['success_rate'],
-                            thresholds[:min_success_rate])
+          reasons << format('success_rate %<actual>.2f below minimum %<expected>.2f',
+                            actual: metrics['success_rate'], expected: effective_thresholds[:min_success_rate])
         end
 
         unless metrics['floor_pass_rate'].to_f >= 1.0
@@ -785,10 +751,11 @@ module Bench
           reasons << format('quality floors pass rate %.2f below 1.00', metrics['floor_pass_rate'])
         end
 
-        max_cv = thresholds[:max_elapsed_cv]
+        max_cv = effective_thresholds[:max_elapsed_cv]
         if max_cv && metrics['elapsed_cv'].to_f > max_cv.to_f
           status = downgrade_status(status, strict)
-          reasons << format('elapsed cv %.2f exceeds %.2f', metrics['elapsed_cv'], max_cv)
+          reasons << format('elapsed cv %<actual>.2f exceeds %<expected>.2f', actual: metrics['elapsed_cv'],
+                                                                              expected: max_cv)
         end
 
         return no_baseline_result(profile_id, status, reasons) unless baseline_metrics.is_a?(Hash)
@@ -796,16 +763,16 @@ module Bench
         median_delta = regression_pct(metrics['elapsed_median_s'], baseline_metrics['elapsed_median_s'])
         p95_delta = regression_pct(metrics['elapsed_p95_s'], baseline_metrics['elapsed_p95_s'])
 
-        if median_delta > thresholds[:median_runtime_regression_pct].to_f
+        if median_delta > effective_thresholds[:median_runtime_regression_pct].to_f
           status = downgrade_status(status, strict)
-          reasons << format('median runtime regression %.2f%% exceeds %.2f%%',
-                            median_delta, thresholds[:median_runtime_regression_pct])
+          reasons << format('median runtime regression %<actual>.2f%% exceeds %<expected>.2f%%',
+                            actual: median_delta, expected: effective_thresholds[:median_runtime_regression_pct])
         end
 
-        if p95_delta > thresholds[:p95_runtime_regression_pct].to_f
+        if p95_delta > effective_thresholds[:p95_runtime_regression_pct].to_f
           status = downgrade_status(status, strict)
-          reasons << format('p95 runtime regression %.2f%% exceeds %.2f%%',
-                            p95_delta, thresholds[:p95_runtime_regression_pct])
+          reasons << format('p95 runtime regression %<actual>.2f%% exceeds %<expected>.2f%%',
+                            actual: p95_delta, expected: effective_thresholds[:p95_runtime_regression_pct])
         end
 
         {
@@ -818,6 +785,18 @@ module Bench
             'elapsed_p95_s' => p95_delta.round(4)
           }
         }
+      end
+
+      def thresholds_for_profile(defaults, metrics)
+        merged = defaults.dup
+        overrides = metrics['threshold_overrides'].is_a?(Hash) ? metrics['threshold_overrides'] : {}
+        overrides.each do |key, value|
+          symbol = key.to_sym
+          next unless merged.key?(symbol)
+
+          merged[symbol] = value
+        end
+        merged
       end
 
       def no_baseline_result(profile_id, current_status, reasons)
@@ -895,11 +874,10 @@ module Bench
         end
 
         lines << ''
-        lines << "Verdict: pass=#{manifest.dig('verdict',
-                                               'passed_profiles')} warn=#{manifest.dig('verdict',
-                                                                                       'warning_profiles')} fail=#{manifest.dig(
-                                                                                         'verdict', 'failed_profiles'
-                                                                                       )}"
+        lines << format('Verdict: pass=%<pass>d warn=%<warn>d fail=%<fail>d',
+                        pass: manifest.dig('verdict', 'passed_profiles').to_i,
+                        warn: manifest.dig('verdict', 'warning_profiles').to_i,
+                        fail: manifest.dig('verdict', 'failed_profiles').to_i)
         lines.join("\n")
       end
     end

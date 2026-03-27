@@ -26,6 +26,7 @@ class DirectoryEnumProgressTest < Minitest::Test
 
     refute_includes line, "\r"
     assert_includes line, '421/1200'
+    assert_includes line, 'avg '
     assert_match(%r{\d+\.\dr/s}, line)
     assert_includes line, 'ok 398'
     assert_includes line, 'err 23'
@@ -67,6 +68,48 @@ class DirectoryEnumProgressTest < Minitest::Test
     end
 
     assert_equal '', output
+  end
+
+  def test_process_worker_exception_emits_progress_for_non_tty
+    runtime = progress_runtime(count: 49, success: 40, errors: 9, found: 5)
+    runtime[:mutex] = Mutex.new
+    scan = { total_urls: 120 }
+
+    output, = capture_io do
+      Nokizaru::Modules::DirectoryEnum.send(
+        :process_worker_exception,
+        scan,
+        runtime,
+        'https://example.com/fail',
+        StandardError.new('boom')
+      )
+    end
+
+    assert_equal 50, runtime[:count]
+    assert_equal 10, runtime[:stats][:errors]
+    assert_includes output, '50/120'
+  end
+
+  def test_progress_ticker_renders_without_waiting_on_runtime_mutex
+    runtime = progress_runtime(count: 1, success: 1, errors: 0, found: 0)
+    runtime[:mutex] = Mutex.new
+    scan = { total_urls: 120 }
+    calls = 0
+
+    runtime[:mutex].lock
+    Nokizaru::Modules::DirectoryEnum.stub(:progress_output_tty?, true) do
+      Nokizaru::Modules::DirectoryEnum.stub(:print_progress, proc { |_rt, _scan, force: false, _locked: false|
+        calls += 1 if force
+      }) do
+        Nokizaru::Modules::DirectoryEnum.send(:start_progress_ticker!, runtime, scan)
+        sleep(0.12)
+      ensure
+        Nokizaru::Modules::DirectoryEnum.send(:stop_progress_ticker!, runtime)
+      end
+    end
+    runtime[:mutex].unlock
+
+    assert_operator calls, :>, 0
   end
 
   private

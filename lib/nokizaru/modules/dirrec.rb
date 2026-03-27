@@ -29,8 +29,11 @@ module Nokizaru
       SOFT_404_MAX_LEARNING_SAMPLES = 96
       SOFT_404_MIN_DOMINANCE_RATIO = 0.6
       PROGRESS_EVERY = 1
-      PROGRESS_RENDER_INTERVAL_S = 0.08
+      PROGRESS_RENDER_INTERVAL_S = 0.11
       PROGRESS_PLAIN_EVERY = 50
+      STALL_WATCHDOG_INTERVAL_S = 0.2
+      MIN_STALL_TIMEOUT_S = 20.0
+      MAX_STALL_TIMEOUT_S = 90.0
       PROTECTED_TIMEOUT_S = 2.5
       MIN_ADAPTIVE_TIMEOUT_S = 1.5
       TIMEOUT_ADAPT_SAMPLE_SIZE = 240
@@ -43,9 +46,6 @@ module Nokizaru
       PREFLIGHT_HOSTILE_ERROR_RATIO = 0.75
       PREFLIGHT_SEEDED_ERROR_RATIO = 0.2
       PREFLIGHT_SEEDED_TIMEOUT_RATIO = 0.1
-      REQUEST_HARD_TIMEOUT_PADDING_S = 0.75
-      REQUEST_HARD_TIMEOUT_MIN_S = 1.0
-      REQUEST_HARD_TIMEOUT_MAX_S = 6.0
       LOW_INFORMATION_BODY_BYTES = 24
       TEXTUAL_CONTENT_TYPES = %w[text/html text/plain application/json application/xml].freeze
       WAF_LIKELIHOOD_HIGH = 0.75
@@ -59,9 +59,21 @@ module Nokizaru
 
       MODE_BUDGETS = {
         MODE_FULL => { budget_s: 0.0, max_requests: 0 },
-        MODE_SEEDED => { budget_s: 0.0, max_requests: 0 },
-        MODE_HOSTILE => { budget_s: 0.0, max_requests: 0 }
+        MODE_SEEDED => { budget_s: 420.0, max_requests: 0 },
+        MODE_HOSTILE => { budget_s: 180.0, max_requests: 1800 }
       }.freeze
+      PRESSURE_WINDOW_REQUESTS = 80
+      PRESSURE_MIN_WINDOW_SECONDS = 3.0
+      PRESSURE_WINDOW_ERROR_RATIO = 0.35
+      PRESSURE_WINDOW_TRANSPORT_RATIO = 0.2
+      PRESSURE_WINDOW_LOW_RPS = 80.0
+      PRESSURE_WINDOW_LOW_YIELD_GAIN = 2
+      PRESSURE_SEEDED_STREAK = 2
+      PRESSURE_HOSTILE_STREAK = 4
+      LOW_YIELD_HOSTILE_STREAK = 3
+      LOW_YIELD_STOP_STREAK = 5
+      PRESSURE_SCORE_WAF_HINT = 0.72
+      PRESSURE_SCORE_REDIRECT_HINT = 0.92
       HIGH_SIGNAL_PATHS = %w[
         /robots.txt
         /sitemap.xml
@@ -134,7 +146,7 @@ module Nokizaru
           request_headers: options[:request_headers]
         )
         word_data = load_words(options[:wdlist])
-        scan_mode = mode_data(preflight, options, anchor)
+        scan_mode, hostility_hint = scan_mode_with_hint(preflight, options, anchor, normalized_target)
         urls = build_scan_urls(
           {
             target: normalized_target,
@@ -155,6 +167,7 @@ module Nokizaru
           mode: scan_mode[:mode],
           budgets: scan_mode[:budgets],
           timeout: scan_mode[:timeout],
+          hostility_hint: hostility_hint,
           soft_404_baseline: soft_404_baseline,
           urls: urls,
           total_urls: urls.length,
@@ -162,13 +175,29 @@ module Nokizaru
         }
       end
 
-      def mode_data(preflight, options, anchor)
+      def scan_mode_with_hint(preflight, options, anchor, normalized_target)
+        hostility_hint = workspace_hostility_hint(options[:ctx], normalized_target)
+        [mode_data(preflight, options, anchor, hostility_hint: hostility_hint), hostility_hint]
+      end
+
+      def mode_data(preflight, options, anchor, hostility_hint: nil)
         mode = choose_mode(preflight)
+        mode = apply_hostility_hint_mode(mode, hostility_hint)
         {
           mode: mode,
           budgets: MODE_BUDGETS.fetch(mode),
           timeout: timeout_for_mode(mode, base_timeout(options, anchor))
         }
+      end
+
+      def apply_hostility_hint_mode(mode, hostility_hint)
+        return mode unless hostility_hint.is_a?(Hash)
+
+        suggested = hostility_hint['mode'].to_s
+        return MODE_SEEDED if mode == MODE_FULL && suggested == MODE_HOSTILE
+        return MODE_SEEDED if mode == MODE_FULL && suggested == MODE_SEEDED
+
+        mode
       end
 
       def base_timeout(options, anchor)
@@ -202,6 +231,40 @@ module Nokizaru
       ensure
         client.close if client.respond_to?(:close)
       end
+
+      def workspace_hostility_hint(ctx, normalized_target)
+        return nil unless workspace_hint_enabled?(ctx)
+
+        cache = ctx.cache
+        key = cache.key_for(['dirrec', 'hostility_hint', normalized_target.to_s.downcase])
+        hint = cache.read(key, ttl_s: 21_600)
+        hint.is_a?(Hash) ? hint : nil
+      rescue StandardError
+        nil
+      end
+
+      def workspace_hint_enabled?(ctx)
+        ctx.respond_to?(:workspace) && !ctx.workspace.nil? && ctx.respond_to?(:cache) && !ctx.cache.nil?
+      end
+
+      def persist_workspace_hostility_hint(scan, runtime)
+        ctx = scan[:options][:ctx]
+        return unless workspace_hint_enabled?(ctx)
+
+        cache = ctx.cache
+        key = cache.key_for(['dirrec', 'hostility_hint', scan[:normalized_target].to_s.downcase])
+        adaptation = runtime[:adaptation_state] || {}
+        hint = {
+          'mode' => runtime.dig(:stop_state, :mode).to_s,
+          'pressure_score' => adaptation[:last_pressure_score].to_i,
+          'pressure_streak' => adaptation[:pressure_streak].to_i,
+          'low_yield_streak' => adaptation[:low_yield_streak].to_i,
+          'updated_at' => Time.now.utc.iso8601
+        }
+        cache.write(key, hint)
+      rescue StandardError
+        nil
+      end
     end
   end
 end
@@ -215,6 +278,8 @@ module Nokizaru
       def init_runtime(scan)
         {
           mutex: Mutex.new,
+          progress_output_lock: Mutex.new,
+          output_closed: false,
           responses: [],
           signal_responses: [],
           found: [],
@@ -234,7 +299,50 @@ module Nokizaru
           queue: build_work_queue(scan[:urls]),
           timeout_state: { current: scan[:timeout], min: MIN_ADAPTIVE_TIMEOUT_S },
           stop_state: init_stop_state(scan),
-          progress_ui: init_progress_ui
+          progress_ui: init_progress_ui,
+          retired_clients: [],
+          activity_state: init_activity_state(scan),
+          adaptation_state: init_adaptation_state
+        }
+      end
+
+      def init_adaptation_state
+        {
+          last_eval_count: 0,
+          last_eval_at_mono: Process.clock_gettime(Process::CLOCK_MONOTONIC),
+          previous_totals: {
+            errors: 0,
+            timeout: 0,
+            connection: 0,
+            tls: 0,
+            prioritized: 0,
+            all_found: 0
+          },
+          pressure_streak: 0,
+          low_yield_streak: 0,
+          last_pressure_score: 0,
+          last_window: {
+            count: 0,
+            elapsed_s: 0.0,
+            error_ratio: 0.0,
+            transport_ratio: 0.0,
+            avg_rps: 0.0,
+            prioritized_gain: 0,
+            found_gain: 0
+          }
+        }
+      end
+
+      def init_activity_state(scan)
+        timeout = scan[:timeout].to_f
+        stall_timeout = [timeout * 10.0, MIN_STALL_TIMEOUT_S].max
+        {
+          last_activity_at_mono: Process.clock_gettime(Process::CLOCK_MONOTONIC),
+          stall_timeout_s: stall_timeout.clamp(MIN_STALL_TIMEOUT_S, MAX_STALL_TIMEOUT_S),
+          watchdog_active: false,
+          watchdog_stop: false,
+          watchdog_thread: nil,
+          tripped: false
         }
       end
 
@@ -254,6 +362,9 @@ module Nokizaru
           success: 0,
           errors: 0,
           timeout_downshifts: 0,
+          mode_downshifts: 0,
+          pressure_events: 0,
+          low_yield_events: 0,
           positive_statuses: Hash.new(0),
           confidence_levels: Hash.new(0),
           confidence_reasons: Hash.new(0),
@@ -298,11 +409,85 @@ module Nokizaru
         num_workers = [thread_cap_for_mode(scan[:mode], scan[:options][:threads].to_i), 1].max
         prepare_runtime_client!(scan, runtime, num_workers)
         start_progress_ticker!(runtime, scan)
+        start_stall_watchdog!(runtime, scan)
         workers = Array.new(num_workers) { Thread.new { run_worker_loop(scan, runtime) } }
         workers.each(&:join)
       ensure
         stop_progress_ticker!(runtime) if runtime
+        stop_stall_watchdog!(runtime) if runtime
+        close_retired_clients!(runtime) if runtime
         close_client!(runtime[:stop_state], runtime[:client]) if runtime
+      end
+
+      def start_stall_watchdog!(runtime, scan)
+        state = runtime[:activity_state]
+        state[:watchdog_active] = true
+        state[:watchdog_stop] = false
+        state[:watchdog_thread] = Thread.new do
+          loop do
+            break if state[:watchdog_stop]
+            break if run_stall_watchdog_iteration(runtime, scan, state)
+          end
+        end
+      end
+
+      def run_stall_watchdog_iteration(runtime, scan, state)
+        sleep(STALL_WATCHDOG_INTERVAL_S)
+        should_break = false
+        runtime[:mutex].synchronize do
+          should_break = true if runtime[:stop_state][:stop]
+          next if should_break
+
+          idle_s = Process.clock_gettime(Process::CLOCK_MONOTONIC) - state[:last_activity_at_mono].to_f
+          next unless idle_s >= state[:stall_timeout_s].to_f
+
+          mark_stall_stop!(runtime, scan, state, idle_s)
+        end
+        should_break
+      end
+
+      def mark_stall_stop!(runtime, scan, state, idle_s)
+        state[:tripped] = true
+        runtime[:stop_state][:stop] = true
+        runtime[:stop_state][:reason] ||= stall_stop_reason(idle_s, state[:stall_timeout_s].to_f)
+        Log.write("[dirrec] Stall watchdog triggered: #{runtime[:stop_state][:reason]}")
+        print_progress(runtime, scan, force: true)
+      end
+
+      def stop_stall_watchdog!(runtime)
+        state = runtime[:activity_state]
+        return unless state[:watchdog_active]
+
+        state[:watchdog_stop] = true
+        state[:watchdog_thread]&.join(0.2)
+        state[:watchdog_active] = false
+        state[:watchdog_thread] = nil
+      end
+
+      def touch_runtime_activity!(runtime)
+        state = runtime[:activity_state]
+        return unless state.is_a?(Hash)
+
+        state[:last_activity_at_mono] = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+
+      def stall_stop_reason(idle_s, budget_s)
+        "inactivity budget hit (#{idle_s.round(2)}s/#{budget_s.round(2)}s)"
+      end
+
+      def close_retired_clients!(runtime)
+        retired = runtime[:retired_clients].is_a?(Array) ? runtime[:retired_clients] : []
+        current = runtime[:client]
+
+        retired.each do |client|
+          next unless client
+          next if client.equal?(current)
+
+          client.close if client.respond_to?(:close)
+        rescue StandardError
+          nil
+        end
+        retired.clear
       end
 
       def start_progress_ticker!(runtime, scan)
@@ -316,9 +501,7 @@ module Nokizaru
           loop do
             break if ui[:ticker_stop]
 
-            runtime[:mutex].synchronize do
-              print_progress(runtime, scan, force: true)
-            end
+            print_progress(runtime, scan, force: true)
             sleep(PROGRESS_RENDER_INTERVAL_S)
           end
         end
@@ -392,6 +575,7 @@ module Nokizaru
           return false if should_stop_now?(runtime[:issued], runtime[:start_time], runtime[:stop_state])
 
           runtime[:issued] += 1
+          touch_runtime_activity!(runtime)
           true
         end
       end
@@ -403,7 +587,7 @@ module Nokizaru
         process_worker_success(scan, runtime, url, http_result)
         0
       rescue StandardError => e
-        handle_worker_exception(runtime, url, e, error_streak)
+        handle_worker_exception(scan, runtime, url, e, error_streak)
       end
 
       def worker_http_result(runtime, url)
@@ -411,8 +595,8 @@ module Nokizaru
         HttpResult.new(raw_resp)
       end
 
-      def handle_worker_exception(runtime, url, error, error_streak)
-        process_worker_exception(runtime, url, error)
+      def handle_worker_exception(scan, runtime, url, error, error_streak)
+        process_worker_exception(scan, runtime, url, error)
         next_streak = error_streak + 1
         sleep(error_backoff_s(next_streak, runtime[:stop_state][:mode]))
         next_streak
@@ -434,6 +618,7 @@ module Nokizaru
       def increment_count!(stats, runtime)
         stats[:success] += 1
         runtime[:count] += 1
+        touch_runtime_activity!(runtime)
       end
     end
   end
@@ -446,13 +631,156 @@ module Nokizaru
       module_function
 
       def handle_runtime_adaptation!(scan, runtime)
-        maybe_stop!(runtime)
-        return unless apply_mode_downgrade!(runtime[:count], runtime[:stats], runtime[:stop_state],
-                                            runtime[:timeout_state])
+        return unless runtime[:stop_state].is_a?(Hash)
+        return unless runtime[:timeout_state].is_a?(Hash)
 
+        maybe_stop!(runtime)
+        update_pressure_window!(runtime)
+        result = apply_mode_downgrade!(runtime[:count], runtime[:stats], runtime[:stop_state],
+                                       runtime[:timeout_state], runtime: runtime)
+        return unless result == :downgraded
+
+        apply_mode_rebuild!(scan, runtime)
+      end
+
+      def apply_mode_rebuild!(scan, runtime)
+        previous_client = runtime[:client]
         rebuild = rebuild_client(client_config(scan, runtime))
         runtime[:client], runtime[:timeout_state] = rebuild
+        track_retired_runtime_client!(runtime, previous_client)
         runtime[:stop_state][:request_timeout] = runtime[:timeout_state][:current]
+        runtime[:stats][:mode_downshifts] = runtime[:stats][:mode_downshifts].to_i + 1
+      end
+
+      def track_retired_runtime_client!(runtime, previous_client)
+        return unless previous_client
+        return if runtime[:client].equal?(previous_client)
+
+        runtime[:retired_clients] << previous_client
+      end
+
+      def update_pressure_window!(runtime)
+        state = runtime[:adaptation_state]
+        return unless state.is_a?(Hash)
+
+        window = pressure_window_snapshot(runtime, state)
+        return unless window
+
+        state[:last_window] = window
+        state[:last_pressure_score] = pressure_window_score(runtime, window)
+        update_pressure_streak!(runtime, state, window)
+        update_low_yield_streak!(runtime, state, window)
+        refresh_pressure_window_snapshot!(runtime, state)
+      end
+
+      def update_pressure_streak!(runtime, state, window)
+        active = pressure_window_active?(window, state[:last_pressure_score])
+        state[:pressure_streak] = active ? state[:pressure_streak].to_i + 1 : 0
+        runtime[:stats][:pressure_events] += 1 if state[:last_pressure_score].to_i.positive?
+      end
+
+      def update_low_yield_streak!(runtime, state, window)
+        if low_yield_window?(window)
+          state[:low_yield_streak] = state[:low_yield_streak].to_i + 1
+          runtime[:stats][:low_yield_events] += 1
+        else
+          state[:low_yield_streak] = 0
+        end
+      end
+
+      def pressure_window_snapshot(runtime, state)
+        count_delta = runtime[:count].to_i - state[:last_eval_count].to_i
+        return nil if count_delta < PRESSURE_WINDOW_REQUESTS
+
+        now_mono = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        elapsed = now_mono - state[:last_eval_at_mono].to_f
+        return nil if elapsed < PRESSURE_MIN_WINDOW_SECONDS
+
+        previous = state[:previous_totals].is_a?(Hash) ? state[:previous_totals] : {}
+        totals = pressure_totals(runtime)
+        deltas = pressure_deltas(previous, totals)
+        {
+          count: count_delta,
+          elapsed_s: elapsed,
+          error_count: deltas[:errors],
+          timeout_count: deltas[:timeout],
+          connection_count: deltas[:connection],
+          tls_count: deltas[:tls],
+          prioritized_gain: deltas[:prioritized],
+          found_gain: deltas[:all_found],
+          avg_rps: count_delta.fdiv(elapsed)
+        }
+      end
+
+      def pressure_totals(runtime)
+        {
+          errors: runtime[:stats][:errors].to_i,
+          timeout: runtime[:stats][:error_kinds]['timeout'].to_i,
+          connection: runtime[:stats][:error_kinds]['connection'].to_i,
+          tls: runtime[:stats][:error_kinds]['tls'].to_i,
+          prioritized: runtime[:found].length,
+          all_found: runtime[:all_found].length
+        }
+      end
+
+      def pressure_deltas(previous, totals)
+        {
+          errors: delta_since(previous, totals, :errors),
+          timeout: delta_since(previous, totals, :timeout),
+          connection: delta_since(previous, totals, :connection),
+          tls: delta_since(previous, totals, :tls),
+          prioritized: delta_since(previous, totals, :prioritized),
+          all_found: delta_since(previous, totals, :all_found)
+        }
+      end
+
+      def delta_since(previous, totals, key)
+        [totals[key].to_i - previous.fetch(key, 0).to_i, 0].max
+      end
+
+      def pressure_window_score(runtime, window)
+        error_ratio = window[:error_count].fdiv(window[:count].to_f)
+        transport_count = window[:timeout_count].to_i + window[:connection_count].to_i + window[:tls_count].to_i
+        transport_ratio = transport_count.fdiv(window[:count].to_f)
+        context = confidence_context_snapshot(runtime)
+        score = pressure_ratio_score(window, error_ratio, transport_ratio)
+        score += pressure_context_score(context)
+
+        window[:error_ratio] = error_ratio.round(4)
+        window[:transport_ratio] = transport_ratio.round(4)
+        score
+      end
+
+      def pressure_ratio_score(window, error_ratio, transport_ratio)
+        score = 0
+        score += 1 if error_ratio >= PRESSURE_WINDOW_ERROR_RATIO
+        score += 1 if transport_ratio >= PRESSURE_WINDOW_TRANSPORT_RATIO
+        score += 1 if window[:avg_rps].to_f < PRESSURE_WINDOW_LOW_RPS && transport_ratio >= 0.1
+        score += 1 if low_yield_window?(window) && transport_ratio >= 0.12
+        score
+      end
+
+      def pressure_context_score(context)
+        score = 0
+        score += 1 if context[:waf_likelihood_score].to_f >= PRESSURE_SCORE_WAF_HINT
+        score += 1 if context[:redirect_cluster_dominance_ratio].to_f >= PRESSURE_SCORE_REDIRECT_HINT
+        score
+      end
+
+      def low_yield_window?(window)
+        window[:found_gain].to_i >= 80 && window[:prioritized_gain].to_i <= PRESSURE_WINDOW_LOW_YIELD_GAIN
+      end
+
+      def pressure_window_active?(window, score)
+        return true if score.to_i >= 2
+
+        window[:error_ratio].to_f >= 0.25 && window[:transport_ratio].to_f >= 0.15
+      end
+
+      def refresh_pressure_window_snapshot!(runtime, state)
+        state[:last_eval_count] = runtime[:count].to_i
+        state[:last_eval_at_mono] = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        state[:previous_totals] = pressure_totals(runtime)
       end
 
       def handle_success_status(scan, runtime, url, http_result)
@@ -540,6 +868,7 @@ module Nokizaru
           record_worker_error!(runtime, url, http_result, error_kind)
           maybe_stop!(runtime)
           adapt_timeout_if_needed!(scan, runtime)
+          handle_runtime_adaptation!(scan, runtime)
           print_progress(runtime, scan) if (runtime[:count] % PROGRESS_EVERY).zero?
         end
 
@@ -551,14 +880,20 @@ module Nokizaru
         runtime[:stats][:errors] += 1
         runtime[:stats][:error_kinds][error_kind] += 1
         runtime[:count] += 1
+        touch_runtime_activity!(runtime)
         log_error(url, http_result, runtime[:stats][:errors])
       end
 
-      def process_worker_exception(runtime, url, error)
+      def process_worker_exception(scan, runtime, url, error)
         runtime[:mutex].synchronize do
           runtime[:stats][:errors] += 1
+          runtime[:stats][:error_kinds] ||= Hash.new(0)
+          runtime[:stats][:error_kinds]['other'] += 1
           runtime[:count] += 1
+          touch_runtime_activity!(runtime)
           Log.write("[dirrec] Exception for #{url}: #{error.class}") if runtime[:stats][:errors] <= 5
+          handle_runtime_adaptation!(scan, runtime)
+          print_progress(runtime, scan) if (runtime[:count] % PROGRESS_EVERY).zero?
         end
       end
     end
@@ -584,9 +919,11 @@ module Nokizaru
         runtime[:client], runtime[:timeout_state] = rebuild
         runtime[:stop_state][:request_timeout] = runtime[:timeout_state][:current]
         runtime[:stats][:timeout_downshifts] += 1
-        clear_progress_line
-        UI.row(:plus, 'Adaptive Timeout', "reduced to #{runtime[:timeout_state][:current]}s (timeout-heavy target)")
-        print_progress(runtime, scan, force: true) if progress_output_tty?
+        with_output_lock(runtime) do
+          clear_progress_line(runtime, locked: true)
+          UI.row(:plus, 'Adaptive Timeout', "reduced to #{runtime[:timeout_state][:current]}s (timeout-heavy target)")
+          print_progress(runtime, scan, force: true, locked: true) if progress_output_tty?
+        end
       end
 
       def client_config(scan, runtime)
@@ -603,8 +940,10 @@ module Nokizaru
 
       def finalize_scan(scan, runtime)
         runtime[:stats][:elapsed] = Time.now - runtime[:start_time]
-        print_progress(runtime, scan, force: true)
-        clear_progress_line
+        with_output_lock(runtime) do
+          print_progress(runtime, scan, force: true, locked: true)
+          clear_progress_line(runtime, locked: true)
+        end
         dir_output(runtime: runtime, scan: scan)
         Log.write('[dirrec] Completed')
       end
@@ -643,20 +982,27 @@ module Nokizaru
         return if url == "#{target}/"
 
         runtime[:stdout_found] << url
-        clear_progress_line
-        UI.line(:info, "#{colorize_status(status)} | #{url}")
-        print_progress(runtime, scan, force: true) if progress_output_tty?
+        with_output_lock(runtime) do
+          clear_progress_line(runtime, locked: true)
+          UI.line(:info, "#{colorize_status(status)} | #{url}")
+          print_progress(runtime, scan, force: true, locked: true) if progress_output_tty?
+        end
       end
 
       # Colorize status code so findings are easy to scan at a glance
       def colorize_status(status)
         code = status.to_i
-        color = if [200, 401, 403, 500].include?(code)
+        color = case code
+                when 200...300
                   UI::G
-                elsif [204, 301, 302, 303, 307, 308, 405].include?(code)
+                when 300...400
                   UI::Y
-                else
+                when 400...500
                   UI::R
+                when 500...600
+                  UI::M
+                else
+                  UI::W
                 end
         "#{color}#{code}#{UI::W}"
       end
@@ -712,11 +1058,12 @@ module Nokizaru
       module_function
 
       # Print periodic directory scan progress updates
-      def print_progress(runtime, scan, force: false)
+      def print_progress(runtime, scan, force: false, locked: false)
         progress_ui = runtime[:progress_ui]
         return unless render_progress?(runtime, scan, progress_ui, force)
 
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        tty = progress_output_tty?
         line = UI.direnum_progress(
           current: runtime[:count],
           total: scan[:total_urls],
@@ -727,13 +1074,33 @@ module Nokizaru
             errors: runtime[:stats][:errors],
             found: runtime[:found].length
           },
-          tty: progress_output_tty?
+          tty: tty
         )
 
-        progress_output_tty? ? print(line) : puts(line)
+        emit_progress_output(runtime, line, tty: tty, locked: locked)
         progress_ui[:last_render_at] = now
-        progress_ui[:last_plain_count] = runtime[:count] unless progress_output_tty?
-        $stdout.flush
+        progress_ui[:last_plain_count] = runtime[:count] unless tty
+      end
+
+      def emit_progress_output(runtime, line, tty:, locked: false)
+        writer = proc do
+          tty ? print(line) : puts(line)
+          $stdout.flush
+        end
+        return writer.call if locked
+
+        with_output_lock(runtime, &writer)
+      end
+
+      def with_output_lock(runtime, &)
+        lock = runtime[:progress_output_lock]
+        return if runtime[:output_closed]
+        return yield unless lock
+
+        lock.synchronize(&)
+      rescue Errno::EPIPE
+        runtime[:output_closed] = true
+        nil
       end
 
       def render_progress?(runtime, _scan, progress_ui, force)
@@ -761,11 +1128,16 @@ module Nokizaru
       end
 
       # Clear transient progress line before printing final summary rows
-      def clear_progress_line
+      def clear_progress_line(runtime = nil, locked: false)
         return unless progress_output_tty?
 
-        print("\r\e[K")
-        $stdout.flush
+        writer = proc do
+          print("\r\e[K")
+          $stdout.flush
+        end
+        return writer.call if locked || runtime.nil?
+
+        with_output_lock(runtime, &writer)
       end
 
       # Load and normalize wordlist entries used for directory enumeration
@@ -1026,8 +1398,8 @@ module Nokizaru
         end
       end
 
-      def request_method_for_mode(_mode)
-        :get
+      def request_method_for_mode(mode)
+        mode.to_s == MODE_HOSTILE ? :head : :get
       end
 
       def thread_cap_for_mode(mode, threads)
@@ -1039,14 +1411,12 @@ module Nokizaru
       end
 
       def request_url(client, url, stop_state)
-        hard_timeout = request_hard_timeout_s(stop_state)
-        Timeout.timeout(hard_timeout) do
-          return request_url_with_custom_headers(client, url, stop_state) if custom_request_headers?(stop_state)
+        return request_url_with_custom_headers(client, url, stop_state) if custom_request_headers?(stop_state)
 
-          perform_client_request(client, url, stop_state)
-        end
-      rescue Timeout::Error
-        raise Errno::ETIMEDOUT, 'directory request hard timeout reached'
+        response = perform_client_request(client, url, stop_state)
+        return response unless head_confirmation_required?(stop_state, response)
+
+        perform_client_request(client, url, stop_state, force_method: :get)
       rescue NoMethodError
         client.get(url)
       end
@@ -1057,8 +1427,12 @@ module Nokizaru
 
       def request_url_with_custom_headers(client, url, stop_state)
         unless stop_state[:allow_redirects]
-          return perform_client_request(client, url, stop_state,
-                                        headers: stop_state[:request_headers])
+          response = perform_client_request(client, url, stop_state,
+                                            headers: stop_state[:request_headers])
+          return response unless head_confirmation_required?(stop_state, response)
+
+          return perform_client_request(client, url, stop_state, headers: stop_state[:request_headers],
+                                                                 force_method: :get)
         end
 
         request_url_following_same_scope_redirects(client, url, stop_state)
@@ -1070,6 +1444,10 @@ module Nokizaru
 
         loop do
           response = perform_client_request(client, current, stop_state, headers: stop_state[:request_headers])
+          if head_confirmation_required?(stop_state, response)
+            response = perform_client_request(client, current, stop_state, headers: stop_state[:request_headers],
+                                                                           force_method: :get)
+          end
           next_url = same_scope_redirect_url(current, response)
           return response unless next_url && redirects < Crawler::MAX_MAIN_REDIRECTS
 
@@ -1078,8 +1456,8 @@ module Nokizaru
         end
       end
 
-      def perform_client_request(client, url, stop_state, headers: nil)
-        method = stop_state[:request_method].to_s
+      def perform_client_request(client, url, stop_state, headers: nil, force_method: nil)
+        method = (force_method || stop_state[:request_method]).to_s
         request_headers = headers || {}
 
         if method == 'head' && client.respond_to?(:head)
@@ -1095,6 +1473,14 @@ module Nokizaru
         end
       end
 
+      def head_confirmation_required?(stop_state, response)
+        return false unless stop_state[:request_method].to_s == 'head'
+        return false unless response.respond_to?(:status)
+
+        status = response.status.to_i
+        FINDING_CANDIDATE_STATUSES.include?(status)
+      end
+
       def same_scope_redirect_url(current_url, response)
         return nil unless response.respond_to?(:status)
         return nil unless redirect_status?(response.status)
@@ -1106,13 +1492,6 @@ module Nokizaru
         Nokizaru::TargetIntel.same_scope_host?(URI.parse(current_url).host, URI.parse(next_url).host) ? next_url : nil
       rescue StandardError
         nil
-      end
-
-      def request_hard_timeout_s(stop_state)
-        base = stop_state.is_a?(Hash) ? stop_state[:request_timeout].to_f : 0.0
-        base = MIN_ADAPTIVE_TIMEOUT_S if base <= 0
-        padded = base + REQUEST_HARD_TIMEOUT_PADDING_S
-        padded.clamp(REQUEST_HARD_TIMEOUT_MIN_S, REQUEST_HARD_TIMEOUT_MAX_S)
       end
     end
   end
@@ -1294,10 +1673,12 @@ module Nokizaru
         rps = ((stats[:success] + stats[:errors]) / elapsed).round(1)
         stop_meta = dir_stop_meta(runtime[:stop_state])
         stats[:confidence_context] = confidence_context_snapshot(runtime)
+        stats[:adaptation_state] = runtime[:adaptation_state]
         result = dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
 
         print_dir_summary(rps, runtime, stop_meta[:reason], runtime[:redirect_signals])
         store_dir_result(scan, result)
+        persist_workspace_hostility_hint(scan, runtime)
       end
 
       def dir_stop_meta(stop_state)
@@ -1403,6 +1784,13 @@ module Nokizaru
       end
 
       def dir_runtime_stats(stats, stop_meta, elapsed, rps)
+        adaptation = stats[:adaptation_state].is_a?(Hash) ? stats[:adaptation_state] : {}
+        last_window = adaptation[:last_window].is_a?(Hash) ? adaptation[:last_window] : {}
+        dir_runtime_base_stats(stats, stop_meta, elapsed, rps)
+          .merge(dir_runtime_pressure_stats(stats, adaptation, last_window))
+      end
+
+      def dir_runtime_base_stats(stats, stop_meta, elapsed, rps)
         {
           'mode' => stop_meta[:mode],
           'stop_reason' => stop_meta[:reason].empty? ? nil : stop_meta[:reason],
@@ -1414,8 +1802,23 @@ module Nokizaru
           'errors' => stats[:errors],
           'error_breakdown' => stats[:error_kinds].to_h,
           'timeout_downshifts' => stats[:timeout_downshifts].to_i,
+          'mode_downshifts' => stats[:mode_downshifts].to_i,
+          'pressure_events' => stats[:pressure_events].to_i,
+          'low_yield_events' => stats[:low_yield_events].to_i,
           'elapsed_seconds' => elapsed.round(2),
           'requests_per_second' => rps
+        }
+      end
+
+      def dir_runtime_pressure_stats(_stats, adaptation, last_window)
+        {
+          'pressure_streak' => adaptation[:pressure_streak].to_i,
+          'low_yield_streak' => adaptation[:low_yield_streak].to_i,
+          'pressure_score' => adaptation[:last_pressure_score].to_i,
+          'pressure_window_avg_rps' => last_window[:avg_rps].to_f.round(2),
+          'pressure_window_error_ratio' => last_window[:error_ratio].to_f.round(4),
+          'pressure_window_transport_ratio' => last_window[:transport_ratio].to_f.round(4),
+          'pressure_window_prioritized_gain' => last_window[:prioritized_gain].to_i
         }
       end
 
@@ -1621,7 +2024,6 @@ module Nokizaru
       end
 
       def rebuild_client_with_timeout(config, timeout)
-        config[:client].close if config[:client].respond_to?(:close)
         Nokizaru::HTTPClient.for_bulk_requests(
           config[:target],
           timeout_s: timeout,
@@ -1643,11 +2045,17 @@ module Nokizaru
       module_function
 
       # Downgrade scan mode during execution if the target becomes hostile under load
-      def apply_mode_downgrade!(count, stats, stop_state, timeout_state)
+      def apply_mode_downgrade!(count, stats, stop_state, timeout_state, runtime: nil)
         return nil if stop_state[:stop]
         return nil if count < 80
 
         current_mode = stop_state[:mode].to_s
+
+        if runtime
+          adaptive = apply_pressure_mode_downgrade!(count, stop_state, timeout_state, runtime)
+          return adaptive if adaptive
+        end
+
         return nil if current_mode == MODE_HOSTILE
 
         if current_mode == MODE_FULL && low_signal_saturation?(count, stats)
@@ -1657,6 +2065,50 @@ module Nokizaru
         return nil unless hostile_runtime_ratios?(count, stats)
 
         apply_hostile_mode!(stop_state, timeout_state)
+      end
+
+      def apply_pressure_mode_downgrade!(count, stop_state, timeout_state, runtime)
+        state = runtime[:adaptation_state]
+        return nil unless state.is_a?(Hash)
+
+        current_mode = stop_state[:mode].to_s
+        pressure_streak = state[:pressure_streak].to_i
+        low_yield_streak = state[:low_yield_streak].to_i
+
+        if seeded_pressure_downgrade?(current_mode, count, pressure_streak)
+          return apply_seeded_mode!(stop_state, timeout_state)
+        end
+
+        if hostile_pressure_downgrade?(current_mode, count, pressure_streak, low_yield_streak)
+          return apply_hostile_mode!(stop_state, timeout_state)
+        end
+
+        if hostile_low_yield_stop?(current_mode, pressure_streak, low_yield_streak)
+          stop_state[:stop] = true
+          stop_state[:reason] ||= hostile_low_yield_stop_reason(state)
+          return :stopped
+        end
+
+        nil
+      end
+
+      def seeded_pressure_downgrade?(current_mode, count, pressure_streak)
+        current_mode == MODE_FULL && count >= 160 && pressure_streak >= PRESSURE_SEEDED_STREAK
+      end
+
+      def hostile_pressure_downgrade?(current_mode, count, pressure_streak, low_yield_streak)
+        current_mode == MODE_SEEDED && count >= 320 && pressure_streak >= PRESSURE_HOSTILE_STREAK &&
+          low_yield_streak >= LOW_YIELD_HOSTILE_STREAK
+      end
+
+      def hostile_low_yield_stop?(current_mode, pressure_streak, low_yield_streak)
+        current_mode == MODE_HOSTILE && pressure_streak >= PRESSURE_HOSTILE_STREAK &&
+          low_yield_streak >= LOW_YIELD_STOP_STREAK
+      end
+
+      def hostile_low_yield_stop_reason(state)
+        'sustained hostile pressure with low prioritized yield ' \
+          "(pressure_streak=#{state[:pressure_streak]}, low_yield_streak=#{state[:low_yield_streak]})"
       end
 
       def low_signal_saturation?(count, stats)
@@ -1741,7 +2193,8 @@ module Nokizaru
       end
 
       def connection_error_message?(message)
-        message.include?('connection') || message.include?('reset') || message.include?('refused')
+        message.include?('connection') || message.include?('reset') || message.include?('refused') ||
+          message.include?('stream closed')
       end
     end
   end

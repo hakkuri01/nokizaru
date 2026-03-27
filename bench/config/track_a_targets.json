@@ -35,6 +35,16 @@
         "directory_found_count": 1
       },
       "notes": "Timeout and challenge-like behavior for adaptive directory runtime"
+    },
+    {
+      "id": "lab_hostile_dir_only",
+      "url": "http://127.0.0.1:7777/hostile",
+      "args": ["--dir", "--no-cache"],
+      "quality_floors": {
+        "directory_total_requests": 40,
+        "directory_requests_per_second": 200
+      },
+      "notes": "Directory-only hostile profile used to validate non-freezing completion under challenge pressure"
     }
   ]
 }

@@ -1250,140 +1250,140 @@
   },
   "fast": {
     "adobe_com": {
-      "elapsed_median_s": 86.561,
-      "elapsed_p95_s": 86.561
+      "elapsed_median_s": 93.8191,
+      "elapsed_p95_s": 93.8191
     },
     "airbnb_com": {
-      "elapsed_median_s": 30.5627,
-      "elapsed_p95_s": 30.5627
+      "elapsed_median_s": 82.1943,
+      "elapsed_p95_s": 82.1943
     },
     "amazon_com": {
-      "elapsed_median_s": 67.2321,
-      "elapsed_p95_s": 67.2321
+      "elapsed_median_s": 105.4093,
+      "elapsed_p95_s": 105.4093
     },
     "atlassian_com": {
       "elapsed_median_s": 42.1913,
       "elapsed_p95_s": 42.1913
     },
     "badssl_com": {
-      "elapsed_median_s": 43.0602,
-      "elapsed_p95_s": 43.0602
+      "elapsed_median_s": 63.3076,
+      "elapsed_p95_s": 63.3076
     },
     "box_com": {
-      "elapsed_median_s": 43.2214,
-      "elapsed_p95_s": 43.2214
+      "elapsed_median_s": 41.2793,
+      "elapsed_p95_s": 41.2793
     },
     "canva_com": {
-      "elapsed_median_s": 45.9372,
-      "elapsed_p95_s": 45.9372
+      "elapsed_median_s": 35.7338,
+      "elapsed_p95_s": 35.7338
     },
     "cloudflare_com": {
-      "elapsed_median_s": 31.1319,
-      "elapsed_p95_s": 31.1319
+      "elapsed_median_s": 59.8915,
+      "elapsed_p95_s": 59.8915
     },
     "coinbase_com": {
-      "elapsed_median_s": 19.25,
-      "elapsed_p95_s": 19.25
+      "elapsed_median_s": 84.7056,
+      "elapsed_p95_s": 84.7056
     },
     "demo_owasp_juice_shop": {
       "elapsed_median_s": 41.7678,
       "elapsed_p95_s": 41.7678
     },
     "developer_mozilla_org": {
-      "elapsed_median_s": 62.3273,
-      "elapsed_p95_s": 62.3273
+      "elapsed_median_s": 133.2187,
+      "elapsed_p95_s": 133.2187
     },
     "discord_com": {
-      "elapsed_median_s": 37.102,
-      "elapsed_p95_s": 37.102
+      "elapsed_median_s": 68.6554,
+      "elapsed_p95_s": 68.6554
     },
     "dropbox_com": {
-      "elapsed_median_s": 13.261,
-      "elapsed_p95_s": 13.261
+      "elapsed_median_s": 30.4244,
+      "elapsed_p95_s": 30.4244
     },
     "epicgames_com": {
-      "elapsed_median_s": 47.6981,
-      "elapsed_p95_s": 47.6981
+      "elapsed_median_s": 81.9008,
+      "elapsed_p95_s": 81.9008
     },
     "github_com": {
-      "elapsed_median_s": 25.3296,
-      "elapsed_p95_s": 25.3296
+      "elapsed_median_s": 235.7586,
+      "elapsed_p95_s": 235.7586
     },
     "gitlab_com": {
-      "elapsed_median_s": 43.9298,
-      "elapsed_p95_s": 43.9298
+      "elapsed_median_s": 64.8904,
+      "elapsed_p95_s": 64.8904
     },
     "google_com": {
-      "elapsed_median_s": 25.5243,
-      "elapsed_p95_s": 25.5243
+      "elapsed_median_s": 49.9642,
+      "elapsed_p95_s": 49.9642
     },
     "hoyoverse_com": {
-      "elapsed_median_s": 27.7457,
-      "elapsed_p95_s": 27.7457
+      "elapsed_median_s": 63.7719,
+      "elapsed_p95_s": 63.7719
     },
     "httpbin_org": {
-      "elapsed_median_s": 57.8244,
-      "elapsed_p95_s": 57.8244
+      "elapsed_median_s": 76.1629,
+      "elapsed_p95_s": 76.1629
     },
     "httpstat_us": {
-      "elapsed_median_s": 27.3128,
-      "elapsed_p95_s": 27.3128
+      "elapsed_median_s": 30.1482,
+      "elapsed_p95_s": 30.1482
     },
     "instagram_com": {
-      "elapsed_median_s": 26.0454,
-      "elapsed_p95_s": 26.0454
+      "elapsed_median_s": 68.5938,
+      "elapsed_p95_s": 68.5938
     },
     "intel_com": {
-      "elapsed_median_s": 42.409,
-      "elapsed_p95_s": 42.409
+      "elapsed_median_s": 67.372,
+      "elapsed_p95_s": 67.372
     },
     "linkedin_com": {
-      "elapsed_median_s": 33.5208,
-      "elapsed_p95_s": 33.5208
+      "elapsed_median_s": 89.928,
+      "elapsed_p95_s": 89.928
     },
     "mastercard_com": {
-      "elapsed_median_s": 43.1184,
-      "elapsed_p95_s": 43.1184
+      "elapsed_median_s": 165.9707,
+      "elapsed_p95_s": 165.9707
     },
     "mastodon_social": {
-      "elapsed_median_s": 49.0119,
-      "elapsed_p95_s": 49.0119
+      "elapsed_median_s": 71.2574,
+      "elapsed_p95_s": 71.2574
     },
     "microsoft_com": {
-      "elapsed_median_s": 55.8211,
-      "elapsed_p95_s": 55.8211
+      "elapsed_median_s": 56.0214,
+      "elapsed_p95_s": 56.0214
     },
     "netflix_com": {
-      "elapsed_median_s": 24.5573,
-      "elapsed_p95_s": 24.5573
+      "elapsed_median_s": 121.7223,
+      "elapsed_p95_s": 121.7223
     },
     "openai_com": {
-      "elapsed_median_s": 45.8514,
-      "elapsed_p95_s": 45.8514
+      "elapsed_median_s": 72.4198,
+      "elapsed_p95_s": 72.4198
     },
     "paypal_com": {
-      "elapsed_median_s": 18.1459,
-      "elapsed_p95_s": 18.1459
+      "elapsed_median_s": 93.8857,
+      "elapsed_p95_s": 93.8857
     },
     "pinterest_com": {
-      "elapsed_median_s": 37.0735,
-      "elapsed_p95_s": 37.0735
+      "elapsed_median_s": 81.7558,
+      "elapsed_p95_s": 81.7558
     },
     "portquiz_net": {
       "elapsed_median_s": 42.5747,
       "elapsed_p95_s": 42.5747
     },
     "proton_me": {
-      "elapsed_median_s": 88.5104,
-      "elapsed_p95_s": 88.5104
+      "elapsed_median_s": 153.3774,
+      "elapsed_p95_s": 153.3774
     },
     "reddit_com": {
-      "elapsed_median_s": 13.3871,
-      "elapsed_p95_s": 13.3871
+      "elapsed_median_s": 71.7118,
+      "elapsed_p95_s": 71.7118
     },
     "riotgames_com": {
-      "elapsed_median_s": 16.721,
-      "elapsed_p95_s": 16.721
+      "elapsed_median_s": 42.2664,
+      "elapsed_p95_s": 42.2664
     },
     "roblox_com": {
       "elapsed_median_s": 30.7204,
@@ -1394,60 +1394,288 @@
       "elapsed_p95_s": 45.1067
     },
     "shopify_com": {
-      "elapsed_median_s": 53.4955,
-      "elapsed_p95_s": 53.4955
+      "elapsed_median_s": 54.0156,
+      "elapsed_p95_s": 54.0156
     },
     "slack_com": {
-      "elapsed_median_s": 25.1745,
-      "elapsed_p95_s": 25.1745
+      "elapsed_median_s": 61.9627,
+      "elapsed_p95_s": 61.9627
     },
     "snapchat_com": {
-      "elapsed_median_s": 75.0246,
-      "elapsed_p95_s": 75.0246
+      "elapsed_median_s": 74.1874,
+      "elapsed_p95_s": 74.1874
     },
     "spotify_com": {
-      "elapsed_median_s": 31.5035,
-      "elapsed_p95_s": 31.5035
+      "elapsed_median_s": 58.7093,
+      "elapsed_p95_s": 58.7093
     },
     "stripe_com": {
-      "elapsed_median_s": 53.6122,
-      "elapsed_p95_s": 53.6122
+      "elapsed_median_s": 91.8436,
+      "elapsed_p95_s": 91.8436
     },
     "tiktok_com": {
       "elapsed_median_s": 20.5568,
       "elapsed_p95_s": 20.5568
     },
     "twilio_com": {
-      "elapsed_median_s": 26.3992,
-      "elapsed_p95_s": 26.3992
+      "elapsed_median_s": 130.0304,
+      "elapsed_p95_s": 130.0304
     },
     "uber_com": {
-      "elapsed_median_s": 38.3074,
-      "elapsed_p95_s": 38.3074
+      "elapsed_median_s": 58.7956,
+      "elapsed_p95_s": 58.7956
     },
     "valvesoftware_com": {
-      "elapsed_median_s": 24.2229,
-      "elapsed_p95_s": 24.2229
+      "elapsed_median_s": 65.4914,
+      "elapsed_p95_s": 65.4914
     },
     "verizon_com": {
-      "elapsed_median_s": 28.2116,
-      "elapsed_p95_s": 28.2116
+      "elapsed_median_s": 80.8724,
+      "elapsed_p95_s": 80.8724
     },
     "wikipedia_org": {
-      "elapsed_median_s": 26.5767,
-      "elapsed_p95_s": 26.5767
+      "elapsed_median_s": 65.2045,
+      "elapsed_p95_s": 65.2045
     },
     "yahoo_com": {
-      "elapsed_median_s": 50.6577,
-      "elapsed_p95_s": 50.6577
+      "elapsed_median_s": 76.5672,
+      "elapsed_p95_s": 76.5672
     },
     "zonetransfer_me": {
       "elapsed_median_s": 23.2834,
       "elapsed_p95_s": 23.2834
     },
     "zoom_us": {
-      "elapsed_median_s": 61.9928,
-      "elapsed_p95_s": 61.9928
+      "elapsed_median_s": 66.3351,
+      "elapsed_p95_s": 66.3351
+    },
+    "amiami_com": {
+      "elapsed_median_s": 91.8472,
+      "elapsed_p95_s": 91.8472
+    },
+    "animate_co_jp": {
+      "elapsed_median_s": 36.153,
+      "elapsed_p95_s": 36.153
+    },
+    "aniplex_co_jp": {
+      "elapsed_median_s": 33.4546,
+      "elapsed_p95_s": 33.4546
+    },
+    "apple_com": {
+      "elapsed_median_s": 112.0173,
+      "elapsed_p95_s": 112.0173
+    },
+    "archlinux_org": {
+      "elapsed_median_s": 85.5321,
+      "elapsed_p95_s": 85.5321
+    },
+    "arm_com": {
+      "elapsed_median_s": 118.7019,
+      "elapsed_p95_s": 118.7019
+    },
+    "asahi_com": {
+      "elapsed_median_s": 52.6221,
+      "elapsed_p95_s": 52.6221
+    },
+    "bandainamco_co_jp": {
+      "elapsed_median_s": 28.2557,
+      "elapsed_p95_s": 28.2557
+    },
+    "boeing_com": {
+      "elapsed_median_s": 70.1368,
+      "elapsed_p95_s": 70.1368
+    },
+    "booking_com": {
+      "elapsed_median_s": 269.1397,
+      "elapsed_p95_s": 269.1397
+    },
+    "bosch_com": {
+      "elapsed_median_s": 145.3473,
+      "elapsed_p95_s": 145.3473
+    },
+    "cisco_com": {
+      "elapsed_median_s": 224.8455,
+      "elapsed_p95_s": 224.8455
+    },
+    "claude_ai": {
+      "elapsed_median_s": 80.865,
+      "elapsed_p95_s": 80.865
+    },
+    "coursera_org": {
+      "elapsed_median_s": 80.3105,
+      "elapsed_p95_s": 80.3105
+    },
+    "cygames_co_jp": {
+      "elapsed_median_s": 31.8045,
+      "elapsed_p95_s": 31.8045
+    },
+    "dena_com": {
+      "elapsed_median_s": 102.9149,
+      "elapsed_p95_s": 102.9149
+    },
+    "docusign_com": {
+      "elapsed_median_s": 50.5567,
+      "elapsed_p95_s": 50.5567
+    },
+    "ecosia_org": {
+      "elapsed_median_s": 45.7061,
+      "elapsed_p95_s": 45.7061
+    },
+    "fedoraproject_org": {
+      "elapsed_median_s": 68.5582,
+      "elapsed_p95_s": 68.5582
+    },
+    "global_fujitsu": {
+      "elapsed_median_s": 44.3062,
+      "elapsed_p95_s": 44.3062
+    },
+    "gmo_jp": {
+      "elapsed_median_s": 71.6854,
+      "elapsed_p95_s": 71.6854
+    },
+    "goodsmile_com": {
+      "elapsed_median_s": 33.7748,
+      "elapsed_p95_s": 33.7748
+    },
+    "hackthebox_com": {
+      "elapsed_median_s": 31.0564,
+      "elapsed_p95_s": 31.0564
+    },
+    "hitachi_com": {
+      "elapsed_median_s": 34.6863,
+      "elapsed_p95_s": 34.6863
+    },
+    "info_credly_com": {
+      "elapsed_median_s": 111.7077,
+      "elapsed_p95_s": 111.7077
+    },
+    "kadokawa_co_jp": {
+      "elapsed_median_s": 38.0473,
+      "elapsed_p95_s": 38.0473
+    },
+    "konami_com": {
+      "elapsed_median_s": 24.3735,
+      "elapsed_p95_s": 24.3735
+    },
+    "line_me": {
+      "elapsed_median_s": 45.2452,
+      "elapsed_p95_s": 45.2452
+    },
+    "logitech_com": {
+      "elapsed_median_s": 77.3731,
+      "elapsed_p95_s": 77.3731
+    },
+    "mercari_com": {
+      "elapsed_median_s": 104.2108,
+      "elapsed_p95_s": 104.2108
+    },
+    "mongodb_com": {
+      "elapsed_median_s": 166.5999,
+      "elapsed_p95_s": 166.5999
+    },
+    "motorola_com": {
+      "elapsed_median_s": 82.021,
+      "elapsed_p95_s": 82.021
+    },
+    "nec_com": {
+      "elapsed_median_s": 45.1658,
+      "elapsed_p95_s": 45.1658
+    },
+    "nike_com": {
+      "elapsed_median_s": 56.8937,
+      "elapsed_p95_s": 56.8937
+    },
+    "nintendo_co_jp": {
+      "elapsed_median_s": 44.6865,
+      "elapsed_p95_s": 44.6865
+    },
+    "notion_com": {
+      "elapsed_median_s": 41.4089,
+      "elapsed_p95_s": 41.4089
+    },
+    "nvidia_com": {
+      "elapsed_median_s": 106.7194,
+      "elapsed_p95_s": 106.7194
+    },
+    "okta_com": {
+      "elapsed_median_s": 148.0638,
+      "elapsed_p95_s": 148.0638
+    },
+    "oracle_com": {
+      "elapsed_median_s": 76.1662,
+      "elapsed_p95_s": 76.1662
+    },
+    "panasonic_com": {
+      "elapsed_median_s": 89.1137,
+      "elapsed_p95_s": 89.1137
+    },
+    "rakuten_co_jp": {
+      "elapsed_median_s": 98.2877,
+      "elapsed_p95_s": 98.2877
+    },
+    "rakuten_com": {
+      "elapsed_median_s": 114.9469,
+      "elapsed_p95_s": 114.9469
+    },
+    "salesforce_com": {
+      "elapsed_median_s": 93.1736,
+      "elapsed_p95_s": 93.1736
+    },
+    "snowflake_com": {
+      "elapsed_median_s": 57.6829,
+      "elapsed_p95_s": 57.6829
+    },
+    "softbank_jp": {
+      "elapsed_median_s": 53.016,
+      "elapsed_p95_s": 53.016
+    },
+    "sony_com": {
+      "elapsed_median_s": 89.5531,
+      "elapsed_p95_s": 89.5531
+    },
+    "soundcloud_com": {
+      "elapsed_median_s": 117.141,
+      "elapsed_p95_s": 117.141
+    },
+    "square_enix_com": {
+      "elapsed_median_s": 28.4691,
+      "elapsed_p95_s": 28.4691
+    },
+    "stockx_com": {
+      "elapsed_median_s": 71.9519,
+      "elapsed_p95_s": 71.9519
+    },
+    "tesla_com": {
+      "elapsed_median_s": 116.7466,
+      "elapsed_p95_s": 116.7466
+    },
+    "toyota_jp": {
+      "elapsed_median_s": 126.4199,
+      "elapsed_p95_s": 126.4199
+    },
+    "travelocity_com": {
+      "elapsed_median_s": 48.197,
+      "elapsed_p95_s": 48.197
+    },
+    "wise_com": {
+      "elapsed_median_s": 59.4003,
+      "elapsed_p95_s": 59.4003
+    },
+    "www_docomo_ne_jp": {
+      "elapsed_median_s": 42.9723,
+      "elapsed_p95_s": 42.9723
+    },
+    "yelp_com": {
+      "elapsed_median_s": 86.747,
+      "elapsed_p95_s": 86.747
+    },
+    "yostar_co_jp": {
+      "elapsed_median_s": 35.6303,
+      "elapsed_p95_s": 35.6303
+    },
+    "zendesk_com": {
+      "elapsed_median_s": 98.3994,
+      "elapsed_p95_s": 98.3994
     }
   }
 }

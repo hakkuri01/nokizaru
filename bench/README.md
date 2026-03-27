@@ -1,20 +1,22 @@
-# Comprehensive Benchmarks
+# Benchmark Suite Guide
 
-This directory now has two benchmark suites:
+This directory contains two complementary benchmark systems:
 
-- `bb_live_target_suite.rb`
-  - Curated 50-target live-web suite for benchmark tooling targets, popular public sites, and bug bounty/VDP-heavy targets
-  - Supports canonical and fast profiles, sharding, rolling baseline, and resource metrics
 - `comprehensive_benchmark_suite.rb`
-  - New two-track benchmark suite for performance governance
+  - Two-track governance suite (deterministic lab + live canary)
+  - Used for fast signal on regressions in runtime stability and module quality floors
+- `bb_live_target_suite.rb`
+  - Full live-environment battery over a curated 104-target set
+  - Used for broad real-world validation under diverse edge/WAF/canonicalization behavior
 
 ## Tracks
 
 ### Track A (`track_a`) - Deterministic Lab (strict gate)
 
 - Uses local fixture profiles in `bench/config/track_a_targets.json`
-- Designed for stable pass/fail benchmarking
+- Designed for stable, repeatable pass/fail benchmarking
 - Default behavior is strict (`--strict`)
+- Runtime thresholds are calibrated for current adaptive module behavior while keeping quality/success gates strict
 
 Start fixture server:
 
@@ -22,7 +24,7 @@ Start fixture server:
 ruby bench/lab_fixture_server.rb
 ```
 
-The lab fixture is implemented in Ruby only to keep benchmark behavior aligned with this codebase runtime
+The lab fixture is implemented in Ruby to keep deterministic benchmark behavior aligned with Nokizaru runtime changes
 
 Run Track A:
 
@@ -36,6 +38,7 @@ ruby bench/comprehensive_benchmark_suite.rb --track track_a
 - Designed for trend visibility under real internet conditions
 - Default behavior is non-strict (`--no-strict` implied)
 - In non-strict mode, regression threshold misses are warnings, not hard failures
+- Baseline keys are aligned to current profile IDs (`live_wikipedia`, `live_badssl`, `live_cloudflare`, `live_httpbin`)
 
 Run Track B:
 
@@ -57,8 +60,20 @@ The manifest includes:
 - raw run results per profile
 - aggregated profile metrics (median, p95, elapsed CV, success rate)
 - optional resource metrics (median RSS and CPU user/system time)
-- baseline comparison verdicts
+- baseline comparison verdicts (static file or rolling window)
 - process exit code (`0` pass/warn, `2` strict fail)
+
+## Threshold Model
+
+`comprehensive_benchmark_suite` now supports two threshold layers:
+
+- Track defaults from `bench/lib/comprehensive_suite.rb`
+- Optional per-profile overrides from each target row (`threshold_overrides`)
+
+Current governance intent:
+
+- Track A: strict quality/success gate, tolerant enough runtime regression window for modern adaptive behavior
+- Track B: warning-first trend detection under internet variability
 
 ## Post-run evidence review (required)
 
@@ -119,7 +134,14 @@ ruby bench/comprehensive_benchmark_suite.rb --track track_a --runs 5 --write-bas
 --dry-run            # print commands only
 ```
 
-## BB live target suite
+Recommended governance loop:
+
+1. Track A strict run
+2. Track B non-strict run
+3. Review manifests/summaries + outlier profile exports
+4. Update baseline snapshots only when behavior changes are intentional and validated
+
+## BB Live Target Suite
 
 Canonical run:
 
@@ -129,10 +151,10 @@ ruby bench/bb_live_target_suite.rb --profile canonical --runs 1
 
 Canonical defaults to the `stable` tier for governance-style regression gating
 
-Fast feedback run:
+Fast full-battery run (104 targets):
 
 ```bash
-ruby bench/bb_live_target_suite.rb --profile fast --concurrency 3 --rolling-window 5
+ruby bench/bb_live_target_suite.rb --profile fast --runs 1 --rolling-window 5 --concurrency 5
 ```
 
 Fast defaults to the `full` tier for broad observability and trend tracking

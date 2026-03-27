@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v1.15.11-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v1.16.11-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -18,12 +18,12 @@ Over time, the project expanded beyond a direct rewrite. Nokizaru now includes s
 
 ## Architecture
 
-FinalRecon’s Python implementation achieves speed through an async-first approach (concurrent HTTP calls, fast fan-out, and clear module boundaries). Nokizaru keeps the same high-level modules and “single command” workflow, but adapts the implementation to Ruby idioms and performance constraints:
+Nokizaru keeps the same high-level recon module flow as FinalRecon, but the Ruby implementation is tuned around bounded concurrency, continuity under hostile targets, and operator-friendly runtime behavior.
 
-- **Concurrency model:** Nokizaru favors bounded concurrency (worker pools / thread queues) with strict per-task timeouts. This prevents a single flaky provider or endpoint from stalling the entire scan.
-- **Reusable networking:** A shared HTTP client (keep-alive / connection reuse) is used where possible to reduce handshake overhead across modules.
-- **Error UX:** Provider failures are reported cleanly and consistently, but Nokizaru also aims to make errors more actionable and less noisy.
-- **Performance consistency:** Timeouts and budgets are designed to produce consistent runtimes between executions, rather than “sometimes fast, sometimes stuck.”
+- **Bounded concurrency + module isolation:** modules run with explicit budgets and resilient error handling so one degraded module does not derail full recon completion.
+- **Reusable networking:** shared HTTP clients are used where practical to reduce handshake/setup overhead.
+- **Adaptive runtime control:** modules (especially Directory Enum) can downshift mode and request policy when sustained hostile pressure is detected.
+- **Stability-first execution:** runtime policy prioritizes continuity and signal preservation over brute-force persistence when targets become aggressively defensive.
 
 ### Context-Aware Scanning Pipeline
 
@@ -38,13 +38,19 @@ Nokizaru treats early recon results (especially initial headers) as shared targe
 
 ### Directory Enum Modes
 
-Directory Enum automatically selects a mode after a quick preflight probe. This mode selection is designed to preserve signal and avoid scan time blowups on strict targets.
+Directory Enum selects an initial mode from preflight and can adapt during runtime using rolling pressure heuristics (transport errors, throughput, and prioritized-yield behavior).
 
-- **full:** normal targets; scans the full wordlist (bounded by internal budgets)
-- **seeded:** redirect-normalized or mixed targets; prioritizes crawler-derived paths + a small “high-signal” list, optionally blending in a small slice of the wordlist
-- **hostile:** strict/timeout-heavy targets; uses a small seed set and short timeouts to stay within an optimized time budget while making a best effort attempt to extract as much high-signal intel as possible.
+- **full:** normal targets; full wordlist strategy with adaptive safety rails
+- **seeded:** mixed/challenged targets; prioritizes crawler-derived and high-signal paths
+- **hostile:** sustained defensive targets; tighter budgets and lighter request policy
 
-The selected mode is printed in the Directory Enum banner so operators can interpret results in context.
+Additional runtime behavior in current Dir Enum:
+
+- **Windowed adaptation:** pressure is evaluated over rolling request windows (not one-off anomalies)
+- **Yield-aware escalation:** downshift decisions account for prioritized finding growth, not just raw error volume
+- **HEAD-first hostile policy:** hostile mode uses lighter probing with selective GET confirmation for finding-candidate statuses
+- **Workspace-only short-term memory:** when using `--project`, recent host hostility posture can warm-start future runs; ephemeral scans remain stateless
+- **Persistent live status line:** progress rail and average `r/s` stay active while scanning, including under hostile pressure
 
 Directory Enum keeps stdout focused on bug bounty pivot statuses (200/204/401/403/405/500) and reports notable 3xx redirect signals only when they look meaningful. Exported data remains raw and unfiltered so you can inspect every discovered status when needed.
 

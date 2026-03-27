@@ -107,6 +107,42 @@ class ComprehensiveSuiteTest < Minitest::Test
     assert_equal 'warn', verdict.dig('profiles', 'live_github', 'status')
   end
 
+  def test_verdict_applies_profile_threshold_overrides
+    profiles = {
+      'lab_hostile' => {
+        'success_rate' => 1.0,
+        'floor_pass_rate' => 1.0,
+        'elapsed_median_s' => 12.0,
+        'elapsed_p95_s' => 14.0,
+        'threshold_overrides' => {
+          'median_runtime_regression_pct' => 60.0,
+          'p95_runtime_regression_pct' => 80.0
+        }
+      }
+    }
+
+    baseline = {
+      'lab_hostile' => {
+        'elapsed_median_s' => 8.0,
+        'elapsed_p95_s' => 9.0
+      }
+    }
+
+    verdict = Bench::ComprehensiveSuite::Verdict.evaluate(
+      profiles,
+      baseline,
+      thresholds: {
+        median_runtime_regression_pct: 20.0,
+        p95_runtime_regression_pct: 25.0,
+        min_success_rate: 1.0,
+        max_elapsed_cv: 0.3
+      },
+      strict: true
+    )
+
+    assert_equal 'pass', verdict.dig('profiles', 'lab_hostile', 'status')
+  end
+
   def test_verdict_downgrades_regression_to_warn_when_non_strict
     profiles = {
       'live_github' => {

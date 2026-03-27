@@ -70,6 +70,21 @@ class DirectoryEnumRequestHeadersTest < Minitest::Test
                     ['-r', 'Follow redirects during directory enum [ Default : False ]']
   end
 
+  def test_request_url_preserves_client_timeout_errors
+    client = FakeClient.new(
+      'https://example.com/slow' => proc { raise Timeout::Error, 'operation timed out' }
+    )
+
+    assert_raises(Timeout::Error) do
+      Nokizaru::Modules::DirectoryEnum.send(
+        :request_url,
+        client,
+        'https://example.com/slow',
+        stop_state(allow_redirects: false)
+      )
+    end
+  end
+
   private
 
   def stop_state(allow_redirects:)

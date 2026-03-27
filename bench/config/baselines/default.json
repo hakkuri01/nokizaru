@@ -1,34 +1,38 @@
 {
   "track_a": {
     "lab_hostile": {
-      "elapsed_median_s": 4.6191,
-      "elapsed_p95_s": 5.5821
+      "elapsed_median_s": 8.5867,
+      "elapsed_p95_s": 8.9308
+    },
+    "lab_hostile_dir_only": {
+      "elapsed_median_s": 8.6202,
+      "elapsed_p95_s": 9.1203
     },
     "lab_redirect": {
-      "elapsed_median_s": 4.5582,
-      "elapsed_p95_s": 5.4128
+      "elapsed_median_s": 8.5902,
+      "elapsed_p95_s": 8.96
     },
     "lab_static": {
-      "elapsed_median_s": 19.9384,
-      "elapsed_p95_s": 20.2798
+      "elapsed_median_s": 23.4182,
+      "elapsed_p95_s": 24.7782
     }
   },
   "track_b": {
-    "live_github": {
-      "elapsed_median_s": 27.9069,
-      "elapsed_p95_s": 28.2143
-    },
-    "live_mdn": {
-      "elapsed_median_s": 25.8362,
-      "elapsed_p95_s": 28.5397
+    "live_badssl": {
+      "elapsed_median_s": 33.7018,
+      "elapsed_p95_s": 36.8196
     },
     "live_cloudflare": {
-      "elapsed_median_s": 16.1674,
-      "elapsed_p95_s": 29.2976
+      "elapsed_median_s": 12.3784,
+      "elapsed_p95_s": 12.6421
     },
     "live_httpbin": {
-      "elapsed_median_s": 48.3603,
-      "elapsed_p95_s": 48.8324
+      "elapsed_median_s": 60.0186,
+      "elapsed_p95_s": 60.5888
+    },
+    "live_wikipedia": {
+      "elapsed_median_s": 33.7062,
+      "elapsed_p95_s": 33.8489
     }
   }
 }

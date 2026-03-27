@@ -10,6 +10,7 @@ module Nokizaru
     C = "\e[36m"
     W = "\e[0m"
     Y = "\e[33m"
+    M = "\e[35m"
 
     SYMBOLS = {
       plus: '⟦+⟧',
@@ -101,7 +102,7 @@ module Nokizaru
         prefix(:info),
         direnum_pulse_rail(frame_index, tty: tty),
         "#{current}/#{total}",
-        format('%.1fr/s', rate),
+        format('avg %.1fr/s', rate),
         "ok #{stats[:success]}",
         "err #{stats[:errors]}",
         "found #{stats[:found]}"

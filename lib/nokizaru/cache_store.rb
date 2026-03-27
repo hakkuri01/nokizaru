@@ -31,6 +31,17 @@ module Nokizaru
       payload
     end
 
+    def read(key, ttl_s: 3600)
+      path = File.join(@dir, "#{key}.json")
+      read_cached_payload(path, ttl_s)
+    end
+
+    def write(key, payload)
+      path = File.join(@dir, "#{key}.json")
+      write_cached_payload(path, payload)
+      payload
+    end
+
     private
 
     def read_cached_payload(path, ttl_s)
