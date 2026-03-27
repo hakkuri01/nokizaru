@@ -23,6 +23,8 @@ module Nokizaru
       error: R
     }.freeze
 
+    DIRREC_PULSE_HEAD_POSITIONS = [0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1].freeze
+
     def section(title, type: :plus, io: $stdout)
       io.puts
       io.puts("#{prefix(type)} #{C}#{title}#{W}")
@@ -91,6 +93,49 @@ module Nokizaru
 
     def progress(type, label, value, label_width: nil, min_dots: 3)
       "\r\e[K#{formatted_row(type, label, value, label_width: label_width, min_dots: min_dots)}"
+    end
+
+    def direnum_progress(current:, total:, elapsed_s:, frame_index:, stats:, tty: $stdout.tty?)
+      rate = elapsed_s.to_f.positive? ? current.fdiv(elapsed_s.to_f) : 0.0
+      body = [
+        prefix(:info),
+        direnum_pulse_rail(frame_index, tty: tty),
+        "#{current}/#{total}",
+        format('%.1fr/s', rate),
+        "ok #{stats[:success]}",
+        "err #{stats[:errors]}",
+        "found #{stats[:found]}"
+      ].join(' ')
+      tty ? "\r\e[K#{body}" : body
+    end
+
+    def direnum_pulse_rail(frame_index, tty: $stdout.tty?)
+      index = frame_index.to_i % DIRREC_PULSE_HEAD_POSITIONS.length
+      head = DIRREC_PULSE_HEAD_POSITIONS[index]
+      moving_right = index <= 6
+      cells = Array.new(7, '·')
+
+      3.times do |offset|
+        pos = moving_right ? (head - offset) : (head + offset)
+        next if pos.negative? || pos >= cells.length
+
+        cells[pos] = direnum_pulse_block(offset, tty: tty)
+      end
+
+      cells.join
+    end
+
+    def direnum_pulse_block(offset, tty:)
+      return '■' unless tty
+
+      case offset
+      when 0
+        "\e[38;5;226m■#{W}"
+      when 1
+        "\e[38;5;220m■#{W}"
+      else
+        "\e[38;5;178m■#{W}"
+      end
     end
 
     def prefix(type)

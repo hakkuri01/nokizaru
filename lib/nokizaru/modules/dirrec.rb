@@ -29,6 +29,8 @@ module Nokizaru
       SOFT_404_MAX_LEARNING_SAMPLES = 96
       SOFT_404_MIN_DOMINANCE_RATIO = 0.6
       PROGRESS_EVERY = 1
+      PROGRESS_RENDER_INTERVAL_S = 0.08
+      PROGRESS_PLAIN_EVERY = 50
       PROTECTED_TIMEOUT_S = 2.5
       MIN_ADAPTIVE_TIMEOUT_S = 1.5
       TIMEOUT_ADAPT_SAMPLE_SIZE = 240
@@ -231,7 +233,19 @@ module Nokizaru
           start_time: Time.now,
           queue: build_work_queue(scan[:urls]),
           timeout_state: { current: scan[:timeout], min: MIN_ADAPTIVE_TIMEOUT_S },
-          stop_state: init_stop_state(scan)
+          stop_state: init_stop_state(scan),
+          progress_ui: init_progress_ui
+        }
+      end
+
+      def init_progress_ui
+        {
+          started_at_mono: nil,
+          last_render_at: nil,
+          last_plain_count: 0,
+          ticker_active: false,
+          ticker_stop: false,
+          ticker_thread: nil
         }
       end
 
@@ -283,10 +297,42 @@ module Nokizaru
       def run_workers(scan, runtime)
         num_workers = [thread_cap_for_mode(scan[:mode], scan[:options][:threads].to_i), 1].max
         prepare_runtime_client!(scan, runtime, num_workers)
+        start_progress_ticker!(runtime, scan)
         workers = Array.new(num_workers) { Thread.new { run_worker_loop(scan, runtime) } }
         workers.each(&:join)
       ensure
+        stop_progress_ticker!(runtime) if runtime
         close_client!(runtime[:stop_state], runtime[:client]) if runtime
+      end
+
+      def start_progress_ticker!(runtime, scan)
+        return unless progress_output_tty?
+
+        ui = runtime[:progress_ui]
+        ui[:ticker_active] = true
+        ui[:ticker_stop] = false
+        ui[:started_at_mono] = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        ui[:ticker_thread] = Thread.new do
+          loop do
+            break if ui[:ticker_stop]
+
+            runtime[:mutex].synchronize do
+              print_progress(runtime, scan, force: true)
+            end
+            sleep(PROGRESS_RENDER_INTERVAL_S)
+          end
+        end
+      end
+
+      def stop_progress_ticker!(runtime)
+        ui = runtime[:progress_ui]
+        return unless ui[:ticker_active]
+
+        ui[:ticker_stop] = true
+        thread = ui[:ticker_thread]
+        thread&.join(0.2)
+        ui[:ticker_active] = false
+        ui[:ticker_thread] = nil
       end
 
       def prepare_runtime_client!(scan, runtime, num_workers)
@@ -382,7 +428,7 @@ module Nokizaru
         increment_count!(runtime[:stats], runtime)
         handle_runtime_adaptation!(scan, runtime)
         handle_success_status(scan, runtime, url, http_result)
-        print_progress(runtime[:count], scan[:total_urls]) if (runtime[:count] % PROGRESS_EVERY).zero?
+        print_progress(runtime, scan) if (runtime[:count] % PROGRESS_EVERY).zero?
       end
 
       def increment_count!(stats, runtime)
@@ -456,7 +502,7 @@ module Nokizaru
         confidence = decision[:level].to_sym
         reason = decision[:reason].to_s
         update_confidence_stats!(runtime[:stats], confidence, reason, status)
-        print_finding(scan[:scan_target], url, status, runtime[:stdout_found])
+        print_finding(scan, runtime, url, status)
         assign_confidence_bucket(runtime, url, confidence)
       end
 
@@ -494,7 +540,7 @@ module Nokizaru
           record_worker_error!(runtime, url, http_result, error_kind)
           maybe_stop!(runtime)
           adapt_timeout_if_needed!(scan, runtime)
-          print_progress(runtime[:count], scan[:total_urls]) if (runtime[:count] % PROGRESS_EVERY).zero?
+          print_progress(runtime, scan) if (runtime[:count] % PROGRESS_EVERY).zero?
         end
 
         sleep(error_backoff_s(error_streak, runtime[:stop_state][:mode]))
@@ -540,6 +586,7 @@ module Nokizaru
         runtime[:stats][:timeout_downshifts] += 1
         clear_progress_line
         UI.row(:plus, 'Adaptive Timeout', "reduced to #{runtime[:timeout_state][:current]}s (timeout-heavy target)")
+        print_progress(runtime, scan, force: true) if progress_output_tty?
       end
 
       def client_config(scan, runtime)
@@ -556,7 +603,7 @@ module Nokizaru
 
       def finalize_scan(scan, runtime)
         runtime[:stats][:elapsed] = Time.now - runtime[:start_time]
-        print_progress(runtime[:count], scan[:total_urls])
+        print_progress(runtime, scan, force: true)
         clear_progress_line
         dir_output(runtime: runtime, scan: scan)
         Log.write('[dirrec] Completed')
@@ -591,12 +638,14 @@ module Nokizaru
       module_function
 
       # Print a discovered directory finding with status and context
-      def print_finding(target, url, status, found)
+      def print_finding(scan, runtime, url, status)
+        target = scan[:scan_target]
         return if url == "#{target}/"
 
-        found << url
+        runtime[:stdout_found] << url
         clear_progress_line
         UI.line(:info, "#{colorize_status(status)} | #{url}")
+        print_progress(runtime, scan, force: true) if progress_output_tty?
       end
 
       # Colorize status code so findings are easy to scan at a glance
@@ -663,13 +712,58 @@ module Nokizaru
       module_function
 
       # Print periodic directory scan progress updates
-      def print_progress(current, total)
-        print(UI.progress(:info, 'Requests', "#{current}/#{total}"))
+      def print_progress(runtime, scan, force: false)
+        progress_ui = runtime[:progress_ui]
+        return unless render_progress?(runtime, scan, progress_ui, force)
+
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        line = UI.direnum_progress(
+          current: runtime[:count],
+          total: scan[:total_urls],
+          elapsed_s: Time.now - runtime[:start_time],
+          frame_index: progress_frame_index(progress_ui, now),
+          stats: {
+            success: runtime[:stats][:success],
+            errors: runtime[:stats][:errors],
+            found: runtime[:found].length
+          },
+          tty: progress_output_tty?
+        )
+
+        progress_output_tty? ? print(line) : puts(line)
+        progress_ui[:last_render_at] = now
+        progress_ui[:last_plain_count] = runtime[:count] unless progress_output_tty?
         $stdout.flush
+      end
+
+      def render_progress?(runtime, _scan, progress_ui, force)
+        return true if force
+        return false if progress_output_tty? && progress_ui[:ticker_active]
+        return render_tty_progress?(progress_ui) if progress_output_tty?
+
+        (runtime[:count] - progress_ui[:last_plain_count]) >= PROGRESS_PLAIN_EVERY
+      end
+
+      def progress_frame_index(progress_ui, now)
+        start = progress_ui[:started_at_mono] || now
+        progress_ui[:started_at_mono] ||= start
+        ((now - start) / PROGRESS_RENDER_INTERVAL_S).floor
+      end
+
+      def render_tty_progress?(progress_ui)
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        last = progress_ui[:last_render_at]
+        last.nil? || (now - last) >= PROGRESS_RENDER_INTERVAL_S
+      end
+
+      def progress_output_tty?
+        $stdout.tty?
       end
 
       # Clear transient progress line before printing final summary rows
       def clear_progress_line
+        return unless progress_output_tty?
+
         print("\r\e[K")
         $stdout.flush
       end

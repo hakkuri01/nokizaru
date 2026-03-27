@@ -189,9 +189,19 @@ class DirectoryEnumConfidenceTest < Minitest::Test
       stdout_found: [],
       found: [],
       confirmed_found: [],
-      low_confidence_found: []
+      low_confidence_found: [],
+      progress_ui: {
+        started_at_mono: nil,
+        last_render_at: nil,
+        last_plain_count: 0,
+        ticker_active: false,
+        ticker_stop: false,
+        ticker_thread: nil
+      },
+      count: 1,
+      start_time: Time.now
     }
-    scan = { scan_target: 'https://example.com' }
+    scan = { scan_target: 'https://example.com', total_urls: 10 }
     decision = { level: :low, reason: 'soft_404_signature_match' }
 
     capture_io do
