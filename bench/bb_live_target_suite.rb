@@ -114,7 +114,8 @@ class BBLiveTargetSuite
     'https://amiami.com',
     'https://kadokawa.co.jp',
     'https://yostar.co.jp',
-    'https://goodsmile.com'
+    'https://goodsmile.com',
+    'https://chat.sakana.ai'
   ].freeze
 
   STABLE_TARGET_KEYS = %w[
