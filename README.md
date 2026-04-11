@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v1.16.11-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v1.17.11-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -182,7 +182,7 @@ Nokizaru - Recon Refined
 Arguments:
   -h, --help       Show this help message and exit
   -v, --version    Show version number and exit
-  --url URL        Target URL
+  --target TARGET  Target (http[s]://host[:port])
   --headers        Header Information
   --sslinfo        SSL Certificate Information
   --whois          Whois Lookup
@@ -226,19 +226,19 @@ Extra Options:
 
 ```bash
 # Full scan
-nokizaru --full --url https://example.com
+nokizaru --full --target https://example.com
 
 # Check headers
-nokizaru --headers --url https://example.com
+nokizaru --headers --target https://example.com
 
 # Crawl target
-nokizaru --crawl --url https://example.com
+nokizaru --crawl --target https://example.com
 
 # Directory enumeration
-nokizaru --dir --url https://example.com -e txt,php -w /path/to/wordlist
+nokizaru --dir --target https://example.com -e txt,php -w /path/to/wordlist
 
 # Authenticated crawl + dir enum with a session cookie
-nokizaru --crawl --dir --url https://example.com \
+nokizaru --crawl --dir --target https://example.com \
   -H 'Cookie: PHPSESSID=abc123; uid=52' \
   -H 'X-Role: admin'
 ```

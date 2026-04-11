@@ -315,7 +315,7 @@ module Bench
         args = [
           RbConfig.ruby,
           @options[:nokizaru_bin],
-          '--url',
+          '--target',
           job[:target][:url]
         ]
         args.concat(job[:target][:args])

@@ -1,12 +1,44 @@
 # frozen_string_literal: true
 
-require 'concurrent'
-
 module Nokizaru
   module Modules
     # Concurrency helpers for passive subdomain enumeration
     module Subdomains
       module_function
+
+      class ResultSet
+        def initialize(hostname, valid_pattern)
+          @hostname = hostname.to_s
+          @valid_pattern = valid_pattern
+          @seen = {}
+          @mutex = Mutex.new
+        end
+
+        def concat(values)
+          prepared = Array(values).filter_map { |value| normalize(value) }
+          return self if prepared.empty?
+
+          @mutex.synchronize do
+            prepared.each { |entry| @seen[entry] = true }
+          end
+          self
+        end
+
+        def to_a
+          @mutex.synchronize { @seen.keys.dup }
+        end
+
+        private
+
+        def normalize(value)
+          candidate = value.to_s.strip
+          return nil if candidate.empty?
+          return nil unless candidate.end_with?(@hostname)
+          return nil unless candidate.match?(@valid_pattern)
+
+          candidate
+        end
+      end
 
       VENDOR_CAPS = {
         'AnubisDB' => 10.0,
@@ -17,7 +49,7 @@ module Nokizaru
       }.freeze
 
       def enumerate(hostname, timeout, conf_path)
-        found = Concurrent::Array.new
+        found = ResultSet.new(hostname, VALID)
         overall_budget = timeout.to_f.clamp(5.0, 30.0)
         vendor_default = [overall_budget, 12.0].min
         vendor_timeouts = build_vendor_timeouts(vendor_default)
@@ -47,19 +79,28 @@ module Nokizaru
         queue = Queue.new
         jobs.each { |job| queue << job }
         deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + overall_budget
-        worker_count = [6, jobs.length].min
-        workers = Array.new(worker_count) { Thread.new { worker_loop(queue, deadline, base_http, vendor_timeouts) } }
+        http_pool = build_timeout_http_pool(base_http, vendor_timeouts)
+        worker_count = [10, jobs.length].min
+        workers = Array.new(worker_count) do
+          Thread.new { worker_loop(queue, deadline, http_pool, base_http, vendor_timeouts) }
+        end
         workers.each(&:join)
       end
 
-      def worker_loop(queue, deadline, base_http, vendor_timeouts)
+      def build_timeout_http_pool(base_http, vendor_timeouts)
+        vendor_timeouts.each_value.uniq.to_h do |timeout|
+          [timeout, base_http.with(timeout: timeout_profile(timeout))]
+        end
+      end
+
+      def worker_loop(queue, deadline, http_pool, base_http, vendor_timeouts)
         loop do
           break if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
 
           job = pop_job(queue)
           break unless job
 
-          run_subdomain_job(job, base_http, vendor_timeouts)
+          run_subdomain_job(job, http_pool, base_http, vendor_timeouts)
         end
       end
 
@@ -69,10 +110,10 @@ module Nokizaru
         nil
       end
 
-      def run_subdomain_job(job, base_http, vendor_timeouts)
+      def run_subdomain_job(job, http_pool, base_http, vendor_timeouts)
         name, fn = job
         timeout = vendor_timeouts[name]
-        http = base_http.with(timeout: timeout_profile(timeout))
+        http = http_pool[timeout] || base_http.with(timeout: timeout_profile(timeout))
         fn.call(http)
       rescue StandardError => e
         SubdomainModules::Base.exception(name, e)
@@ -92,7 +133,8 @@ module Nokizaru
         values = found.to_a
         values.select! { |item| item.end_with?(hostname) }
         values.select! { |item| item.match?(VALID) }
-        values.uniq
+        values.uniq!
+        values.sort
       end
     end
   end

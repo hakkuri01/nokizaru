@@ -60,7 +60,7 @@ module Nokizaru
 
       # Print a concise subdomain preview and final unique count
       def print_results(found)
-        found = Array(found).sort
+        found = Array(found)
 
         if found.any?
           UI.tree_header('Results')

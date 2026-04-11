@@ -33,7 +33,7 @@ architecture fingerprinting, crawler link extraction, directory enumeration, Way
 box, allbox;
 l l.
 OPTION	MEANING
---url URL	Target URL (e.g. https://example.com)
+--target TARGET	Target (http[s]://host[:port])
 .TE
 .SH MODULE SELECTION OPTIONS
 These options enable modules. You may enable multiple in one run.
@@ -126,13 +126,13 @@ PATH	PURPOSE
 box, allbox;
 l l.
 COMMAND	DESCRIPTION
-nokizaru --full --url https://example.com	Full recon
-nokizaru --headers --url https://example.com	Header inspection
-nokizaru --arch --url https://example.com	Architecture fingerprinting
-nokizaru --dir --url https://example.com -e php,xml	Directory enum with extensions
-nokizaru --crawl --dir --url https://example.com -H 'Cookie: PHPSESSID=abc; uid=52'	Authenticated in-scope scan
-nokizaru --wayback --url https://example.com	Wayback URLs
-nokizaru --ps --url https://example.com -pt 80	Port scan with more threads
+nokizaru --full --target https://example.com	Full recon
+nokizaru --headers --target https://example.com	Header inspection
+nokizaru --arch --target https://example.com	Architecture fingerprinting
+nokizaru --dir --target https://example.com -e php,xml	Directory enum with extensions
+nokizaru --crawl --dir --target https://example.com -H 'Cookie: PHPSESSID=abc; uid=52'	Authenticated in-scope scan
+nokizaru --wayback --target https://example.com	Wayback URLs
+nokizaru --ps --target https://example.com -pt 80	Port scan with more threads
 .TE
 .SH EXIT STATUS
 .TS
@@ -140,7 +140,7 @@ box, allbox;
 l l.
 CODE	MEANING
 0	Success
-1	Failure (invalid target, missing URL, runtime error)
+1	Failure (invalid target, missing target, runtime error)
 130	Interrupted (Ctrl-C)
 .TE
 .SH SECURITY NOTES

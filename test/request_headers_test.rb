@@ -5,7 +5,7 @@ require_relative 'test_helper'
 class RequestHeadersTest < Minitest::Test
   def test_parse_argv_collects_repeatable_header_flags
     headers = Nokizaru::RequestHeaders.parse_argv([
-                                                    '--url', 'https://example.com',
+                                                    '--target', 'https://example.com',
                                                     '-H', 'Cookie: PHPSESSID=abc123; uid=52',
                                                     '--header', 'X-Role: admin',
                                                     '--header=X-Trace: red'

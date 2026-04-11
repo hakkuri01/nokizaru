@@ -8,7 +8,7 @@ module Nokizaru
         private
 
         def validated_target!
-          target = @opts[:url].to_s
+          target = @opts[:target].to_s
           return valid_target_with_protocol(target) unless target.empty?
 
           UI.line(:error, 'No Target Specified!')
@@ -27,6 +27,7 @@ module Nokizaru
 
         def parse_target(target)
           uri = URI.parse(target)
+          warn_on_unusual_scheme_port(uri)
           hostname = parse_hostname!(uri)
           protocol = uri.scheme.to_s
           ip, type_ip = resolve_target_ip(hostname)
@@ -37,6 +38,17 @@ module Nokizaru
 
         def print_target_context(target, ip)
           UI.rows(:info, [['Target', target], ['IP Address', ip]])
+        end
+
+        def warn_on_unusual_scheme_port(uri)
+          return if uri.port.nil?
+          return unless unusual_scheme_port?(uri.scheme.to_s, uri.port)
+
+          UI.row(:info, 'Target Notice', "Using #{uri.scheme} with port #{uri.port}")
+        end
+
+        def unusual_scheme_port?(scheme, port)
+          (scheme == 'http' && port.to_i == 443) || (scheme == 'https' && port.to_i == 80)
         end
 
         def target_base_info(uri, protocol, hostname, ip, type_ip)

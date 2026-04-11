@@ -4,7 +4,7 @@ module Nokizaru
   # Thor option definitions for scan command
   module CLIOptions
     OPTION_DEFS = {
-      url: { type: :string, desc: 'Target URL' },
+      target: { type: :string, desc: 'Target (http[s]://host[:port])' },
       headers: { type: :boolean, default: false, desc: 'Header Information' },
       sslinfo: { type: :boolean, default: false, desc: 'SSL Certificate Information' },
       whois: { type: :boolean, default: false, desc: 'Whois Lookup' },

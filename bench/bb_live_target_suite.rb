@@ -234,7 +234,7 @@ class BBLiveTargetSuite
       args = [
         RbConfig.ruby,
         nokizaru_bin,
-        '--url',
+        '--target',
         target,
         '--full',
         '--export'

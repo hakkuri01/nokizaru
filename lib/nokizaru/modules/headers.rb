@@ -150,7 +150,7 @@ module Nokizaru
 
         http_url = target.sub('https://', 'http://')
         UI.row(:plus, 'Suggestion', 'Try using HTTP instead of HTTPS')
-        UI.row(:plus, 'Try command', "nokizaru --url #{http_url} [options]")
+        UI.row(:plus, 'Try command', "nokizaru --target #{http_url} [options]")
       end
     end
   end

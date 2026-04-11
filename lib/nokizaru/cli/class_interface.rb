@@ -4,13 +4,13 @@ module Nokizaru
   # Class-level CLI help and boot behavior
   module CLIClassInterface
     HELP_USAGE = <<~USAGE
-      usage: nokizaru [-h] [-v] [--url URL] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--wb-raw] [--ps]
+      usage: nokizaru [-h] [-v] [--target TARGET] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--wb-raw] [--ps]
                       [--full] [--no-MODULE] [--export] [--project NAME] [--cache] [--no-cache] [--diff last or ID] [-nb] [-dt DT] [-pt PT] [-T T] [-w W] [-H HEADER] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
     USAGE
 
     HELP_ARGUMENT_ROWS = [
       ['-h, --help', 'Show this help message and exit'], ['-v, --version', 'Show version number and exit'],
-      ['--url URL', 'Target URL'], ['--headers', 'Header Information'],
+      ['--target TARGET', 'Target (http[s]://host[:port])'], ['--headers', 'Header Information'],
       ['--sslinfo', 'SSL Certificate Information'], ['--whois', 'Whois Lookup'], ['--crawl', 'Crawl Target'],
       ['--dns', 'DNS Enumeration'], ['--sub', 'Sub-Domain Enumeration'], ['--arch', 'Architecture Fingerprinting'],
       ['--dir', 'Directory Search'], ['--wayback', 'Wayback URLs'],

@@ -72,7 +72,7 @@ module Nokizaru
         bad = args.join(' ')
         UI.line(:error, "Invalid syntax. Unexpected argument(s) : #{bad}")
         UI.line(:plus, 'If you meant export formats, use -o with comma-separated formats')
-        UI.line(:plus, 'Example : nokizaru --headers --url https://example.com --export -o txt,json,html')
+        UI.line(:plus, 'Example : nokizaru --headers --target https://example.com --export -o txt,json,html')
         UI.line(:plus, 'Tip : --export is a flag (no positional values)')
         exit(1)
       end
