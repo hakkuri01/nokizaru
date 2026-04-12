@@ -1,10 +1,10 @@
 <p align="center">
-<img src="https://i.imgur.com/IZ40tXM.png">
+<img src="https://i.imgur.com/VzJRb9H.png">
 </p>
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v1.17.11-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v2.0.0-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 

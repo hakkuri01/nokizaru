@@ -63,3 +63,7 @@ Lint/UselessMethodDefinition:
 
 Security/Eval:
   Enabled: true
+
+Style/OneClassPerFile:
+  Exclude:
+    - 'lib/nokizaru/modules/dirrec.rb'

@@ -73,6 +73,10 @@ class LabFixtureServer
   def route(method, path)
     return text(405, 'method not allowed') unless %w[GET HEAD].include?(method)
 
+    route_static(path) || route_redirect(path) || route_hostile(path) || route_index(path) || text(404, 'not found')
+  end
+
+  def route_static(path)
     case path
     when '/health'
       text(200, 'ok')
@@ -93,6 +97,11 @@ class LabFixtureServer
       html(200, html_page('Admin', %w[/static/login]))
     when '/static/api/docs'
       html(200, html_page('API Docs', ['/static/api/v1/users?role=admin']))
+    end
+  end
+
+  def route_redirect(path)
+    case path
     when '/redirect-root'
       { status: 302, headers: { 'Location' => 'http://127.0.0.1:7777/redirect-target', 'Content-Type' => 'text/plain' }, body: '' }
     when '/redirect-target'
@@ -101,6 +110,11 @@ class LabFixtureServer
       html(200, html_page('Redirect Login', %w[/redirect-target/session]))
     when '/redirect-target/admin'
       text(403, 'forbidden')
+    end
+  end
+
+  def route_hostile(path)
+    case path
     when '/hostile'
       html(200, html_page('Hostile', %w[/hostile/challenge /hostile/slow]), 'Server' => 'cloudflare-sim')
     when '/hostile/challenge'
@@ -110,11 +124,13 @@ class LabFixtureServer
       html(200, html_page('Slow', %w[/hostile/private]))
     when '/hostile/private'
       text(401, 'unauthorized')
-    when '/'
-      html(200, html_page('Index', %w[/static /redirect-root /hostile]))
-    else
-      text(404, 'not found')
     end
+  end
+
+  def route_index(path)
+    return nil unless path == '/'
+
+    html(200, html_page('Index', %w[/static /redirect-root /hostile]))
   end
 
   def text(status, body, extra_headers = {})

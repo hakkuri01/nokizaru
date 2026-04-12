@@ -380,7 +380,7 @@ class BBLiveTargetSuite
     keys = TARGET_TIERS[tier_name.to_s]
     return TARGETS if keys.nil?
 
-    key_set = keys.each_with_object({}) { |key, out| out[key] = true }
+    key_set = keys.to_h { |key| [key, true] }
     TARGETS.select { |target| key_set[self.class.target_key(target)] }
   end
 
@@ -857,8 +857,8 @@ class BBLiveTargetSuite
     def aggregate(rows)
       return DEFAULTS.dup if rows.empty?
 
-      DEFAULTS.keys.each_with_object({}) do |key, out|
-        out[key] = Stats.median(rows.map { |row| row[key].to_f })
+      DEFAULTS.keys.to_h do |key|
+        [key, Stats.median(rows.map { |row| row[key].to_f })]
       end
     end
 

@@ -218,7 +218,7 @@ module Nokizaru
 
         def resolve_enabled_modules
           order = %i[headers sslinfo whois dns sub arch ps crawl dir wayback]
-          enabled = order.each_with_object({}) { |mod, out| out[mod] = module_enabled?(mod) }
+          enabled = order.to_h { |mod| [mod, module_enabled?(mod)] }
           @skip.each { |mod, skip| enabled[mod] = false if skip }
           ensure_any_enabled!(enabled)
           enabled

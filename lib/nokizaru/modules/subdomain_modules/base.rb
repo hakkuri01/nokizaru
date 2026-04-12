@@ -2,7 +2,7 @@
 
 require_relative '../../log'
 require_relative '../../keys'
-require_relative '../../http_result'
+require_relative '../../http_client'
 require_relative 'base_legacy'
 require_relative 'base_http'
 

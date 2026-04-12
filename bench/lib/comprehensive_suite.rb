@@ -549,7 +549,7 @@ module Bench
       module_function
 
       def by_profile(results, targets)
-        target_map = targets.each_with_object({}) { |row, out| out[row[:id]] = row }
+        target_map = targets.to_h { |row| [row[:id], row] }
         grouped_runs = results.group_by { |row| row[:profile_id] }
         grouped_runs.keys.sort.each_with_object({}) do |profile_id, out|
           runs = grouped_runs[profile_id]

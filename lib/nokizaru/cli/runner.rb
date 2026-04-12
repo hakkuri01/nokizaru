@@ -31,8 +31,8 @@ module Nokizaru
       end
 
       def parse_skip_flags(argv)
-        SKIPPABLE_MODULES.each_with_object({}) do |name, skip|
-          skip[name.to_sym] = argv.include?("--skip-#{name}") || argv.include?("--no-#{name}")
+        SKIPPABLE_MODULES.to_h do |name|
+          [name.to_sym, argv.include?("--skip-#{name}") || argv.include?("--no-#{name}")]
         end
       end
 

@@ -7,7 +7,6 @@ require 'zlib'
 require 'uri'
 
 require_relative '../http_client'
-require_relative '../http_result'
 require_relative '../log'
 require_relative '../target_intel'
 require_relative '../interrupt_state'
