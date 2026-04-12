@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    nokizaru (1.17.11)
+    nokizaru (2.0.1)
       activesupport (>= 7.2.3.1)
       async (~> 2.10)
       async-io (~> 1.35)
