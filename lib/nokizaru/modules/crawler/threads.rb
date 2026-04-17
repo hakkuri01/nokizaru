@@ -7,10 +7,10 @@ module Nokizaru
       module Threads
         private
 
-        def each_in_threads(items, &block)
+        def each_in_threads(items, &)
           queue = Queue.new
           items.each { |item| queue << item }
-          threads = Array.new(worker_count(items.length)) { Thread.new { consume_queue(queue, &block) } }
+          threads = Array.new(worker_count(items.length)) { Thread.new { consume_queue(queue, &) } }
           threads.each(&:join)
         end
 

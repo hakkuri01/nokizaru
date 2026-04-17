@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'nokogiri'
-require 'set'
 require 'stringio'
 require 'zlib'
 

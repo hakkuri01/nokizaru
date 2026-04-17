@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'set'
 require 'securerandom'
 require 'timeout'
 require 'zlib'
@@ -100,8 +99,8 @@ module Nokizaru
       FINDING_CANDIDATE_STATUSES = (INTERESTING_STATUSES + REDIRECT_STATUSES).freeze
 
       # Run this module and store normalized results in the run context
-      def call(target, threads, timeout_s, wdlist, *args)
-        options = build_call_options(target, threads, timeout_s, wdlist, *args)
+      def call(target, threads, timeout_s, wdlist, *)
+        options = build_call_options(target, threads, timeout_s, wdlist, *)
         scan = prepare_scan(options)
         print_banner(scan)
 

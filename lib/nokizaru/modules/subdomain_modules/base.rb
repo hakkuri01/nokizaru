@@ -217,8 +217,8 @@ module Nokizaru
 
         # Make HTTP request and return HttpResult
         # Provides a consistent interface for all subdomain modules
-        def fetch_with_result(client, url, **options)
-          BaseHTTP.fetch_with_result(client, url, **options)
+        def fetch_with_result(client, url, **)
+          BaseHTTP.fetch_with_result(client, url, **)
         end
       end
     end

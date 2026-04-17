@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'set'
 require_relative '../log'
 require_relative '../target_intel'
 require_relative 'crawler/core'

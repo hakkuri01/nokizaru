@@ -7,8 +7,8 @@ module Nokizaru
       module BaseHTTP
         module_function
 
-        def fetch_with_result(client, url, **options)
-          raw_response = client.get(url, **options)
+        def fetch_with_result(client, url, **)
+          raw_response = client.get(url, **)
           HttpResult.new(raw_response)
         rescue StandardError => e
           HttpResult.new(synthetic_error_response(e))

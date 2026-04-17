@@ -141,12 +141,12 @@ module Nokizaru
           end
         end
 
-        def safe_run_module(key, enabled, ctx, timeout_s: nil, &block)
+        def safe_run_module(key, enabled, ctx, timeout_s: nil, &)
           return unless enabled
 
           timeout = timeout_s.to_f
           if timeout.positive?
-            Timeout.timeout(timeout, &block)
+            Timeout.timeout(timeout, &)
           else
             yield
           end

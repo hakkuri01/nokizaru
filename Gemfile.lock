@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    nokizaru (2.0.2)
+    nokizaru (2.1.2)
       activesupport (~> 7.2, >= 7.2.3.1)
       async (~> 2.10)
       async-io (~> 1.35)
@@ -10,6 +10,7 @@ PATH
       httpx (~> 1.3)
       json (>= 2.19.2, < 3.0)
       nokogiri (~> 1.16)
+      pstore
       public_suffix (~> 5.0)
       ronin-db (~> 0.2)
       ronin-support (~> 1.0)
@@ -88,6 +89,7 @@ GEM
     json (2.19.2)
     logger (1.7.0)
     metrics (0.15.0)
+    mini_portile2 (2.8.9)
     minitest (5.27.0)
     nokogiri (1.19.1-aarch64-linux-gnu)
       racc (~> 1.4)
@@ -101,6 +103,7 @@ GEM
       prettyprint
     prettyprint (0.2.0)
     prism (1.9.0)
+    pstore (0.2.1)
     psych (5.3.1)
       date
       stringio
@@ -134,10 +137,8 @@ GEM
       uri-query_params (~> 0.8)
     securerandom (0.4.1)
     simpleidn (0.2.3)
-    sqlite3 (1.7.3-aarch64-linux)
-    sqlite3 (1.7.3-arm64-darwin)
-    sqlite3 (1.7.3-x86_64-darwin)
-    sqlite3 (1.7.3-x86_64-linux)
+    sqlite3 (1.7.3)
+      mini_portile2 (~> 2.8.0)
     stringio (3.2.0)
     thor (1.5.0)
     timeout (0.6.1)
@@ -162,4 +163,4 @@ DEPENDENCIES
   nokizaru!
 
 BUNDLED WITH
-   2.5.22
+   4.0.10

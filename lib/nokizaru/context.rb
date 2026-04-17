@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'set'
-
 module Nokizaru
   # Shared context passed through modules during a scan
   # Explain this block so future maintainers understand its intent
@@ -47,10 +45,10 @@ module Nokizaru
     private :append_missing
 
     # Read from cache first and compute values only on cache miss
-    def cache_fetch(key, ttl_s: 3600, &block)
+    def cache_fetch(key, ttl_s: 3600, &)
       return yield unless @cache
 
-      @cache.fetch(key, ttl_s: ttl_s, &block)
+      @cache.fetch(key, ttl_s: ttl_s, &)
     end
   end
 end

@@ -17,7 +17,7 @@ Gem::Specification.new do |spec|
     'rubygems_mfa_required' => 'true'
   }
 
-  spec.required_ruby_version = '>= 3.1'
+  spec.required_ruby_version = '>= 4.0', '< 5.0'
 
   spec.files = Dir[
     'bin/*',
@@ -42,6 +42,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'httpx', '~> 1.3'
   spec.add_dependency 'json', '>= 2.19.2', '< 3.0'
   spec.add_dependency 'nokogiri', '~> 1.16'
+  spec.add_dependency 'pstore'
   spec.add_dependency 'public_suffix', '~> 5.0'
   spec.add_dependency 'thor', '~> 1.3'
   spec.add_dependency 'whois', '~> 5.0'

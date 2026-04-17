@@ -2,14 +2,14 @@
 
 # Nokizaru implementation
 class Nokizaru < Formula
-  desc 'Fast modular web recon CLI for bug bounty workflows'
-  homepage 'https://github.com/hakkuri01/nokizaru'
-  url 'https://github.com/hakkuri01/nokizaru/archive/refs/tags/v2.0.2.tar.gz'
-  sha256 'bb18fcea82e0e76acbdd023eeecdd518f547dd3114e5579dad36825e20339f3a'
-  license 'MIT'
-  head 'https://github.com/hakkuri01/nokizaru.git', branch: 'main'
+  desc "Fast modular web recon CLI for bug bounty workflows"
+  homepage "https://github.com/hakkuri01/nokizaru"
+  url "https://github.com/hakkuri01/nokizaru/archive/refs/tags/v2.0.2.tar.gz"
+  sha256 "bb18fcea82e0e76acbdd023eeecdd518f547dd3114e5579dad36825e20339f3a"
+  license "MIT"
+  head "https://github.com/hakkuri01/nokizaru.git", branch: "main"
 
-  depends_on 'ruby@3.3'
+  depends_on "ruby"
 
   def install
     configure_ruby_env
@@ -17,52 +17,53 @@ class Nokizaru < Formula
     built_gem = build_package
     install_package(built_gem)
     install_bin_wrappers
-    man1.install 'man/nokizaru.1'
+    man1.install "man/nokizaru.1"
   end
 
   def configure_ruby_env
-    ENV.prepend_path 'PATH', Formula['ruby@3.3'].opt_bin
-    ENV['GEM_HOME'] = bundle_path
-    ENV['GEM_PATH'] = bundle_path
+    ENV.prepend_path "PATH", Formula["ruby"].opt_bin
+    ENV["GEM_HOME"] = bundle_path
+    ENV["GEM_PATH"] = bundle_path
   end
 
   def bundle_path
-    libexec / 'ruby/3.3.0'
+    ruby_abi = shell_output("#{Formula["ruby"].opt_bin}/ruby -e 'print RbConfig::CONFIG[\"ruby_version\"]'")
+    libexec / "ruby/#{ruby_abi}"
   end
 
   def configure_bundle
-    system 'bundle', 'config', 'set', '--local', 'path', libexec
-    system 'bundle', 'config', 'set', '--local', 'without', 'development test'
-    system 'bundle', 'config', 'set', '--local', 'deployment', 'true' if (buildpath / 'Gemfile.lock').exist?
-    system 'bundle', 'install'
+    system "bundle", "config", "set", "--local", "path", libexec
+    system "bundle", "config", "set", "--local", "without", "development test"
+    system "bundle", "config", "set", "--local", "deployment", "true" if (buildpath / "Gemfile.lock").exist?
+    system "bundle", "install"
   end
 
   def build_package
-    system 'gem', 'build', 'nokizaru.gemspec'
-    gem_file = Dir['nokizaru-*.gem'].first
-    odie 'Could not find built gem artifact' unless gem_file
+    system "gem", "build", "nokizaru.gemspec"
+    gem_file = Dir["nokizaru-*.gem"].first
+    odie "Could not find built gem artifact" unless gem_file
     gem_file
   end
 
   def install_package(gem_file)
-    system 'gem', 'install', gem_file, '--install-dir', bundle_path, '--bindir', bundle_path / 'bin',
-           '--ignore-dependencies', '--no-document'
+    system "gem", "install", gem_file, "--install-dir", bundle_path, "--bindir", bundle_path / "bin",
+           "--ignore-dependencies", "--no-document"
   end
 
   def install_bin_wrappers
-    bin.install bundle_path / 'bin/nokizaru'
+    bin.install bundle_path / "bin/nokizaru"
     bin.env_script_all_files(
-      bundle_path / 'bin',
-      GEM_HOME: ENV.fetch('GEM_HOME', nil),
-      GEM_PATH: ENV.fetch('GEM_PATH', nil),
-      PATH: "#{Formula['ruby@3.3'].opt_bin}:$PATH"
+      bundle_path / "bin",
+      GEM_HOME: ENV.fetch("GEM_HOME", nil),
+      GEM_PATH: ENV.fetch("GEM_PATH", nil),
+      PATH:     "#{Formula["ruby"].opt_bin}:$PATH",
     )
   end
 
   test do
     output = shell_output("#{bin}/nokizaru --help")
-    assert_match 'Nokizaru - Recon Refined', output
-    assert_match '--full', output
-    assert_path_exists man1 / 'nokizaru.1'
+    assert_match "Nokizaru - Recon Refined", output
+    assert_match "--full", output
+    assert_path_exists man1 / "nokizaru.1"
   end
 end

@@ -3,7 +3,6 @@
 require 'fileutils'
 require 'json'
 require 'securerandom'
-require 'set'
 require 'tempfile'
 require 'time'
 
