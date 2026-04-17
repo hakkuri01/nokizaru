@@ -9,7 +9,9 @@ class Nokizaru < Formula
   license "MIT"
   head "https://github.com/hakkuri01/nokizaru.git", branch: "main"
 
+  depends_on "pkgconf" => :build
   depends_on "ruby"
+  depends_on "sqlite"
 
   def install
     configure_ruby_env
@@ -23,6 +25,8 @@ class Nokizaru < Formula
 
   def configure_ruby_env
     ENV.prepend_path "PATH", Formula["ruby"].opt_bin
+    ENV.prepend_path "PATH", Formula["pkgconf"].opt_bin
+    ENV.prepend_path "PKG_CONFIG_PATH", Formula["sqlite"].opt_lib / "pkgconfig"
     ENV["GEM_HOME"] = bundle_path
     ENV["GEM_PATH"] = bundle_path
   end
@@ -42,6 +46,7 @@ class Nokizaru < Formula
     ENV["BUNDLE_WITHOUT"] = "development test"
     ENV["BUNDLE_DEPLOYMENT"] = "true" if (buildpath / "Gemfile.lock").exist?
     ENV["BUNDLE_VERSION"] = "system"
+    ENV["BUNDLE_BUILD__SQLITE3"] = "--enable-system-libraries --with-sqlite3-dir=#{Formula["sqlite"].opt_prefix}"
     system "bundle", "install"
   end
 
