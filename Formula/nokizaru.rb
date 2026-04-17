@@ -16,6 +16,7 @@ class Nokizaru < Formula
     configure_bundle
     built_gem = build_package
     install_package(built_gem)
+    cleanup_build_artifacts
     install_bin_wrappers
     man1.install "man/nokizaru.1"
   end
@@ -27,14 +28,20 @@ class Nokizaru < Formula
   end
 
   def bundle_path
-    ruby_abi = shell_output("#{Formula["ruby"].opt_bin}/ruby -e 'print RbConfig::CONFIG[\"ruby_version\"]'")
-    libexec / "ruby/#{ruby_abi}"
+    @bundle_path ||= begin
+      ruby_bin = Formula["ruby"].opt_bin / "ruby"
+      ruby_abi = Utils.safe_popen_read(ruby_bin, "-e", "print RbConfig::CONFIG[%q[ruby_version]]").strip
+      odie "Unable to determine Ruby ABI version" if ruby_abi.empty?
+
+      libexec / "ruby/#{ruby_abi}"
+    end
   end
 
   def configure_bundle
-    system "bundle", "config", "set", "--local", "path", libexec
-    system "bundle", "config", "set", "--local", "without", "development test"
-    system "bundle", "config", "set", "--local", "deployment", "true" if (buildpath / "Gemfile.lock").exist?
+    ENV["BUNDLE_PATH"] = libexec.to_s
+    ENV["BUNDLE_WITHOUT"] = "development test"
+    ENV["BUNDLE_DEPLOYMENT"] = "true" if (buildpath / "Gemfile.lock").exist?
+    ENV["BUNDLE_VERSION"] = "system"
     system "bundle", "install"
   end
 
@@ -48,6 +55,11 @@ class Nokizaru < Formula
   def install_package(gem_file)
     system "gem", "install", gem_file, "--install-dir", bundle_path, "--bindir", bundle_path / "bin",
            "--ignore-dependencies", "--no-document"
+  end
+
+  def cleanup_build_artifacts
+    Dir[bundle_path / "gems/*/ext/**/tmp"].each { |path| rm_r path }
+    Dir[bundle_path / "gems/*/ext/**/mkmf.log"].each { |path| rm path }
   end
 
   def install_bin_wrappers
