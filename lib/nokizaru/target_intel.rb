@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
-require 'net/http'
-require 'openssl'
 require 'uri'
 require 'public_suffix'
+require_relative 'http_client'
 require_relative 'target_intel/url_helpers'
 require_relative 'target_intel/http_helpers'
 require_relative 'target_intel/profile_helpers'
@@ -62,7 +61,7 @@ module Nokizaru
     end
 
     def resolved_redirect_uri(target, response)
-      location = response['location'].to_s.strip
+      location = Nokizaru::HTTPClient.header_value(response, 'location').to_s.strip
       return nil if location.empty?
 
       resolved_location = resolve_location(target, location)

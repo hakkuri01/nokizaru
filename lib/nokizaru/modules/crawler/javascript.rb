@@ -37,9 +37,9 @@ module Nokizaru
 
         def extract_urls_from_javascript(js_url, page_url, request_headers)
           response = http_get(js_url, request_headers: request_headers)
-          return [] unless response.is_a?(Net::HTTPSuccess)
+          return [] unless http_success?(response)
 
-          found = response.body.scan(%r{https?://[\w\-.~:/?#\[\]@!$&'()*+,;=%]+})
+          found = Nokizaru::HTTPClient.response_body(response).scan(%r{https?://[\w\-.~:/?#\[\]@!$&'()*+,;=%]+})
           normalize_extracted_urls(found, page_url)
         rescue StandardError => e
           Log.write("[crawler.js_crawl] Exception = #{e}")

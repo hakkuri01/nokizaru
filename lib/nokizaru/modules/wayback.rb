@@ -23,7 +23,9 @@ module Nokizaru
       WAYBACK_ROW_LABEL_WIDTH = [
         'Checking Availability on Wayback Machine'.length,
         'Fetching URLs from CDX'.length,
-        'Using availability snapshot fallback'.length
+        'Using availability snapshot fallback'.length,
+        'Archive.org Service Status'.length,
+        'Manual Wayback Review'.length
       ].max
       AVAIL_LABELS = {
         available: 'Available',
@@ -33,8 +35,8 @@ module Nokizaru
 
       def call(target, ctx, timeout_s: 10.0, raw: false)
         UI.module_header('Starting WayBack Machine...')
-        state, cdx_status, urls = execute_query(target, timeout_s, raw)
-        persist_wayback(ctx, state, cdx_status, urls)
+        result = execute_query(target, timeout_s, raw)
+        persist_wayback(ctx, result)
         Log.write('[wayback] Completed')
       rescue StandardError => e
         UI.line(:error, "Exception : #{e}")
@@ -44,13 +46,31 @@ module Nokizaru
 
       def execute_query(target, timeout_s, raw)
         timeout_value = normalized_timeout(timeout_s)
-        availability_timeout = Query.availability_timeout(timeout_value)
-        availability = Query.availability_status(target, availability_timeout)
+        deadline_at = Query.deadline_after(timeout_value)
+        availability_timeout_s = Query.availability_timeout(timeout_value)
+        availability = Query.availability_status(target, availability_timeout_s, deadline_at: deadline_at)
         Presenter.availability_status(availability[:state])
-        cdx_timeout = Query.cdx_timeout(timeout_value, availability_timeout)
-        urls, cdx_status = Query.fetch_urls_with_status(target, cdx_timeout, availability[:snapshots], raw: raw)
+        urls, cdx_status, cdx_reasons = Query.fetch_urls_with_status(
+          target,
+          Query.cdx_timeout(timeout_value, availability_timeout_s),
+          availability[:snapshots],
+          raw: raw,
+          deadline_at: deadline_at
+        )
+        archive_status = Query.archive_status(availability, cdx_status, cdx_reasons)
+        pivots = Query.manual_pivots(target)
+        Presenter.archive_status(archive_status)
         Presenter.cdx_status(cdx_status, urls)
-        [availability[:state], cdx_status, urls]
+        Presenter.manual_pivots(pivots, archive_status: archive_status) if urls.empty?
+        {
+          availability: availability,
+          archive_status: archive_status,
+          cdx_status: cdx_status,
+          cdx_reasons: cdx_reasons,
+          urls: urls,
+          manual_pivots: pivots,
+          elapsed_s: timeout_value - [Query.remaining_time(deadline_at), 0.0].max
+        }
       end
 
       def normalized_timeout(timeout_s)
@@ -58,18 +78,29 @@ module Nokizaru
         value.positive? ? value : TOTAL_TIMEOUT
       end
 
-      def persist_wayback(ctx, availability_state, cdx_status, urls)
+      def persist_wayback(ctx, result)
+        urls = Array(result[:urls])
         high_signal_urls = Normalize.rank_high_signal_urls(urls)
         high_signal_urls = Array(urls).first(20) if high_signal_urls.empty? && Array(urls).any?
         Presenter.urls_preview(urls)
         ctx.add_artifact('urls', urls) if urls.any?
         ctx.add_artifact('wayback_urls', urls) if urls.any?
         ctx.add_artifact('wayback_high_signal_urls', high_signal_urls) if high_signal_urls.any?
-        ctx.run['modules']['wayback'] = {
-          'availability' => availability_state.to_s,
-          'cdx_status' => cdx_status,
+        ctx.run['modules']['wayback'] = wayback_payload(result, urls, high_signal_urls)
+      end
+
+      def wayback_payload(result, urls, high_signal_urls)
+        {
+          'availability' => result.dig(:availability, :state).to_s,
+          'availability_reason' => result.dig(:availability, :reason),
+          'availability_variant' => result.dig(:availability, :variant),
+          'archive_status' => result[:archive_status],
+          'cdx_status' => result[:cdx_status],
+          'cdx_reasons' => Array(result[:cdx_reasons]),
           'urls' => urls,
-          'high_signal_urls' => high_signal_urls
+          'high_signal_urls' => high_signal_urls,
+          'manual_pivots' => result[:manual_pivots],
+          'elapsed_s' => result[:elapsed_s].to_f.round(4)
         }
       end
     end

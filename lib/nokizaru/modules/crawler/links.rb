@@ -44,7 +44,7 @@ module Nokizaru
           response = fetch[:response]
           return handle_missing_robots(response) unless http_success?(response)
 
-          links, sitemaps = parse_robots_body(response.body, base_url)
+          links, sitemaps = parse_robots_body(Nokizaru::HTTPClient.response_body(response), base_url)
           step_row(:info, 'Looking for robots.txt', 'Found')
           step_row(:info, 'Extracting robots Links', links.length)
           [links, sitemaps]
@@ -66,11 +66,18 @@ module Nokizaru
         end
 
         def handle_missing_robots(response)
-          status = response&.code
-          label = status == '404' ? 'Not Found' : (status || 'Error')
-          level = status == '404' ? :info : :error
+          status = Nokizaru::HTTPClient.status_code(response)
+          label = missing_response_label(status)
+          level = status == 404 ? :info : :error
           step_row(level, 'Looking for robots.txt', label)
           [[], []]
+        end
+
+        def missing_response_label(status)
+          return 'Not Found' if status == 404
+          return status if status.positive?
+
+          'Error'
         end
 
         def parse_robots_line(line, base_url)
@@ -109,9 +116,10 @@ module Nokizaru
 
         def sitemap_status_label(fetch)
           response = fetch[:response]
-          return 'Not Found' if response&.code == '404'
+          status = Nokizaru::HTTPClient.status_code(response)
+          return 'Not Found' if status == 404
 
-          return response.code if response&.code
+          return status if status.positive?
 
           reason = fetch[:stop_reason].to_s
           return reason.tr('_', ' ').capitalize unless reason.empty?

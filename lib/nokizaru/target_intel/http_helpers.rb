@@ -7,29 +7,20 @@ module Nokizaru
       module_function
 
       def fetch(uri, verify_ssl:, timeout_s:, request_headers: {})
-        http = build_http(uri, verify_ssl: verify_ssl, timeout_s: timeout_s)
-        request = build_request(uri, request_headers)
-        http.request(request)
+        client = Nokizaru::HTTPClient.for_host(
+          uri.to_s,
+          timeout_s: timeout_s,
+          follow_redirects: false,
+          verify_ssl: verify_ssl
+        )
+        response = client.get(uri.to_s, headers: build_headers(request_headers))
+        Nokizaru::HTTPClient.error_response?(response) ? nil : response
       rescue StandardError
         nil
       end
 
-      def build_http(uri, verify_ssl:, timeout_s:)
-        http = Net::HTTP.new(uri.host, uri.port)
-        http.open_timeout = timeout_s
-        http.read_timeout = timeout_s
-        return http unless uri.scheme == 'https'
-
-        http.use_ssl = true
-        http.verify_mode = verify_ssl ? OpenSSL::SSL::VERIFY_PEER : OpenSSL::SSL::VERIFY_NONE
-        http
-      end
-
-      def build_request(uri, request_headers = {})
-        request = Net::HTTP::Get.new(uri)
-        request['User-Agent'] = TargetIntel::USER_AGENT
-        request['Accept'] = '*/*'
-        Nokizaru::RequestHeaders.apply_to_request(request, request_headers)
+      def build_headers(request_headers = {})
+        Nokizaru::HTTPClient.request_headers(base: request_headers, user_agent: TargetIntel::USER_AGENT)
       end
     end
   end

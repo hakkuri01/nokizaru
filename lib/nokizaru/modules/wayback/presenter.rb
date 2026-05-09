@@ -14,12 +14,18 @@ module Nokizaru
 
         def cdx_status(cdx_status, urls)
           if urls.empty?
-            label = cdx_status == 'timeout' ? 'Timeout' : 'Not Found'
+            label = case cdx_status
+                    when 'timeout' then 'Timeout'
+                    when 'archive_degraded' then 'Archive degraded'
+                    else 'Not Found'
+                    end
             row(:error, 'Fetching URLs from CDX', label)
             return
           end
 
-          row(:error, 'Fetching URLs from CDX', 'Timeout') if cdx_status == 'timeout_with_fallback'
+          if cdx_status == 'timeout_with_fallback'
+            return row(:plus, 'Fetching URLs from CDX', "#{urls.length} (availability fallback)")
+          end
           return row(:plus, 'Fetching URLs from CDX', "#{urls.length} (reduced query)") if cdx_status == 'found_reduced'
 
           if cdx_status == 'found_partial_timeout'
@@ -32,6 +38,21 @@ module Nokizaru
 
         def fallback_used(count)
           row(:plus, 'Using availability snapshot fallback', count)
+        end
+
+        def archive_status(status)
+          type = status == 'degraded' ? :error : :info
+          label = status == 'degraded' ? 'Degraded or rate-limited' : status.to_s.capitalize
+          row(type, 'Archive.org Service Status', label)
+        end
+
+        def manual_pivots(pivots, **)
+          UI.tree_header('Wayback Manual Review Links')
+          UI.tree_rows([
+                         ['Calendar', pivots['calendar_url']],
+                         ['Availability API', pivots['availability_query_url']],
+                         ['CDX API', pivots['cdx_query_url']]
+                       ])
         end
 
         def urls_preview(urls)

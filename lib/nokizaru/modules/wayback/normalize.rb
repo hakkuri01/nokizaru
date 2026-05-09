@@ -50,23 +50,35 @@ module Nokizaru
 
         def filter_urls(urls, target: nil)
           scope = target_scope(target)
-          Array(urls)
-            .map { |url| sanitize_url(url) }
-            .reject(&:empty?)
-            .select { |url| in_scope?(url, scope) }
-            .reject { |url| low_signal_asset?(url) }
-            .uniq
+          domain_cache = {}
+          seen = {}
+          Array(urls).each_with_object([]) do |url, filtered|
+            record = sanitized_url_record(url)
+            next unless record
+            next unless in_scope_record?(record, scope, domain_cache)
+            next if low_signal_path?(record[:uri].path)
+            next if seen[record[:url]]
+
+            seen[record[:url]] = true
+            filtered << record[:url]
+          end
         end
 
         def rank_high_signal_urls(urls, limit: 250)
-          Array(urls)
-            .compact
-            .uniq
-            .map { |url| [url, score_url(url)] }
-            .select { |(_, score)| score.positive? }
-            .sort_by { |(url, score)| [-score, url.length] }
-            .first(limit.to_i)
-            .map(&:first)
+          scored = []
+          seen = {}
+          Array(urls).each do |url|
+            next if seen[url]
+
+            seen[url] = true
+            record = sanitized_url_record(url)
+            next unless record
+
+            score = score_uri(record[:uri])
+            scored << [record[:url], score] if score.positive?
+          end
+
+          scored.sort_by { |(url, score)| [-score, url.length] }.first(limit.to_i).map(&:first)
         end
 
         def sanitize_url(url)
@@ -77,10 +89,36 @@ module Nokizaru
 
           uri = URI.parse(cleaned)
           return '' unless uri.is_a?(URI::HTTP) && uri.host
+          return '' if noisy_encoded_path?(uri.path)
 
           cleaned
         rescue StandardError
           ''
+        end
+
+        def sanitized_url_record(url)
+          cleaned = url.to_s.strip.sub(/["'`,;\])]+\z/, '')
+          return nil if cleaned.empty?
+          return nil if cleaned.include?(' ')
+          return nil if cleaned.match?(/%[0-9A-Fa-f]?\z/)
+
+          uri = URI.parse(cleaned)
+          return nil unless uri.is_a?(URI::HTTP) && uri.host
+          return nil if noisy_encoded_path?(uri.path)
+
+          { url: cleaned, uri: uri }
+        rescue StandardError
+          nil
+        end
+
+        def noisy_encoded_path?(path)
+          decoded = URI.decode_www_form_component(path.to_s)
+          return true if decoded.match?(/[[:cntrl:]]/)
+
+          segment = decoded.delete_prefix('/')
+          !segment.empty? && segment.strip.empty?
+        rescue StandardError
+          false
         end
 
         def target_scope(target)
@@ -101,6 +139,18 @@ module Nokizaru
           return false if host.empty?
 
           registrable_domain(host) == scope
+        rescue StandardError
+          false
+        end
+
+        def in_scope_record?(record, scope, domain_cache)
+          return true if scope.nil?
+
+          host = record[:uri].host.to_s.downcase
+          return false if host.empty?
+
+          domain_cache[host] ||= registrable_domain(host)
+          domain_cache[host] == scope
         rescue StandardError
           false
         end
@@ -127,24 +177,33 @@ module Nokizaru
 
         def low_signal_asset?(url)
           path = URI.parse(url).path.to_s.downcase
-          return false if path.empty?
-
-          LOW_SIGNAL_EXTENSIONS.any? { |ext| path.end_with?(ext) }
+          low_signal_path?(path)
         rescue StandardError
           false
         end
 
+        def low_signal_path?(path)
+          value = path.to_s.downcase
+          return false if value.empty?
+
+          LOW_SIGNAL_EXTENSIONS.any? { |ext| value.end_with?(ext) }
+        end
+
         def score_url(url)
           uri = URI.parse(url)
+          score_uri(uri)
+        rescue StandardError
+          0
+        end
+
+        def score_uri(uri)
           path = uri.path.to_s.downcase
           score = 0
           score += 4 if HIGH_SIGNAL_TOKENS.any? { |token| path.include?(token) }
           score += 2 if path.count('/') >= 2
           score += 1 unless uri.query.to_s.empty?
-          score -= 3 if low_signal_asset?(url)
+          score -= 3 if low_signal_path?(path)
           score
-        rescue StandardError
-          0
         end
       end
     end

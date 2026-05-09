@@ -92,8 +92,57 @@ module Nokizaru
     # Convenience method to make a single GET request
     # Uses connection pooling automatically
     def get(url, headers: {}, timeout_s: 10.0, verify_ssl: true)
-      client = for_host(url, timeout_s: timeout_s, headers: headers, verify_ssl: verify_ssl)
-      client.get(url)
+      client = for_host(url, timeout_s: timeout_s, verify_ssl: verify_ssl)
+      client.get(url, headers: DEFAULT_HEADERS.merge(headers || {}))
+    end
+
+    def request_headers(base: {}, user_agent: nil)
+      headers = DEFAULT_HEADERS.merge(base || {})
+      headers['User-Agent'] = user_agent if user_agent
+      headers
+    end
+
+    def status_code(response)
+      response.respond_to?(:status) ? response.status.to_i : 0
+    end
+
+    def response_body(response)
+      return '' unless response.respond_to?(:body)
+
+      response.body.to_s
+    end
+
+    def header_value(response, key)
+      headers = response_headers(response)
+      value = headers[key.to_s] || headers[key.to_s.downcase] || headers[key.to_s.capitalize]
+      Array(value).join(', ')
+    end
+
+    def response_headers(response)
+      headers = response.respond_to?(:headers) ? response.headers : {}
+      return headers.to_h if headers.respond_to?(:to_h)
+
+      headers.to_h
+    rescue StandardError
+      {}
+    end
+
+    def each_response_header(response)
+      response_headers(response).each_pair do |key, value|
+        yield key.to_s.downcase, Array(value).join(', ')
+      end
+    end
+
+    def http_success?(response)
+      (200..299).cover?(status_code(response))
+    end
+
+    def http_redirect?(response, codes)
+      Array(codes).include?(status_code(response))
+    end
+
+    def error_response?(response)
+      defined?(HTTPX::ErrorResponse) && response.is_a?(HTTPX::ErrorResponse)
     end
 
     # Shutdown all connections. Call this during application shutdown

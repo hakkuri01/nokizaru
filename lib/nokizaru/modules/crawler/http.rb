@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
-require 'net/http'
 require 'nokogiri'
-require 'openssl'
 require 'uri'
+require_relative '../../http_client'
 
 module Nokizaru
   module Modules
@@ -65,7 +64,7 @@ module Nokizaru
         def fetch_page_status(current, redirects, request_headers: {})
           response = http_get(current, request_headers: request_headers)
           return { fail: true, message: 'Failed to fetch target' } unless response
-          return { ok: true, response: response, request_headers: request_headers } if response.is_a?(Net::HTTPSuccess)
+          return { ok: true, response: response, request_headers: request_headers } if http_success?(response)
 
           fallback = fallback_page_status(current, response, request_headers)
           return fallback if fallback
@@ -73,7 +72,8 @@ module Nokizaru
           next_url = followable_redirect(current, response, redirects)
           return { next_url: next_url } if next_url
 
-          { fail: true, message: "HTTP status #{response.code}", status: response.code }
+          status = Nokizaru::HTTPClient.status_code(response)
+          { fail: true, message: "HTTP status #{status}", status: status }
         end
 
         def fallback_page_status(current, response, request_headers)
@@ -84,27 +84,27 @@ module Nokizaru
             request_headers: request_headers,
             user_agent: Crawler::FALLBACK_USER_AGENT
           )
-          return nil unless fallback_response.is_a?(Net::HTTPSuccess)
+          return nil unless http_success?(fallback_response)
 
           Log.write("[crawler] Fallback user-agent succeeded for #{current}")
           { ok: true, response: fallback_response, request_headers: request_headers }
         end
 
         def bot_block_status?(response)
-          Crawler::BOT_BLOCK_CODES.include?(response.code.to_i)
+          Crawler::BOT_BLOCK_CODES.include?(Nokizaru::HTTPClient.status_code(response))
         rescue StandardError
           false
         end
 
         def page_hash(url, response, request_headers)
-          { soup: Nokogiri::HTML(response.body), url: url, request_headers: request_headers }
+          { soup: Nokogiri::HTML(Nokizaru::HTTPClient.response_body(response)), url: url, request_headers: request_headers }
         end
 
         def followable_redirect(current, response, redirects)
           return nil unless redirect_response?(response)
           return nil unless redirects < Crawler::MAX_MAIN_REDIRECTS
 
-          location = response['location'].to_s.strip
+          location = Nokizaru::HTTPClient.header_value(response, 'location').to_s.strip
           return nil if location.empty?
 
           next_url = Nokizaru::TargetIntel.resolve_location(current, location)
@@ -142,7 +142,7 @@ module Nokizaru
             return fetch_result(response, current_url, redirects, :request_failed) unless response
             return fetch_result(response, current_url, redirects, nil) unless redirect_response?(response)
 
-            location = response['location'].to_s.strip
+            location = Nokizaru::HTTPClient.header_value(response, 'location').to_s.strip
             return fetch_result(response, current_url, redirects, :missing_location) if location.empty?
             return fetch_result(response, current_url, redirects, :max_redirects) if redirects >= max_redirects
 
@@ -171,12 +171,14 @@ module Nokizaru
         end
 
         def perform_http_get(url, request_headers: {}, user_agent: Crawler::USER_AGENT)
-          uri = URI.parse(url)
-          http = Net::HTTP.new(uri.host, uri.port)
-          http.open_timeout = Crawler::TIMEOUT
-          http.read_timeout = Crawler::TIMEOUT
-          enable_ssl!(http) if uri.scheme == 'https'
-          http.request(build_request(uri, request_headers, user_agent: user_agent))
+          client = Nokizaru::HTTPClient.for_host(
+            url,
+            timeout_s: Crawler::TIMEOUT,
+            follow_redirects: false,
+            verify_ssl: false
+          )
+          response = client.get(url, headers: build_headers(request_headers, user_agent: user_agent))
+          Nokizaru::HTTPClient.error_response?(response) ? nil : response
         end
 
         def with_http_retries(url)
@@ -198,7 +200,7 @@ module Nokizaru
         end
 
         def retryable_http_status?(response)
-          code = response&.code.to_i
+          code = Nokizaru::HTTPClient.status_code(response)
           code == 429 || code >= 500
         rescue StandardError => e
           Log.write("[crawler] HTTP retry check error: #{e.message}")

@@ -8,13 +8,13 @@ module Nokizaru
         private
 
         def http_success?(response)
-          (200..299).cover?(response&.code.to_i)
+          Nokizaru::HTTPClient.http_success?(response)
         rescue StandardError
           false
         end
 
         def redirect_response?(response)
-          Crawler::REDIRECT_CODES.include?(response.code.to_i)
+          Nokizaru::HTTPClient.http_redirect?(response, Crawler::REDIRECT_CODES)
         rescue StandardError
           false
         end
@@ -27,16 +27,8 @@ module Nokizaru
           false
         end
 
-        def enable_ssl!(http)
-          http.use_ssl = true
-          http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-        end
-
-        def build_request(uri, request_headers = {}, user_agent: Crawler::USER_AGENT)
-          request = Net::HTTP::Get.new(uri)
-          request['User-Agent'] = user_agent
-          request['Accept'] = '*/*'
-          Nokizaru::RequestHeaders.apply_to_request(request, request_headers)
+        def build_headers(request_headers = {}, user_agent: Crawler::USER_AGENT)
+          Nokizaru::HTTPClient.request_headers(base: request_headers, user_agent: user_agent)
         end
       end
     end

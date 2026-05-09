@@ -104,7 +104,7 @@ module Nokizaru
         end
 
         def sitemap_body(response, sitemap_url)
-          body = response.body.to_s
+          body = Nokizaru::HTTPClient.response_body(response)
           return body if body.empty?
 
           return body unless gzip_sitemap_body?(response, sitemap_url)
@@ -116,14 +116,15 @@ module Nokizaru
         end
 
         def gzip_sitemap_body?(response, sitemap_url)
-          encoding = response['content-encoding'].to_s.downcase
+          encoding = Nokizaru::HTTPClient.header_value(response, 'content-encoding').to_s.downcase
           encoding.include?('gzip') || sitemap_url.to_s.downcase.end_with?('.gz')
         rescue StandardError
           sitemap_url.to_s.downcase.end_with?('.gz')
         end
 
         def log_sitemap_fetch_skip(sitemap_url, fetch)
-          status = fetch[:response]&.code || fetch[:stop_reason]
+          code = Nokizaru::HTTPClient.status_code(fetch[:response])
+          status = code.positive? ? code : fetch[:stop_reason]
           Log.write("[crawler.sm_crawl] Skipping sitemap #{sitemap_url} (#{status})")
         end
 

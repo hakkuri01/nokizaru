@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'httpx'
+require 'digest'
 require 'monitor'
 require_relative 'version'
 
@@ -116,7 +117,12 @@ module Nokizaru
     def for_host(origin, headers: {}, verify_ssl: true, follow_redirects: true)
       uri = URI.parse(origin)
       port = uri.port || (uri.scheme == 'https' ? 443 : 80)
-      cache_key = "#{uri.scheme}://#{uri.host}:#{port}:ssl=#{verify_ssl}:redir=#{follow_redirects}"
+      cache_key = [
+        "#{uri.scheme}://#{uri.host}:#{port}",
+        "ssl=#{verify_ssl}",
+        "redir=#{follow_redirects}",
+        "headers=#{headers_cache_key(headers)}"
+      ].join(':')
 
       synchronize do
         @pools[cache_key] ||= build_client(
@@ -175,6 +181,13 @@ module Nokizaru
         timeout: { operation_timeout: timeout_s || 30.0 },
         ssl: { alpn_protocols: %w[http/1.1] }
       )
+    end
+
+    def headers_cache_key(headers)
+      normalized = (headers || {})
+                   .sort_by { |key, _value| key.to_s.downcase }
+                   .map { |key, value| [key.to_s, value.to_s] }
+      Digest::SHA256.hexdigest(Marshal.dump(normalized))[0, 16]
     end
   end
 end

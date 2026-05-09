@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'net/http'
+require_relative '../../http_client'
 
 module Nokizaru
   module Modules
@@ -9,10 +9,11 @@ module Nokizaru
       module HTTP
         module_function
 
-        def get(uri)
-          with_retries(uri)
-        rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET, Errno::EHOSTUNREACH,
-               Errno::ECONNREFUSED, SocketError => e
+        MIN_RETRY_BUDGET = 0.25
+
+        def get(uri, timeout_s: nil, deadline_at: nil)
+          with_retries(uri, timeout_s: timeout_s, deadline_at: deadline_at)
+        rescue Errno::ECONNRESET, Errno::EHOSTUNREACH, Errno::ECONNREFUSED, SocketError => e
           Log.write("[wayback] Timeout/network error: #{e.message}")
           nil
         rescue StandardError => e
@@ -20,34 +21,65 @@ module Nokizaru
           nil
         end
 
-        def with_retries(uri)
+        def with_retries(uri, timeout_s: nil, deadline_at: nil)
           attempts = 0
           while attempts <= Wayback::RETRIES
             attempts += 1
-            response = request(uri)
-            return response unless retryable?(response, attempts)
+            budget = request_budget(timeout_s, deadline_at)
+            return nil unless budget.positive?
 
-            sleep(0.2 * attempts)
+            response = request(uri, timeout_s: budget)
+            return response unless retryable?(response, attempts, deadline_at, timeout_s)
+
+            sleep(retry_delay(attempts, deadline_at))
           end
           nil
         end
 
-        def retryable?(response, attempts)
-          retryable_status?(response&.code.to_i) && attempts <= Wayback::RETRIES
+        def retryable?(response, attempts, deadline_at = nil, timeout_s = nil)
+          retryable_status?(Nokizaru::HTTPClient.status_code(response)) &&
+            attempts <= Wayback::RETRIES &&
+            retry_budget?(deadline_at, timeout_s)
         end
 
-        def request(uri)
-          http = Net::HTTP.new(uri.host, uri.port)
-          http.open_timeout = Wayback::CONNECT_TIMEOUT
-          http.read_timeout = Wayback::READ_TIMEOUT
-          http.use_ssl = uri.scheme == 'https'
-          req = Net::HTTP::Get.new(uri)
-          req['User-Agent'] = 'Nokizaru'
-          http.request(req)
+        def request(uri, timeout_s: nil)
+          budget = timeout_s.to_f.positive? ? timeout_s.to_f : Wayback::READ_TIMEOUT
+          client = Nokizaru::HTTPClient.for_host(
+            uri.to_s,
+            timeout_s: budget,
+            follow_redirects: false
+          )
+          response = client.get(uri.to_s, headers: Nokizaru::HTTPClient.request_headers(user_agent: 'Nokizaru'))
+          Nokizaru::HTTPClient.error_response?(response) ? nil : response
+        end
+
+        def request_budget(timeout_s, deadline_at)
+          values = []
+          values << timeout_s.to_f if timeout_s.to_f.positive?
+          values << (deadline_at.to_f - Process.clock_gettime(Process::CLOCK_MONOTONIC)) if deadline_at
+          return Wayback::READ_TIMEOUT if values.empty?
+
+          values.min
+        end
+
+        def retry_budget?(deadline_at, timeout_s = nil)
+          return true if deadline_at.nil? && timeout_s.nil?
+          return timeout_s.to_f > MIN_RETRY_BUDGET unless deadline_at
+
+          deadline_at.to_f - Process.clock_gettime(Process::CLOCK_MONOTONIC) > MIN_RETRY_BUDGET
+        end
+
+        def retry_delay(attempts, deadline_at)
+          delay = 0.2 * attempts
+          return delay unless deadline_at
+
+          remaining = deadline_at.to_f - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          max_delay = [remaining - MIN_RETRY_BUDGET, 0.0].max
+          delay.clamp(0.0, max_delay)
         end
 
         def retryable_status?(status)
-          status == 429 || status >= 500
+          status == 429
         end
       end
     end

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-require 'net/http'
 require 'uri'
 require 'openssl'
+require_relative '../http_client'
 require_relative '../log'
 require_relative '../target_intel'
 
@@ -43,7 +43,8 @@ module Nokizaru
       end
 
       def apply_header_pairs!(response, result)
-        pairs = response.each_header.map { |key, value| [key, value] }
+        pairs = []
+        Nokizaru::HTTPClient.each_response_header(response) { |key, value| pairs << [key, value] }
         print_header_pairs(pairs)
         pairs.each { |key, value| result['headers'][key] = value }
       end
@@ -119,26 +120,21 @@ module Nokizaru
 
       # Read key values from env first, then keys file, and seed missing key slots
       def fetch(uri, request_headers: {})
-        http = Net::HTTP.new(uri.host, uri.port)
-        http.open_timeout = TIMEOUT
-        http.read_timeout = TIMEOUT
-        enable_ssl!(http) if uri.scheme == 'https'
-        http.request(build_request(uri, request_headers))
+        client = Nokizaru::HTTPClient.for_host(
+          uri.to_s,
+          timeout_s: TIMEOUT,
+          follow_redirects: false,
+          verify_ssl: false
+        )
+        response = client.get(uri.to_s, headers: build_headers(request_headers))
+        Nokizaru::HTTPClient.error_response?(response) ? nil : response
       rescue StandardError => e
         Log.write("[headers] HTTP error: #{e.message}")
         nil
       end
 
-      def build_request(uri, request_headers = {})
-        request = Net::HTTP::Get.new(uri)
-        request['User-Agent'] = 'Nokizaru'
-        request['Accept'] = '*/*'
-        Nokizaru::RequestHeaders.apply_to_request(request, request_headers)
-      end
-
-      def enable_ssl!(http)
-        http.use_ssl = true
-        http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      def build_headers(request_headers = {})
+        Nokizaru::HTTPClient.request_headers(base: request_headers, user_agent: 'Nokizaru')
       end
 
       # Print SSL errors with guidance for certificate validation failures
