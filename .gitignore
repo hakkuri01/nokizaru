@@ -37,9 +37,6 @@ coverage/
 *.log
 tmp/
 log/
-
-# Local validation suites
-# Maintainer runs private bench/test suites before accepting PRs
 /bench/
 /test/
 
