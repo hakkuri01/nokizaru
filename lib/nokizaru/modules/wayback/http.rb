@@ -11,8 +11,8 @@ module Nokizaru
 
         MIN_RETRY_BUDGET = 0.25
 
-        def get(uri, timeout_s: nil, deadline_at: nil)
-          with_retries(uri, timeout_s: timeout_s, deadline_at: deadline_at)
+        def get(uri, timeout_s: nil, deadline_at: nil, headers: nil)
+          with_retries(uri, timeout_s: timeout_s, deadline_at: deadline_at, headers: headers)
         rescue Errno::ECONNRESET, Errno::EHOSTUNREACH, Errno::ECONNREFUSED, SocketError => e
           Log.write("[wayback] Timeout/network error: #{e.message}")
           nil
@@ -21,14 +21,14 @@ module Nokizaru
           nil
         end
 
-        def with_retries(uri, timeout_s: nil, deadline_at: nil)
+        def with_retries(uri, timeout_s: nil, deadline_at: nil, headers: nil)
           attempts = 0
           while attempts <= Wayback::RETRIES
             attempts += 1
             budget = request_budget(timeout_s, deadline_at)
             return nil unless budget.positive?
 
-            response = request(uri, timeout_s: budget)
+            response = request(uri, timeout_s: budget, headers: headers)
             return response unless retryable?(response, attempts, deadline_at, timeout_s)
 
             sleep(retry_delay(attempts, deadline_at))
@@ -42,14 +42,15 @@ module Nokizaru
             retry_budget?(deadline_at, timeout_s)
         end
 
-        def request(uri, timeout_s: nil)
+        def request(uri, timeout_s: nil, headers: nil)
           budget = timeout_s.to_f.positive? ? timeout_s.to_f : Wayback::READ_TIMEOUT
           client = Nokizaru::HTTPClient.for_host(
             uri.to_s,
             timeout_s: budget,
             follow_redirects: false
           )
-          response = client.get(uri.to_s, headers: Nokizaru::HTTPClient.request_headers(user_agent: 'Nokizaru'))
+          request_headers = Nokizaru::HTTPClient.request_headers(user_agent: 'Nokizaru').merge(headers || {})
+          response = client.get(uri.to_s, headers: request_headers)
           Nokizaru::HTTPClient.error_response?(response) ? nil : response
         end
 

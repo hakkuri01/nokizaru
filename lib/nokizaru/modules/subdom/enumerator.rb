@@ -33,10 +33,14 @@ module Nokizaru
         def normalize(value)
           candidate = value.to_s.strip
           return nil if candidate.empty?
-          return nil unless candidate.end_with?(@hostname)
+          return nil unless in_hostname_scope?(candidate)
           return nil unless candidate.match?(@valid_pattern)
 
           candidate
+        end
+
+        def in_hostname_scope?(candidate)
+          candidate == @hostname || candidate.end_with?(".#{@hostname}")
         end
       end
 
@@ -131,7 +135,7 @@ module Nokizaru
 
       def finalize_subdomains(found, hostname)
         values = found.to_a
-        values.select! { |item| item.end_with?(hostname) }
+        values.select! { |item| item == hostname || item.end_with?(".#{hostname}") }
         values.select! { |item| item.match?(VALID) }
         values.uniq!
         values.sort

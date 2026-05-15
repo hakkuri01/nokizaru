@@ -105,6 +105,7 @@ module Nokizaru
         def scan_thread_options
           {
             pscan_threads: Integer(@opts[:pt] || Settings.port_scan_threads),
+            pscan_ports: @opts[:p],
             dir_threads: Integer(@opts[:dt] || Settings.dir_enum_threads)
           }
         end

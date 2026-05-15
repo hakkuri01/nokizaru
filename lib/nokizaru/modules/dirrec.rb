@@ -828,8 +828,8 @@ module Nokizaru
         confidence = decision[:level].to_sym
         reason = decision[:reason].to_s
         update_confidence_stats!(runtime[:stats], confidence, reason, status)
-        print_finding(scan, runtime, url, status)
         assign_confidence_bucket(runtime, url, confidence)
+        print_finding(scan, runtime, url, status) unless confidence == :low
       end
 
       def update_confidence_stats!(stats, confidence, reason, status)
@@ -1703,6 +1703,7 @@ module Nokizaru
           },
           'found' => found,
           'raw_found' => found,
+          'actionable_found' => prioritized_found,
           'prioritized_found' => prioritized_found,
           'stdout_found' => runtime[:stdout_found].uniq,
           'confirmed_found' => runtime[:confirmed_found].uniq,
@@ -1859,7 +1860,7 @@ module Nokizaru
 
       def dir_summary_counts(runtime)
         {
-          found: runtime[:all_found].uniq.length,
+          found: runtime[:found].uniq.length,
           prioritized: runtime[:found].uniq.length,
           low: runtime[:low_confidence_found].uniq.length
         }
@@ -1932,7 +1933,9 @@ module Nokizaru
       def store_dir_result(scan, result)
         ctx = scan[:options][:ctx]
         ctx.run['modules']['directory_enum'] = result
-        ctx.add_artifact('paths', result['found'])
+        artifact_paths = Array(result['actionable_found'])
+        artifact_paths = Array(result['found']) if artifact_paths.empty?
+        ctx.add_artifact('paths', artifact_paths)
         ctx.add_artifact('prioritized_paths', result['prioritized_found']) if Array(result['prioritized_found']).any?
         ctx.add_artifact('high_signal_paths', result['high_signal_found']) if Array(result['high_signal_found']).any?
       end

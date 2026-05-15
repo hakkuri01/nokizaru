@@ -33,7 +33,16 @@ module Nokizaru
           return [] if url.empty?
 
           original = original_url_from_archive_snapshot(url)
-          original.empty? ? [url] : [original]
+          fallback = original.empty? ? url : original
+          meaningful_archive_fallback?(fallback) ? [fallback] : []
+        end
+
+        def meaningful_archive_fallback?(url)
+          uri = URI.parse(url.to_s)
+          path = uri.path.to_s
+          !(path.empty? || path == '/') || !uri.query.to_s.empty?
+        rescue StandardError
+          false
         end
 
         def original_url_from_archive_snapshot(url)

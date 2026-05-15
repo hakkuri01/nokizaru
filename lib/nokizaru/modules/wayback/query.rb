@@ -113,10 +113,30 @@ module Nokizaru
           [remaining, 10.0].min
         end
 
-        def fetch_urls_with_status(target, timeout_s, snapshots, raw: false, deadline_at: nil)
+        def fetch_urls_with_status(target, timeout_s, snapshots, deadline_at: nil)
+          records, status, reasons = fetch_archive_records_with_fallback(
+            target,
+            timeout_s,
+            snapshots,
+            deadline_at: deadline_at
+          )
+          record_urls = records.map { |record| record['url'] }
+          urls = Normalize.filter_urls(record_urls, target: target)
+          filtered_records = ArchiveSources.filter_records(records, urls)
+          [urls, normalize_cdx_status(urls, status), reasons, filtered_records]
+        end
+
+        def fetch_archive_records_with_fallback(target, timeout_s, snapshots, deadline_at: nil)
           urls, status, reasons = fetch_cdx_with_fallback(target, timeout_s, snapshots, deadline_at: deadline_at)
-          urls = raw ? Array(urls) : Normalize.filter_urls(urls, target: target)
-          [urls, normalize_cdx_status(urls, status), reasons]
+          records = urls.map { |url| archive_record(url, 'wayback') }
+          source_timeout = bounded_timeout([timeout_s.to_f * 0.35, 2.0].max, deadline_at: deadline_at)
+          records.concat(ArchiveSources.fetch_commoncrawl_records(target, source_timeout, deadline_at: deadline_at))
+          records.concat(ArchiveSources.fetch_virustotal_records(target, source_timeout, deadline_at: deadline_at))
+          [ArchiveSources.dedupe_records(records), status, reasons]
+        end
+
+        def archive_record(url, source, timestamp = nil)
+          ArchiveSources.archive_record(url, source, timestamp)
         end
 
         def availability_timeout(total_timeout)
@@ -331,6 +351,7 @@ module Nokizaru
         end
 
         def normalize_cdx_status(urls, status)
+          return 'found' if urls.any? && status == 'not_found'
           return 'not_found' if urls.empty? && status == 'found'
           return 'timeout' if urls.empty? && status == 'timeout_with_fallback'
 

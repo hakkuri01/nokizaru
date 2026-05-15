@@ -82,7 +82,7 @@ module Nokizaru
 
         def run_optional_modules(enabled, target, info, ctx)
           safe_run_module(:ps, enabled[:ps], ctx, timeout_s: module_timeout_s(info, :ps)) do
-            Nokizaru::Modules::PortScan.call(info[:ip], info[:pscan_threads], ctx)
+            Nokizaru::Modules::PortScan.call(info[:ip], info[:pscan_threads], ctx, port_spec: info[:pscan_ports])
           end
           safe_run_module(:crawl, enabled[:crawl], ctx) do
             Nokizaru::Modules::Crawler.call(target, info[:protocol], info[:netloc], ctx)
@@ -140,14 +140,13 @@ module Nokizaru
             Nokizaru::Modules::Wayback.call(
               target,
               ctx,
-              timeout_s: [timeout, wayback_timeout_cap].min,
-              raw: @opts[:wb_raw]
+              timeout_s: [timeout, wayback_timeout_cap].min
             )
           end
         end
 
         def wayback_timeout_cap
-          @opts[:wb_raw] ? 30.0 : 24.0
+          24.0
         end
 
         def safe_run_module(key, enabled, ctx, timeout_s: nil, &)
@@ -194,12 +193,29 @@ module Nokizaru
           when :sub, :arch
             [base * 5.0, 60.0].max
           when :ps
-            [base * 6.0, 90.0].max
+            port_scan_timeout_s(info, base)
           when :wayback
             [base * 2.0, 24.0].max
           else
             0.0
           end
+        end
+
+        def port_scan_timeout_s(info, base)
+          requested_ports = requested_port_count(info[:pscan_ports])
+          default_timeout = [base * 6.0, 90.0].max
+          return default_timeout unless requested_ports
+
+          [default_timeout, (requested_ports / 150.0) + base].max
+        end
+
+        def requested_port_count(port_spec)
+          value = port_spec.to_s.strip
+          return nil if value.empty? || Nokizaru::Modules::PortScan.default_port_spec?(value)
+
+          Nokizaru::Modules::PortScan.parse_port_spec(value).length
+        rescue ArgumentError
+          nil
         end
 
         def module_label(key)

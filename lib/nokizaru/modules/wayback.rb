@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative '../log'
+require_relative 'wayback/archive_sources'
 require_relative 'wayback/http'
 require_relative 'wayback/normalize'
 require_relative 'wayback/presenter'
@@ -33,9 +34,9 @@ module Nokizaru
         unknown: 'Unknown'
       }.freeze
 
-      def call(target, ctx, timeout_s: 10.0, raw: false)
+      def call(target, ctx, timeout_s: 10.0)
         UI.module_header('Starting WayBack Machine...')
-        result = execute_query(target, timeout_s, raw)
+        result = execute_query(target, timeout_s)
         persist_wayback(ctx, result)
         Log.write('[wayback] Completed')
       rescue StandardError => e
@@ -44,17 +45,16 @@ module Nokizaru
         ctx.run['modules']['wayback'] = { 'urls' => [] }
       end
 
-      def execute_query(target, timeout_s, raw)
+      def execute_query(target, timeout_s)
         timeout_value = normalized_timeout(timeout_s)
         deadline_at = Query.deadline_after(timeout_value)
         availability_timeout_s = Query.availability_timeout(timeout_value)
         availability = Query.availability_status(target, availability_timeout_s, deadline_at: deadline_at)
         Presenter.availability_status(availability[:state])
-        urls, cdx_status, cdx_reasons = Query.fetch_urls_with_status(
+        urls, cdx_status, cdx_reasons, url_records = Query.fetch_urls_with_status(
           target,
           Query.cdx_timeout(timeout_value, availability_timeout_s),
           availability[:snapshots],
-          raw: raw,
           deadline_at: deadline_at
         )
         archive_status = Query.archive_status(availability, cdx_status, cdx_reasons)
@@ -68,6 +68,7 @@ module Nokizaru
           cdx_status: cdx_status,
           cdx_reasons: cdx_reasons,
           urls: urls,
+          url_records: url_records,
           manual_pivots: pivots,
           elapsed_s: timeout_value - [Query.remaining_time(deadline_at), 0.0].max
         }
@@ -98,6 +99,7 @@ module Nokizaru
           'cdx_status' => result[:cdx_status],
           'cdx_reasons' => Array(result[:cdx_reasons]),
           'urls' => urls,
+          'url_records' => Array(result[:url_records]),
           'high_signal_urls' => high_signal_urls,
           'manual_pivots' => result[:manual_pivots],
           'elapsed_s' => result[:elapsed_s].to_f.round(4)

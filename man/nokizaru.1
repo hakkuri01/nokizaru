@@ -50,7 +50,6 @@ OPTION	MODULE
 --arch	Architecture Fingerprinting
 --dir	Directory Search
 --wayback	Wayback URLs
---wb-raw	Wayback raw URL output (no quality filtering)
 --ps	Fast Port Scan
 --full	Full Recon
 --no-[MODULE]	Skip specified modules above during full scan (e.g. --no-dir)
@@ -70,17 +69,18 @@ OPTION	MEANING	DEFAULT / NOTES
 -nb	Hide Banner	-
 -dt DT	Directory enum threads	30
 -pt PT	Port scan threads	50
+-p PORTS	Port scan ports	80,443,1000-65535
 -T T	Request timeout (seconds)	30.0
 -w W	Path to wordlist	wordlists/dirb_common.txt
 -H HEADER	Add custom request header (repeatable)	Example: Cookie: PHPSESSID=abc
 -r	Follow redirects during directory enum	False
--s	Toggle SSL Verification	True
+-s	Enable SSL verification for directory enum	False
 -sp SP	Specify SSL port	443
 -d D	Custom DNS servers	1.1.1.1
 -e E	File extension(s) (comma separated)	txt,xml,php,etc.
 -o O	Export Format(s) (comma-separated)	txt,json,html
--cd CD	Change export base directory	~/.local/share/nokizaru/dumps/nk_<domain>
--of OF	Change export folder name	YYYY-MM-DD_HH-MM-SS
+-cd CD	Export directory for this run (requires --export)	~/.local/share/nokizaru/dumps/nk_<domain>
+-of OF	Export filename base for this run (requires --export)	YYYY-MM-DD_HH-MM-SS
 -k K	Add API key (NAME@KEY)	shodan@key
 .TE
 .SH API KEYS
@@ -133,6 +133,7 @@ nokizaru --dir --target https://example.com -e php,xml	Directory enum with exten
 nokizaru --crawl --dir --target https://example.com -H 'Cookie: PHPSESSID=abc; uid=52'	Authenticated in-scope scan
 nokizaru --wayback --target https://example.com	Wayback URLs
 nokizaru --ps --target https://example.com -pt 80	Port scan with more threads
+nokizaru --ps --target https://example.com -p all	Port scan all TCP ports
 .TE
 .SH EXIT STATUS
 .TS
