@@ -63,13 +63,13 @@ module Nokizaru
       BOT_BLOCK_CODES = Set[403, 405, 429].freeze
       STEP_LABELS = [
         'Looking for robots.txt',
-        'Extracting robots Links',
+        'Extracting robots links',
         'Looking for sitemap.xml',
-        'Extracting CSS Links',
-        'Extracting JavaScript Links',
-        'Extracting Internal Links',
-        'Extracting External Links',
-        'Extracting Image Links',
+        'Extracting CSS links',
+        'Extracting JavaScript links',
+        'Extracting internal links',
+        'Extracting external links',
+        'Extracting image links',
         'Crawling Sitemaps',
         'Crawling Javascripts'
       ].freeze

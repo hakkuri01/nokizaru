@@ -4,6 +4,7 @@ require 'socket'
 require 'concurrent'
 require_relative '../log'
 require_relative 'portscan/port_list'
+require_relative 'portscan/nonblocking_scanner'
 
 module Nokizaru
   module Modules
@@ -12,9 +13,14 @@ module Nokizaru
       module_function
 
       DEFAULT_CONNECT_TIMEOUT = 1
+      CUSTOM_CONNECT_TIMEOUT = 0.5
       DEFAULT_RETRIES = 1
       DEFAULT_VERIFY = true
       DEFAULT_RATE_PER_SECOND = 200.0
+      PROGRESS_PORT_INTERVAL = 50
+      PROGRESS_TIME_INTERVAL = 0.1
+      LARGE_SCAN_CONCURRENCY_MULTIPLIER = 20
+      LARGE_SCAN_MAX_CONCURRENCY = 1024
       DEFAULT_PORT_SPECS = %w[top default 100].freeze
       ALL_PORT_SPEC = 'all'
       TLS_PORTS = [443, 465, 636, 990, 993, 995, 2376, 4443, 6443, 8443].freeze
@@ -33,22 +39,25 @@ module Nokizaru
       # Run this module and store normalized results in the run context
       def call(ip_addr, threads, ctx, port_spec: nil)
         result = { 'open_ports' => [], 'ports' => [] }
-        setup_scan_ui(threads)
-        scan_ports(ip_addr, threads, result, port_spec: port_spec)
+        entries = port_entries(port_spec)
+        setup_scan_ui(threads, port_spec)
+        scan_ports(ip_addr, threads, result, entries: entries, port_spec: port_spec)
         finalize_scan_output(result)
         save_scan_result(ctx, result)
       end
 
-      def setup_scan_ui(threads)
+      def setup_scan_ui(threads, port_spec = nil)
         UI.module_header('Starting Port Scan...')
-        UI.row(:plus, 'Scanning Top 100+ Ports With Threads', threads)
+        UI.row(:plus, scan_label(port_spec), threads)
         puts
       end
 
-      def scan_ports(ip_addr, threads, result, port_spec: nil)
-        entries = port_entries(port_spec)
+      def scan_ports(ip_addr, threads, result, entries: nil, port_spec: nil)
+        entries ||= port_entries(port_spec)
         tracker = build_scan_tracker(entries.length)
         result['total_ports'] = entries.length
+        return scan_ports_nonblocking(ip_addr, threads, result, entries, tracker) unless default_port_spec?(port_spec)
+
         pool = Concurrent::FixedThreadPool.new(Integer(threads))
         entries.each { |port, name| pool.post { scan_port(ip_addr, port, name, result, tracker) } }
         pool.shutdown
@@ -60,10 +69,39 @@ module Nokizaru
           total: total,
           counter: Concurrent::AtomicFixnum.new(0),
           mutex: Mutex.new,
+          progress_mutex: Mutex.new,
           rate_mutex: Mutex.new,
           rate_interval: 1.0 / DEFAULT_RATE_PER_SECOND,
-          next_probe_at: 0.0
+          next_probe_at: 0.0,
+          last_progress_at: 0.0
         }
+      end
+
+      def scan_ports_nonblocking(ip_addr, threads, result, entries, tracker)
+        on_open = lambda do |port, name, latency_ms|
+          record_found_port(ip_addr, port, name, latency_ms, result, tracker[:mutex])
+        end
+        NonblockingScanner.scan(
+          ip_addr,
+          entries,
+          concurrency: large_scan_concurrency(threads),
+          connect_timeout: CUSTOM_CONNECT_TIMEOUT,
+          on_open: on_open,
+          on_complete: -> { advance_scan_progress!(tracker) }
+        )
+      end
+
+      def large_scan_concurrency(threads)
+        requested = [Integer(threads), 1].max * LARGE_SCAN_CONCURRENCY_MULTIPLIER
+        # Security: Bound socket fan-out to reduce local FD exhaustion and accidental traffic spikes
+        [requested, LARGE_SCAN_MAX_CONCURRENCY, fd_safe_limit].min
+      end
+
+      def fd_safe_limit
+        soft_limit = Process.getrlimit(Process::RLIMIT_NOFILE).first
+        (soft_limit - 128).clamp(64, LARGE_SCAN_MAX_CONCURRENCY)
+      rescue StandardError
+        LARGE_SCAN_MAX_CONCURRENCY
       end
 
       def scan_port(ip_addr, port, name, result, tracker)
@@ -72,8 +110,7 @@ module Nokizaru
       rescue StandardError
         nil
       ensure
-        progress = tracker[:counter].increment
-        print(UI.progress(:plus, 'Scanning', "#{progress}/#{tracker[:total]}"))
+        advance_scan_progress!(tracker)
       end
 
       def throttle_probe!(tracker)
@@ -92,11 +129,27 @@ module Nokizaru
         started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         return unless open_port?(ip_addr, port)
 
-        latency_ms = elapsed_ms(started_at)
+        record_found_port(ip_addr, port, name, elapsed_ms(started_at), result, mutex)
+      end
+
+      def record_found_port(ip_addr, port, name, latency_ms, result, mutex)
         mutex.synchronize do
           puts("\r\e[K#{UI.prefix(:info)} #{UI::C}#{port} (#{name})#{UI::W}")
           result['open_ports'] << "#{port} (#{name})"
           result['ports'] << open_port_record(ip_addr, port, name, latency_ms)
+        end
+      end
+
+      def advance_scan_progress!(tracker, force: false)
+        progress = tracker[:counter].increment
+        return unless force || progress == tracker[:total] || (progress % PROGRESS_PORT_INTERVAL).zero?
+
+        tracker[:progress_mutex].synchronize do
+          now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          next unless force || progress == tracker[:total] || now - tracker[:last_progress_at] >= PROGRESS_TIME_INTERVAL
+
+          print(UI.progress(:plus, 'Scanning', "#{progress}/#{tracker[:total]}"))
+          tracker[:last_progress_at] = now
         end
       end
 
@@ -153,7 +206,7 @@ module Nokizaru
         total = result['total_ports'] || PORT_LIST.length
         print(UI.progress(:plus, 'Scanning', "#{total}/#{total}"))
         puts
-        UI.line(:info, 'Scan Completed!')
+        UI.line(:info, 'Scan completed!')
         puts
         result['open_ports'].uniq!
         result['ports'] = unique_port_records(result['ports'])
@@ -195,6 +248,19 @@ module Nokizaru
       def default_port_spec?(port_spec)
         value = port_spec.to_s.strip.downcase
         value.empty? || DEFAULT_PORT_SPECS.include?(value)
+      end
+
+      def scan_label(port_spec)
+        value = port_spec.to_s.strip
+        return 'Scanning top 100+ ports with threads' if default_port_spec?(value)
+        return 'Scanning all 65535 ports with threads' if all_port_spec?(value)
+        return "Scanning ports #{value} with threads" if single_port_range_spec?(value)
+
+        "Scanning custom ports #{value} with threads"
+      end
+
+      def single_port_range_spec?(value)
+        value.match?(/\A\d+\s*-\s*\d+\z/)
       end
 
       def all_port_spec?(port_spec)

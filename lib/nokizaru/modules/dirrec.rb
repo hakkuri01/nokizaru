@@ -1850,9 +1850,9 @@ module Nokizaru
         label_width = dir_summary_label_width(count_rows, stop_reason, counts)
 
         UI.row(:info, 'Requests/second', rps, label_width: label_width)
-        UI.row(:info, 'Directories Found', counts[:found], label_width: label_width)
-        UI.row(:info, 'Prioritized Found', counts[:prioritized], label_width: label_width)
-        UI.row(:info, 'Low Confidence', counts[:low], label_width: label_width) if counts[:low].positive?
+        UI.row(:info, 'Directories found', counts[:found], label_width: label_width)
+        UI.row(:info, 'Prioritized found', counts[:prioritized], label_width: label_width)
+        UI.row(:info, 'Low confidence', counts[:low], label_width: label_width) if counts[:low].positive?
         print_redirect_signals(redirect_signals, count_rows, label_width)
         UI.row(:info, 'Stop Reason', stop_reason, label_width: label_width) unless stop_reason.to_s.strip.empty?
         puts
@@ -1867,9 +1867,9 @@ module Nokizaru
       end
 
       def dir_summary_label_width(count_rows, stop_reason, counts)
-        labels = ['Requests/second', 'Directories Found', 'Prioritized Found']
+        labels = ['Requests/second', 'Directories found', 'Prioritized found']
         labels << '3xx Signals' unless count_rows.empty?
-        labels << 'Low Confidence' if counts[:low].positive?
+        labels << 'Low confidence' if counts[:low].positive?
         labels << 'Stop Reason' unless stop_reason.to_s.strip.empty?
         labels.map(&:length).max
       end

@@ -14,9 +14,9 @@ module Nokizaru
 
         def banner
           puts("#{CLI::G}#{banner_art}#{CLI::W}\n")
-          UI.rows(:plus, [['Created By', 'hakkuri'], ['Version', Nokizaru::VERSION]])
+          UI.rows(:plus, [%w[Author hakkuri], ['Version', Nokizaru::VERSION]])
           UI.tree_header('Project')
-          UI.tree_rows([['Git', 'https://github.com/hakkuri01'], ['Log', 'Issues/PRs welcome']])
+          UI.tree_rows([['GIT', 'https://github.com/hakkuri01'], ['LOG', 'Issues/PRs welcome']])
         end
 
         def banner_art

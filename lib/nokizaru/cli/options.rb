@@ -23,7 +23,7 @@ module Nokizaru
       diff: { type: :string, default: nil, desc: 'Diff this run against another run id in the workspace (or "last")' },
       nb: { type: :boolean, default: false, desc: 'Hide Banner' },
       dt: { type: :numeric, default: nil, desc: 'Number of threads for directory enum [ Default : 30 ]' },
-      pt: { type: :numeric, default: nil, desc: 'Number of threads for port scan [ Default : 50 ]' },
+      pt: { type: :numeric, default: nil, desc: 'Port scan concurrency [ Default : 50 ]' },
       p: { type: :string, default: nil, aliases: '-p', desc: 'Port scan ports [ Example : 80,443,1000-65535 ]' },
       T: { type: :numeric, default: nil, aliases: '-T', desc: 'Request Timeout [ Default : 30.0 ]' },
       w: { type: :string, default: nil, aliases: '-w',

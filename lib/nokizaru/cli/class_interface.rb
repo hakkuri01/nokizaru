@@ -25,7 +25,7 @@ module Nokizaru
 
     HELP_EXTRA_ROWS = [
       ['-nb', 'Hide Banner'], ['-dt DT', 'Number of threads for directory enum [ Default : 30 ]'],
-      ['-pt PT', 'Number of threads for port scan [ Default : 50 ]'],
+      ['-pt PT', 'Port scan concurrency [ Default : 50 ]'],
       ['-p PORTS', 'Port scan ports [ Example : 80,443,1000-65535 ]'],
       ['-T T', 'Request Timeout [ Default : 30.0 ]'],
       ['-w W', 'Path to Wordlist [ Default : wordlists/raft_med-dir_5k.txt ]'],

@@ -16,7 +16,7 @@ module Nokizaru
             'link[rel="stylesheet"]',
             'href',
             page_url,
-            'Extracting CSS Links',
+            'Extracting CSS links',
             Crawler::MAX_RESOURCE_LINKS
           )
           result['js_links'] = collect_links(
@@ -24,7 +24,7 @@ module Nokizaru
             'script[src]',
             'src',
             page_url,
-            'Extracting JavaScript Links',
+            'Extracting JavaScript links',
             Crawler::MAX_RESOURCE_LINKS
           )
           result['internal_links'] = internal_links(page_url, soup)
@@ -34,7 +34,7 @@ module Nokizaru
             'img[src]',
             'src',
             page_url,
-            'Extracting Image Links',
+            'Extracting image links',
             Crawler::MAX_IMAGE_LINKS
           )
         end
@@ -46,7 +46,7 @@ module Nokizaru
 
           links, sitemaps = parse_robots_body(Nokizaru::HTTPClient.response_body(response), base_url)
           step_row(:info, 'Looking for robots.txt', 'Found')
-          step_row(:info, 'Extracting robots Links', links.length)
+          step_row(:info, 'Extracting robots links', links.length)
           [links, sitemaps]
         end
 
@@ -142,7 +142,7 @@ module Nokizaru
             soup.css('a[href]').filter_map { |tag| internal_link(target, host, tag['href']) },
             Crawler::MAX_INTERNAL_LINKS
           )
-          step_row(:info, 'Extracting Internal Links', links.length)
+          step_row(:info, 'Extracting internal links', links.length)
           links
         end
 
@@ -152,7 +152,7 @@ module Nokizaru
             soup.css('a[href]').filter_map { |tag| external_link(host, tag['href']) },
             Crawler::MAX_EXTERNAL_LINKS
           )
-          step_row(:info, 'Extracting External Links', links.length)
+          step_row(:info, 'Extracting external links', links.length)
           links
         end
 

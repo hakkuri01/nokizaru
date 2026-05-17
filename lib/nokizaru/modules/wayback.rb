@@ -22,10 +22,10 @@ module Nokizaru
       RETRIES = 2
       PREVIEW_LIMIT = 10
       WAYBACK_ROW_LABEL_WIDTH = [
-        'Checking Availability on Wayback Machine'.length,
+        'Checking availability on Wayback Machine'.length,
         'Fetching URLs from CDX'.length,
         'Using availability snapshot fallback'.length,
-        'Archive.org Service Status'.length,
+        'Archive.org service status'.length,
         'Manual Wayback Review'.length
       ].max
       AVAIL_LABELS = {

@@ -38,7 +38,7 @@ module Nokizaru
 
       # Run this module and store normalized results in the run context
       def call(hostname, timeout, ctx, conf_path)
-        UI.module_header('Starting Sub-Domain Enumeration...')
+        UI.module_header('Starting Subdomain Enumeration...')
 
         cache_key = ctx.cache&.key_for(['subdomains', hostname]) || "subdomains:#{hostname}"
         SubdomainModules::Base.start_output_capture(subdomain_provider_names)
@@ -67,14 +67,14 @@ module Nokizaru
           rows = found.first(20).map { |subdomain| ['Subdomain', subdomain] }
           UI.tree_rows(rows)
           if found.length > 20
-            width = ['Results Truncated', 'Total Unique Sub Domains Found'].map(&:length).max
-            UI.row(:info, 'Results Truncated', "#{found.length - 20} more", label_width: width)
+            width = ['Results truncated', 'Total unique subdomains found'].map(&:length).max
+            UI.row(:info, 'Results truncated', "#{found.length - 20} more", label_width: width)
           end
         end
 
         puts
-        width = ['Results Truncated', 'Total Unique Sub Domains Found'].map(&:length).max
-        UI.row(:info, 'Total Unique Sub Domains Found', found.length, label_width: width)
+        width = ['Results truncated', 'Total unique subdomains found'].map(&:length).max
+        UI.row(:info, 'Total unique subdomains found', found.length, label_width: width)
       end
     end
   end

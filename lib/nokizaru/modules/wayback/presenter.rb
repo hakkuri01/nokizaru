@@ -9,7 +9,7 @@ module Nokizaru
 
         def availability_status(state)
           label = Wayback::AVAIL_LABELS.fetch(state, Wayback::AVAIL_LABELS[:unknown])
-          row(state == :available ? :plus : :error, 'Checking Availability on Wayback Machine', label)
+          row(state == :available ? :plus : :error, 'Checking availability on Wayback Machine', label)
         end
 
         def cdx_status(cdx_status, urls)
@@ -43,7 +43,7 @@ module Nokizaru
         def archive_status(status)
           type = status == 'degraded' ? :error : :info
           label = status == 'degraded' ? 'Degraded or rate-limited' : status.to_s.capitalize
-          row(type, 'Archive.org Service Status', label)
+          row(type, 'Archive.org service status', label)
         end
 
         def manual_pivots(pivots, **)
