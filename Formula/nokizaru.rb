@@ -10,7 +10,7 @@ class Nokizaru < Formula
   head 'https://github.com/hakkuri01/nokizaru.git', branch: 'main'
 
   depends_on 'pkgconf' => :build
-  depends_on 'ruby'
+  depends_on 'ruby@4.0'
   depends_on 'sqlite'
 
   def install
@@ -24,16 +24,23 @@ class Nokizaru < Formula
   end
 
   def configure_ruby_env
-    ENV.prepend_path 'PATH', Formula['ruby'].opt_bin
+    ENV.prepend_path 'PATH', ruby_formula.opt_bin
     ENV.prepend_path 'PATH', Formula['pkgconf'].opt_bin
     ENV.prepend_path 'PKG_CONFIG_PATH', Formula['sqlite'].opt_lib / 'pkgconfig'
     ENV['GEM_HOME'] = bundle_path
     ENV['GEM_PATH'] = bundle_path
   end
 
+  def ruby_formula
+    Formula['ruby@4.0']
+  end
+
+  def ruby_bin
+    ruby_formula.opt_bin / 'ruby'
+  end
+
   def bundle_path
     @bundle_path ||= begin
-      ruby_bin = Formula['ruby'].opt_bin / 'ruby'
       ruby_abi = Utils.safe_popen_read(ruby_bin, '-e', 'print RbConfig::CONFIG[%q[ruby_version]]').strip
       odie 'Unable to determine Ruby ABI version' if ruby_abi.empty?
 
@@ -68,13 +75,14 @@ class Nokizaru < Formula
   end
 
   def install_bin_wrappers
-    bin.install bundle_path / 'bin/nokizaru'
-    bin.env_script_all_files(
-      bundle_path / 'bin',
-      GEM_HOME: ENV.fetch('GEM_HOME', nil),
-      GEM_PATH: ENV.fetch('GEM_PATH', nil),
-      PATH: "#{Formula['ruby'].opt_bin}:$PATH"
-    )
+    (bin / 'nokizaru').write <<~SH
+      #!/bin/sh
+      export GEM_HOME="#{bundle_path}"
+      export GEM_PATH="#{bundle_path}"
+      export PATH="#{ruby_formula.opt_bin}:#{bundle_path}/bin:$PATH"
+      exec "#{ruby_bin}" "#{bundle_path}/bin/nokizaru" "$@"
+    SH
+    chmod 0o555, bin / 'nokizaru'
   end
 
   test do

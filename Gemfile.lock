@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    nokizaru (2.2.6)
+    nokizaru (2.2.7)
       activesupport (~> 7.2, >= 7.2.3.1)
       async (~> 2.10)
       async-io (~> 1.35)
@@ -164,4 +164,4 @@ DEPENDENCIES
   nokizaru!
 
 BUNDLED WITH
-  4.0.10
+  4.0.14
