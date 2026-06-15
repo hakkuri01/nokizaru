@@ -21,6 +21,9 @@ module Nokizaru
       PROGRESS_TIME_INTERVAL = 0.1
       LARGE_SCAN_CONCURRENCY_MULTIPLIER = 20
       LARGE_SCAN_MAX_CONCURRENCY = 1024
+      ALL_OPEN_MIN_PORTS = 25
+      ALL_OPEN_RATIO = 0.75
+      ALL_OPEN_LATENCY_CV_MAX = 0.35
       DEFAULT_PORT_SPECS = %w[top default 100].freeze
       ALL_PORT_SPEC = 'all'
       TLS_PORTS = [443, 465, 636, 990, 993, 995, 2376, 4443, 6443, 8443].freeze
@@ -210,6 +213,7 @@ module Nokizaru
         puts
         result['open_ports'].uniq!
         result['ports'] = unique_port_records(result['ports'])
+        classify_portscan_shape!(result)
       end
 
       def unique_port_records(records)
@@ -223,6 +227,55 @@ module Nokizaru
         end
       end
 
+      def classify_portscan_shape!(result)
+        records = Array(result['ports'])
+        total = result['total_ports'].to_i
+        if all_open_or_tarpit?(records, total)
+          result['network_shape'] = 'all_open_or_tarpit'
+          result['shape_confidence'] = 'high'
+          result['shape_reason'] = 'Implausibly broad TCP connect success with low latency variance'
+          downgrade_tarpit_ports!(records)
+        else
+          result['network_shape'] = 'normal'
+          result['shape_confidence'] = 'medium'
+        end
+      end
+
+      def all_open_or_tarpit?(records, total)
+        return false if total < ALL_OPEN_MIN_PORTS
+        return false if ratio(records.length, total) < ALL_OPEN_RATIO
+
+        latencies = records.filter_map { |record| record['latency_ms']&.to_f }.select(&:positive?)
+        return false if latencies.length < ALL_OPEN_MIN_PORTS
+
+        coefficient_of_variation(latencies) <= ALL_OPEN_LATENCY_CV_MAX
+      end
+
+      def downgrade_tarpit_ports!(records)
+        records.each do |record|
+          next if [80, 443].include?(record['port'].to_i)
+
+          record['confidence'] = 'low'
+          record['exposure'] = 'unverified'
+          record['enrichment'] = 'port_metadata_tarpit_shape'
+        end
+      end
+
+      def coefficient_of_variation(values)
+        nums = Array(values).map(&:to_f).select(&:positive?)
+        return 1.0 if nums.length < 2
+
+        mean = nums.sum / nums.length
+        variance = nums.sum { |value| (value - mean)**2 } / nums.length
+        Math.sqrt(variance) / mean
+      end
+
+      def ratio(numerator, denominator)
+        return 0.0 unless denominator.to_f.positive?
+
+        numerator.to_f / denominator
+      end
+
       def save_scan_result(ctx, result)
         ctx.run['modules']['portscan'] = result
         ctx.add_artifact('open_ports', artifact_ports(result))
@@ -230,7 +283,11 @@ module Nokizaru
       end
 
       def artifact_ports(result)
-        structured = Array(result['ports']).filter_map { |record| record['port']&.to_s }
+        structured = Array(result['ports']).filter_map do |record|
+          next if record['confidence'].to_s == 'low'
+
+          record['port']&.to_s
+        end
         return structured unless structured.empty?
 
         Array(result['open_ports']).map { |item| item.to_s.split.first }

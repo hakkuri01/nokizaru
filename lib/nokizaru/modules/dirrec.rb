@@ -16,6 +16,104 @@ module Nokizaru
     module DirectoryEnum
       module_function
 
+      # Thread-safe lazy URL queue used by directory enumeration workers
+      class LazyDirectoryQueue
+        def initialize(scan, runtime)
+          @scan = scan
+          @runtime = runtime
+          @mutex = Mutex.new
+          @seen = Set.new
+          @stage = :seed
+          @index = 0
+          @ext_word_index = 0
+          @ext_index = 0
+        end
+
+        def pop(*)
+          @mutex.synchronize do
+            next_url || raise(ThreadError)
+          end
+        end
+
+        private
+
+        def next_url
+          case @stage
+          when :seed then next_seed_url
+          when :base then next_base_word_url
+          when :extension then next_extension_url
+          end
+        end
+
+        def next_seed_url
+          seeds = @scan[:url_plan][:seed_urls]
+          while @index < seeds.length
+            url = unseen(seeds[@index])
+            @index += 1
+            return url if url
+          end
+
+          switch_stage(:base)
+        end
+
+        def next_base_word_url
+          words = @scan[:url_plan][:words]
+          while @index < words.length
+            word = words[@index]
+            @index += 1
+            url = unseen(DirectoryEnum.join_url(@scan[:normalized_target], DirectoryEnum.encode_path_word(word)))
+            return url if url
+          end
+
+          switch_stage(:extension)
+        end
+
+        def next_extension_url
+          return nil unless DirectoryEnum.extension_phase_allowed?(@runtime)
+
+          words = @scan[:url_plan][:words]
+          exts = @scan[:url_plan][:extensions]
+          while !exts.empty? && @ext_word_index < words.length
+            @ext_word_index += 1 while @ext_word_index < words.length && words[@ext_word_index].to_s.include?('.')
+            return nil if @ext_word_index >= words.length
+
+            url = unseen(extension_candidate(words, exts))
+            return url if url
+          end
+
+          nil
+        end
+
+        def extension_candidate(words, exts)
+          word = DirectoryEnum.encode_path_word(words[@ext_word_index])
+          ext = exts[@ext_index]
+          advance_extension_cursor(words, exts)
+          DirectoryEnum.join_url(@scan[:normalized_target], "#{word}.#{ext}")
+        end
+
+        def advance_extension_cursor(words, exts)
+          @ext_index += 1
+          return if @ext_index < exts.length
+
+          @ext_index = 0
+          @ext_word_index += 1
+          @ext_word_index += 1 while @ext_word_index < words.length && words[@ext_word_index].to_s.include?('.')
+        end
+
+        def switch_stage(next_stage)
+          @stage = next_stage
+          @index = 0
+          next_url
+        end
+
+        def unseen(url)
+          return nil if url.to_s.empty? || @seen.include?(url)
+
+          @seen.add(url)
+          url
+        end
+      end
+
       DEFAULT_UA = 'Mozilla/5.0 (X11; Linux x86_64; rv:72.0) Gecko/20100101 Firefox/72.0'
       DEFAULT_EFFECTIVE_TIMEOUT_S = 8.0
       MAX_EFFECTIVE_TIMEOUT_S = 12.0
@@ -50,6 +148,8 @@ module Nokizaru
       WAF_REDIRECT_CLUSTER_DOMINANCE = 0.85
       WAF_SENSITIVE_HOMOGENEITY = 0.8
       WAF_SENSITIVE_UNIQUENESS_LOW = 0.2
+      SENSITIVE_NOISE_MIN_SAMPLES = 40
+      SENSITIVE_NOISE_REDIRECT_DOMINANCE = 0.95
 
       MODE_FULL = 'full'
       MODE_SEEDED = 'seeded'
@@ -70,6 +170,18 @@ module Nokizaru
       PRESSURE_HOSTILE_STREAK = 4
       LOW_YIELD_HOSTILE_STREAK = 3
       LOW_YIELD_STOP_STREAK = 5
+      HOSTILE_NO_SIGNAL_MIN_REQUESTS = 320
+      HOSTILE_NO_SIGNAL_ERROR_RATIO = 0.9
+      HOSTILE_NO_SIGNAL_MAX_SUCCESS = 4
+      EXTENSION_SIGNAL_MIN_REQUESTS = 80
+      EXTENSION_SIGNAL_MAX_LOW_INFO_RATIO = 0.9
+      ADAPTIVE_CONCURRENCY_MIN = 2
+      ADAPTIVE_CONCURRENCY_WINDOW = 160
+      ADAPTIVE_CONCURRENCY_BAD_ERROR_RATIO = 0.35
+      ADAPTIVE_CONCURRENCY_RECOVER_ERROR_RATIO = 0.08
+      MARGINAL_VALUE_MIN_REQUESTS = 320
+      MARGINAL_VALUE_LOW_GAIN = 1
+      MARGINAL_VALUE_DOMINANCE_RATIO = 0.92
       PRESSURE_SCORE_WAF_HINT = 0.72
       PRESSURE_SCORE_REDIRECT_HINT = 0.92
       HIGH_SIGNAL_PATHS = %w[
@@ -145,7 +257,7 @@ module Nokizaru
         )
         word_data = load_words(options[:wdlist])
         scan_mode, hostility_hint = scan_mode_with_hint(preflight, options, anchor, normalized_target)
-        urls = build_scan_urls(
+        url_plan = build_scan_plan(
           {
             target: normalized_target,
             words: word_data[:words],
@@ -167,8 +279,8 @@ module Nokizaru
           timeout: scan_mode[:timeout],
           hostility_hint: hostility_hint,
           soft_404_baseline: soft_404_baseline,
-          urls: urls,
-          total_urls: urls.length,
+          url_plan: url_plan,
+          total_urls: url_plan[:estimated_total],
           reanchor_display: "#{scan_target} (#{anchor[:reason_code]})"
         }
       end
@@ -257,6 +369,10 @@ module Nokizaru
           'pressure_score' => adaptation[:last_pressure_score].to_i,
           'pressure_streak' => adaptation[:pressure_streak].to_i,
           'low_yield_streak' => adaptation[:low_yield_streak].to_i,
+          'extension_useful' => runtime.dig(:target_shape, :extension_useful),
+          'concurrency_ceiling' => runtime.dig(:concurrency_state, :current).to_i,
+          'wildcard' => runtime.dig(:target_shape, :wildcard),
+          'redirect_cluster' => runtime.dig(:target_shape, :redirect_cluster),
           'updated_at' => Time.now.utc.iso8601
         }
         cache.write(key, hint)
@@ -274,7 +390,7 @@ module Nokizaru
       module_function
 
       def init_runtime(scan)
-        {
+        runtime = {
           mutex: Mutex.new,
           progress_output_lock: Mutex.new,
           output_closed: false,
@@ -285,6 +401,8 @@ module Nokizaru
           confirmed_found: [],
           low_confidence_found: [],
           all_found: [],
+          first_actionable_at: nil,
+          first_actionable_count: nil,
           redirect_signals: init_redirect_signals,
           soft_404_baseline: scan[:soft_404_baseline],
           soft_404_learning: init_soft_404_learning,
@@ -292,15 +410,52 @@ module Nokizaru
           confidence_context: init_confidence_context(scan),
           stats: init_stats,
           issued: 0,
+          active_requests: 0,
           count: 0,
           start_time: Time.now,
-          queue: build_work_queue(scan[:urls]),
+          queue: nil,
           timeout_state: { current: scan[:timeout], min: MIN_ADAPTIVE_TIMEOUT_S },
           stop_state: init_stop_state(scan),
           progress_ui: init_progress_ui,
           retired_clients: [],
+          target_shape: init_target_shape(scan),
+          extension_state: init_extension_state,
+          concurrency_state: init_concurrency_state(scan),
           activity_state: init_activity_state(scan),
           adaptation_state: init_adaptation_state
+        }
+        runtime[:queue] = build_work_queue(scan, runtime)
+        runtime
+      end
+
+      def init_target_shape(scan)
+        hint = scan[:hostility_hint].is_a?(Hash) ? scan[:hostility_hint] : {}
+        {
+          head_reliable: hint['head_reliable'],
+          wildcard: false,
+          redirect_cluster: false,
+          extension_useful: hint['extension_useful'],
+          concurrency_ceiling: hint['concurrency_ceiling'].to_i
+        }
+      end
+
+      def init_extension_state
+        {
+          enabled: false,
+          reason: nil,
+          checked_at: 0
+        }
+      end
+
+      def init_concurrency_state(scan)
+        max = thread_cap_for_mode(scan[:mode], scan[:options][:threads].to_i)
+        ceiling = scan[:hostility_hint].is_a?(Hash) ? scan[:hostility_hint]['concurrency_ceiling'].to_i : 0
+        max = [max, ceiling].min if ceiling.positive?
+        {
+          max: [max, 1].max,
+          current: [max, 1].max,
+          min: ADAPTIVE_CONCURRENCY_MIN.clamp(1, [max, 1].max),
+          last_eval_count: 0
         }
       end
 
@@ -397,14 +552,16 @@ module Nokizaru
         }
       end
 
-      def build_work_queue(urls)
+      def build_work_queue(source, runtime = nil)
+        return LazyDirectoryQueue.new(source, runtime) if source.is_a?(Hash) && source[:url_plan]
+
         queue = Queue.new
-        urls.each { |url| queue << url }
+        source.each { |url| queue << url }
         queue
       end
 
       def run_workers(scan, runtime)
-        num_workers = [thread_cap_for_mode(scan[:mode], scan[:options][:threads].to_i), 1].max
+        num_workers = [runtime[:concurrency_state][:max].to_i, 1].max
         prepare_runtime_client!(scan, runtime, num_workers)
         start_progress_ticker!(runtime, scan)
         start_stall_watchdog!(runtime, scan)
@@ -553,7 +710,11 @@ module Nokizaru
           break unless worker_active?(url, runtime[:stop_state])
           break unless reserve_request_slot!(runtime)
 
-          error_streak = process_worker_url(scan, runtime, url, error_streak)
+          begin
+            error_streak = process_worker_url(scan, runtime, url, error_streak)
+          ensure
+            release_request_slot!(runtime)
+          end
         end
       end
 
@@ -569,12 +730,25 @@ module Nokizaru
 
       # Reserve one request slot before dispatch so request budgets remain strict under concurrency
       def reserve_request_slot!(runtime)
-        runtime[:mutex].synchronize do
-          return false if should_stop_now?(runtime[:issued], runtime[:start_time], runtime[:stop_state])
+        loop do
+          reserved = runtime[:mutex].synchronize do
+            return false if should_stop_now?(runtime[:issued], runtime[:start_time], runtime[:stop_state])
+            next :wait if runtime[:active_requests].to_i >= runtime.dig(:concurrency_state, :current).to_i
 
-          runtime[:issued] += 1
-          touch_runtime_activity!(runtime)
-          true
+            runtime[:issued] += 1
+            runtime[:active_requests] += 1
+            touch_runtime_activity!(runtime)
+            true
+          end
+          return true if reserved == true
+
+          sleep(0.02)
+        end
+      end
+
+      def release_request_slot!(runtime)
+        runtime[:mutex].synchronize do
+          runtime[:active_requests] = [runtime[:active_requests].to_i - 1, 0].max
         end
       end
 
@@ -634,6 +808,10 @@ module Nokizaru
 
         maybe_stop!(runtime)
         update_pressure_window!(runtime)
+        update_target_shape!(runtime)
+        update_extension_state!(runtime)
+        update_dynamic_concurrency!(runtime)
+        apply_marginal_value_stop!(runtime)
         result = apply_mode_downgrade!(runtime[:count], runtime[:stats], runtime[:stop_state],
                                        runtime[:timeout_state], runtime: runtime)
         return unless result == :downgraded
@@ -780,6 +958,152 @@ module Nokizaru
         state[:last_eval_at_mono] = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         state[:previous_totals] = pressure_totals(runtime)
       end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
+
+      def update_target_shape!(runtime)
+        shape = runtime[:target_shape]
+        return unless shape.is_a?(Hash)
+
+        context = confidence_context_snapshot(runtime)
+        shape[:wildcard] = context[:soft_404_dominance_ratio].to_f >= MARGINAL_VALUE_DOMINANCE_RATIO
+        shape[:redirect_cluster] = context[:redirect_cluster_dominance_ratio].to_f >= MARGINAL_VALUE_DOMINANCE_RATIO
+        shape[:extension_useful] = true if runtime[:found].any? && runtime[:count].to_i >= EXTENSION_SIGNAL_MIN_REQUESTS
+      end
+
+      def update_extension_state!(runtime)
+        state = runtime[:extension_state]
+        return unless state.is_a?(Hash)
+        return if state[:enabled]
+
+        allowed, reason = extension_phase_decision(runtime)
+        state[:checked_at] = runtime[:count].to_i
+        return unless allowed
+
+        state[:enabled] = true
+        state[:reason] = reason
+      end
+
+      def extension_phase_allowed?(runtime)
+        return true unless runtime.is_a?(Hash)
+
+        state = runtime[:extension_state]
+        state.is_a?(Hash) && state[:enabled]
+      end
+
+      def extension_phase_decision(runtime)
+        shape = runtime[:target_shape].is_a?(Hash) ? runtime[:target_shape] : {}
+        return [false, 'cached useless extension phase'] if shape[:extension_useful] == false
+        return [true, 'cached useful extension phase'] if shape[:extension_useful] == true
+
+        count = runtime[:count].to_i
+        return [false, 'waiting for base-path signal'] if count < EXTENSION_SIGNAL_MIN_REQUESTS
+        return [true, 'actionable base-path signal'] if runtime[:found].any?
+
+        context = confidence_context_snapshot(runtime)
+        low_ratio = low_confidence_ratio(runtime)
+        dominant = context[:soft_404_dominance_ratio].to_f >= MARGINAL_VALUE_DOMINANCE_RATIO ||
+                   context[:redirect_cluster_dominance_ratio].to_f >= MARGINAL_VALUE_DOMINANCE_RATIO
+        if dominant || low_ratio >= EXTENSION_SIGNAL_MAX_LOW_INFO_RATIO
+          return [false, 'dominant low-information target shape']
+        end
+
+        [runtime[:all_found].any?, 'raw base-path signal']
+      end
+
+      def low_confidence_ratio(runtime)
+        total = runtime[:all_found].length
+        return 0.0 unless total.positive?
+
+        runtime[:low_confidence_found].length.fdiv(total)
+      end
+
+      def update_dynamic_concurrency!(runtime)
+        state = runtime[:concurrency_state]
+        return unless state.is_a?(Hash)
+        return unless dynamic_concurrency_eval_due?(runtime, state)
+
+        window = runtime.dig(:adaptation_state, :last_window)
+        return unless window.is_a?(Hash)
+
+        state[:last_eval_count] = runtime[:count].to_i
+        if bad_concurrency_window?(window)
+          state[:current] = [state[:current].to_i / 2, state[:min].to_i].max
+        elsif healthy_concurrency_window?(window, runtime)
+          state[:current] = [state[:current].to_i + 1, state[:max].to_i].min
+        end
+      end
+
+      def dynamic_concurrency_eval_due?(runtime, state)
+        (runtime[:count].to_i - state[:last_eval_count].to_i) >= ADAPTIVE_CONCURRENCY_WINDOW
+      end
+
+      def bad_concurrency_window?(window)
+        window[:error_ratio].to_f >= ADAPTIVE_CONCURRENCY_BAD_ERROR_RATIO ||
+          window[:transport_ratio].to_f >= PRESSURE_WINDOW_TRANSPORT_RATIO
+      end
+
+      def healthy_concurrency_window?(window, runtime)
+        return false unless runtime[:found].any? || runtime[:all_found].any?
+
+        window[:error_ratio].to_f <= ADAPTIVE_CONCURRENCY_RECOVER_ERROR_RATIO &&
+          window[:transport_ratio].to_f <= ADAPTIVE_CONCURRENCY_RECOVER_ERROR_RATIO
+      end
+
+      def apply_marginal_value_stop!(runtime)
+        return if runtime[:stop_state][:stop]
+        return unless marginal_value_stop?(runtime)
+
+        runtime[:stop_state][:stop] = true
+        runtime[:stop_state][:reason] ||= marginal_value_stop_reason(runtime)
+      end
+
+      def marginal_value_stop?(runtime)
+        return false if runtime[:count].to_i < MARGINAL_VALUE_MIN_REQUESTS
+
+        window = runtime.dig(:adaptation_state, :last_window)
+        return false unless window.is_a?(Hash)
+        return false if window[:prioritized_gain].to_i > MARGINAL_VALUE_LOW_GAIN
+
+        shape = runtime[:target_shape].is_a?(Hash) ? runtime[:target_shape] : {}
+        (shape[:wildcard] || shape[:redirect_cluster]) && low_confidence_ratio(runtime) >= 0.75
+      end
+
+      def marginal_value_stop_reason(runtime)
+        shape = runtime[:target_shape].is_a?(Hash) ? runtime[:target_shape] : {}
+        'marginal directory value collapsed under dominant target shape ' \
+          "(wildcard=#{shape[:wildcard]}, redirect_cluster=#{shape[:redirect_cluster]}, " \
+          "low_confidence_ratio=#{low_confidence_ratio(runtime).round(2)})"
+      end
+
+      def display_stop_reason(reason)
+        value = reason.to_s.strip
+        return '' if value.empty?
+        return 'Uniform redirects or soft-404s detected' if value.start_with?('marginal directory value')
+        return 'Hostile transport failures limited reliable checks' if value.start_with?('sustained hostile transport')
+        return 'Hostile pressure with low reliable yield' if value.start_with?('sustained hostile pressure')
+        return 'Request limit reached' if value.start_with?('request budget hit')
+        return 'Time limit reached' if value.start_with?('time budget hit')
+        return 'Responses stalled' if value.start_with?('scan stalled')
+
+        value
+      end
+    end
+  end
+end
+
+module Nokizaru
+  module Modules
+    # Nokizaru::Modules::DirectoryEnum implementation
+    module DirectoryEnum
+      module_function
 
       def handle_success_status(scan, runtime, url, http_result)
         status = http_result.status.to_i
@@ -843,11 +1167,20 @@ module Nokizaru
         if confidence == :confirmed
           runtime[:confirmed_found] << url
           runtime[:found] << url
+          track_first_actionable!(runtime)
         elsif confidence == :likely
           runtime[:found] << url
+          track_first_actionable!(runtime)
         else
           runtime[:low_confidence_found] << url
         end
+      end
+
+      def track_first_actionable!(runtime)
+        return if runtime[:first_actionable_at]
+
+        runtime[:first_actionable_at] = Time.now
+        runtime[:first_actionable_count] = runtime[:count].to_i
       end
 
       def track_redirect_signal(redirect_signals, request_url, http_result, status)
@@ -1503,16 +1836,37 @@ module Nokizaru
 
       # Build full-coverage URL list with seeded paths prioritized first
       def build_scan_urls(config)
+        plan = build_scan_plan(config)
+        urls = plan[:seed_urls] + base_word_urls(normalize_target_base(config[:target]), plan[:words])
+        urls.concat(extension_urls(normalize_target_base(config[:target]), plan[:words], plan[:extensions]))
+        urls.uniq
+      end
+
+      def build_scan_plan(config)
         seed_urls = build_seed_urls(config[:target], config[:ctx])
-        word_urls = build_urls(config[:target], config[:words], config[:filext])
-        (seed_urls + word_urls).uniq
+        words = prioritized_words(config[:words], seed_urls, config[:target])
+        extensions = file_extensions(config[:filext])
+        {
+          seed_urls: seed_urls,
+          words: words,
+          extensions: extensions,
+          estimated_total: estimated_url_total(seed_urls, words, extensions)
+        }
+      end
+
+      def estimated_url_total(seed_urls, words, extensions)
+        seed_urls.length + words.length + (words.length * extensions.length)
       end
 
       # Build seed URLs using crawler artifacts + high-signal endpoints
       def build_seed_urls(target, ctx)
         base = normalize_target_base(target)
-        paths = (high_signal_paths + seed_paths_from_crawler(ctx, base)).uniq
+        paths = (high_signal_paths + seed_paths_from_modules(ctx, base)).uniq
         paths.map { |path| join_url(base, path) }.uniq
+      end
+
+      def seed_paths_from_modules(ctx, base)
+        (seed_paths_from_crawler(ctx, base) + seed_paths_from_artifacts(ctx, base)).uniq
       end
 
       # Extract same-scope paths from crawler module output
@@ -1535,7 +1889,33 @@ module Nokizaru
       end
 
       def crawler_seed_urls(crawler)
-        %w[internal_links robots_links urls_inside_js urls_inside_sitemap].flat_map { |key| Array(crawler[key]) }
+        %w[high_signal_urls internal_links robots_links urls_inside_js urls_inside_sitemap].flat_map do |key|
+          Array(crawler[key])
+        end
+      end
+
+      def seed_paths_from_artifacts(ctx, base_target)
+        return [] unless ctx.respond_to?(:run)
+
+        artifacts = ctx.run.fetch('artifacts', {})
+        urls = %w[urls wayback_urls wayback_high_signal_urls high_signal_urls].flat_map { |key| Array(artifacts[key]) }
+        paths = %w[paths prioritized_paths high_signal_paths].flat_map { |key| Array(artifacts[key]) }
+        base_uri = URI.parse(base_target)
+        urls.filter_map { |url| crawler_seed_path(url, base_uri) } + paths.map { |path| artifact_seed_path(path) }
+      rescue StandardError
+        []
+      end
+
+      def artifact_seed_path(path)
+        value = path.to_s.strip
+        return nil if value.empty?
+
+        uri = URI.parse(value)
+        value = uri.path unless uri.relative?
+        value = "/#{value}" unless value.start_with?('/')
+        value == '/' ? nil : value
+      rescue URI::InvalidURIError
+        nil
       end
 
       def crawler_seed_path(url, base_uri)
@@ -1544,13 +1924,41 @@ module Nokizaru
 
         path = uri.path.to_s
         path = '/' if path.empty?
+        path = relative_seed_path(path, base_uri.path.to_s)
         return nil if path == '/'
 
         path
       end
 
+      def relative_seed_path(path, base_path)
+        cleaned_base = base_path.to_s.chomp('/')
+        return path if cleaned_base.empty? || cleaned_base == '/'
+        return '/' if path == cleaned_base
+        return path unless path.start_with?("#{cleaned_base}/")
+
+        path.delete_prefix(cleaned_base)
+      end
+
       def high_signal_paths
         HIGH_SIGNAL_PATHS
+      end
+
+      def prioritized_words(words, seed_urls, _target)
+        seeded_paths = seed_urls.map { |url| URI.parse(url).path.delete_prefix('/') }.compact.to_set
+        words.uniq.sort_by do |word|
+          encoded = encode_path_word(word)
+          [seeded_paths.include?(encoded) ? 1 : 0, extension_worthy_word?(word) ? 0 : 1, encoded.length]
+        end
+      rescue StandardError
+        words.uniq
+      end
+
+      def extension_worthy_word?(word)
+        value = word.to_s.downcase
+        return false if value.empty? || value.include?('.')
+
+        HIGH_SIGNAL_PATHS.any? { |seed| seed.delete_prefix('/').start_with?(value) } ||
+          %w[index admin login api config backup db upload dashboard].include?(value)
       end
 
       def join_url(base, path)
@@ -1670,13 +2078,22 @@ module Nokizaru
         elapsed = stats[:elapsed] || 1
         rps = ((stats[:success] + stats[:errors]) / elapsed).round(1)
         stop_meta = dir_stop_meta(runtime[:stop_state])
-        stats[:confidence_context] = confidence_context_snapshot(runtime)
-        stats[:adaptation_state] = runtime[:adaptation_state]
+        decorate_dir_output_stats!(runtime, stats)
         result = dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
 
-        print_dir_summary(rps, runtime, stop_meta[:reason], runtime[:redirect_signals])
+        print_dir_summary(rps, runtime, stop_meta[:display_reason], runtime[:redirect_signals])
         store_dir_result(scan, result)
         persist_workspace_hostility_hint(scan, runtime)
+      end
+
+      def decorate_dir_output_stats!(runtime, stats)
+        stats[:confidence_context] = confidence_context_snapshot(runtime)
+        stats[:adaptation_state] = runtime[:adaptation_state]
+        stats[:extension_phase_enabled] = runtime.dig(:extension_state, :enabled) == true
+        stats[:extension_phase_reason] = runtime.dig(:extension_state, :reason)
+        stats[:adaptive_concurrency] = runtime.dig(:concurrency_state, :current).to_i
+        stats[:time_to_first_actionable_s] = time_to_first_actionable(runtime)
+        stats[:requests_to_first_actionable] = runtime[:first_actionable_count].to_i
       end
 
       def dir_stop_meta(stop_state)
@@ -1684,9 +2101,17 @@ module Nokizaru
         {
           mode: state[:mode].to_s,
           reason: state[:reason].to_s,
+          display_reason: display_stop_reason(state[:reason]),
           preflight: state[:preflight],
           budgets: state[:budgets].is_a?(Hash) ? state[:budgets] : {}
         }
+      end
+
+      def time_to_first_actionable(runtime)
+        first = runtime[:first_actionable_at]
+        return 0.0 unless first
+
+        first - runtime[:start_time]
       end
 
       def dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
@@ -1790,12 +2215,7 @@ module Nokizaru
       end
 
       def dir_runtime_base_stats(stats, stop_meta, elapsed, rps)
-        {
-          'mode' => stop_meta[:mode],
-          'stop_reason' => stop_meta[:reason].empty? ? nil : stop_meta[:reason],
-          'budget_seconds' => stop_meta[:budgets][:budget_s],
-          'max_requests' => stop_meta[:budgets][:max_requests],
-          'preflight' => stop_meta[:preflight],
+        dir_stop_stats(stop_meta).merge(
           'total_requests' => stats[:success] + stats[:errors],
           'successful' => stats[:success],
           'errors' => stats[:errors],
@@ -1806,6 +2226,34 @@ module Nokizaru
           'low_yield_events' => stats[:low_yield_events].to_i,
           'elapsed_seconds' => elapsed.round(2),
           'requests_per_second' => rps
+        ).merge(dir_runtime_adaptive_stats(stats))
+      end
+
+      def dir_stop_stats(stop_meta)
+        technical_reason = stop_meta[:reason].to_s
+        display_reason = stop_meta[:display_reason].to_s
+        {
+          'mode' => stop_meta[:mode],
+          'stop_reason' => technical_reason.empty? ? nil : technical_reason,
+          'stop_reason_display' => display_reason.empty? ? nil : display_reason,
+          'budget_seconds' => stop_meta[:budgets][:budget_s],
+          'max_requests' => stop_meta[:budgets][:max_requests],
+          'preflight' => stop_meta[:preflight]
+        }
+      end
+
+      def dir_runtime_adaptive_stats(stats)
+        {
+          'extension_phase_enabled' => stats[:extension_phase_enabled],
+          'extension_phase_reason' => stats[:extension_phase_reason],
+          'adaptive_concurrency' => stats[:adaptive_concurrency]
+        }.merge(dir_runtime_first_actionable_stats(stats))
+      end
+
+      def dir_runtime_first_actionable_stats(stats)
+        {
+          'time_to_first_actionable_s' => stats[:time_to_first_actionable_s].to_f.round(4),
+          'requests_to_first_actionable' => stats[:requests_to_first_actionable].to_i
         }
       end
 
@@ -1835,6 +2283,7 @@ module Nokizaru
           'waf_score_confidence' => context[:waf_score_confidence].to_s,
           'redirect_cluster_dominance_ratio' => context[:redirect_cluster_dominance_ratio].to_f.round(4),
           'soft_404_dominance_ratio' => context[:soft_404_dominance_ratio].to_f.round(4),
+          'sensitive_status_total' => context[:sensitive_status_total].to_i,
           'sensitive_status_homogeneity_ratio' => context[:sensitive_status_homogeneity_ratio].to_f.round(4),
           'sensitive_status_fingerprint_uniqueness_ratio' =>
             context[:sensitive_status_fingerprint_uniqueness_ratio].to_f.round(4),
@@ -2076,6 +2525,9 @@ module Nokizaru
         pressure_streak = state[:pressure_streak].to_i
         low_yield_streak = state[:low_yield_streak].to_i
 
+        stopped = apply_hostile_no_signal_stop!(current_mode, count, stop_state, runtime[:stats])
+        return stopped if stopped
+
         if seeded_pressure_downgrade?(current_mode, count, pressure_streak)
           return apply_seeded_mode!(stop_state, timeout_state)
         end
@@ -2110,6 +2562,31 @@ module Nokizaru
       def hostile_low_yield_stop_reason(state)
         'sustained hostile pressure with low prioritized yield ' \
           "(pressure_streak=#{state[:pressure_streak]}, low_yield_streak=#{state[:low_yield_streak]})"
+      end
+
+      def apply_hostile_no_signal_stop!(current_mode, count, stop_state, stats)
+        return nil unless hostile_no_signal_stop?(current_mode, count, stats)
+
+        stop_state[:stop] = true
+        stop_state[:reason] ||= hostile_no_signal_stop_reason(count, stats)
+        :stopped
+      end
+
+      def hostile_no_signal_stop?(current_mode, count, stats)
+        return false unless current_mode == MODE_HOSTILE
+        return false if count < HOSTILE_NO_SIGNAL_MIN_REQUESTS
+        return false unless stats.is_a?(Hash)
+
+        successes = stats[:success].to_i
+        errors = stats[:errors].to_i
+        return false if successes > HOSTILE_NO_SIGNAL_MAX_SUCCESS
+
+        errors.fdiv(count) >= HOSTILE_NO_SIGNAL_ERROR_RATIO
+      end
+
+      def hostile_no_signal_stop_reason(count, stats)
+        'sustained hostile transport failures with no useful signal ' \
+          "(requests=#{count}, success=#{stats[:success].to_i}, errors=#{stats[:errors].to_i})"
       end
 
       def low_signal_saturation?(count, stats)
@@ -2624,6 +3101,7 @@ module Nokizaru
           waf_score_confidence: waf_score_confidence(counters[:total_candidates]),
           redirect_cluster_dominance_ratio: redirect_cluster,
           soft_404_dominance_ratio: soft_404_dominance,
+          sensitive_status_total: counters[:sensitive_total].to_i,
           sensitive_status_homogeneity_ratio: sensitive_homogeneity,
           sensitive_status_fingerprint_uniqueness_ratio: sensitive_uniqueness,
           context_sources_used: enrichment[:sources_used],
@@ -2682,11 +3160,12 @@ module Nokizaru
 
       def apply_waf_confidence_adjustment(decision, _status, _sample, url, _normalized_target, context)
         return decision if decision[:level].to_sym == :low
-        return decision unless context[:waf_likelihood_score].to_f >= WAF_LIKELIHOOD_HIGH
 
         if waf_sensitive_status_noise?(decision, context)
-          return confidence_decision(downgraded_confidence_level(decision[:level]), :waf_sensitive_status_homogeneity)
+          return confidence_decision(:low, :waf_sensitive_status_homogeneity)
         end
+
+        return decision unless context[:waf_likelihood_score].to_f >= WAF_LIKELIHOOD_HIGH
 
         if waf_redirect_cluster_noise?(decision, context, url)
           return confidence_decision(downgraded_confidence_level(decision[:level]), :waf_redirect_cluster_dominance)
@@ -2696,9 +3175,13 @@ module Nokizaru
       end
 
       def waf_sensitive_status_noise?(decision, context)
-        sensitive_status_reason?(decision[:reason]) &&
-          context[:sensitive_status_homogeneity_ratio].to_f >= WAF_SENSITIVE_HOMOGENEITY &&
-          context[:sensitive_status_fingerprint_uniqueness_ratio].to_f <= WAF_SENSITIVE_UNIQUENESS_LOW
+        return false unless sensitive_status_reason?(decision[:reason])
+        return false unless context[:sensitive_status_total].to_i >= SENSITIVE_NOISE_MIN_SAMPLES
+        return true if context[:sensitive_status_homogeneity_ratio].to_f >= WAF_SENSITIVE_HOMOGENEITY &&
+                       context[:sensitive_status_fingerprint_uniqueness_ratio].to_f <= WAF_SENSITIVE_UNIQUENESS_LOW
+
+        context[:redirect_cluster_dominance_ratio].to_f >= SENSITIVE_NOISE_REDIRECT_DOMINANCE &&
+          context[:sensitive_status_homogeneity_ratio].to_f >= WAF_SENSITIVE_HOMOGENEITY
       end
 
       def waf_redirect_cluster_noise?(decision, context, url)

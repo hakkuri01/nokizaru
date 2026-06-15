@@ -1,6 +1,8 @@
 AllCops:
   NewCops: enable
   TargetRubyVersion: 4.0
+  Exclude:
+    - 'Formula/**/*.rb'
 
 Layout/LineLength:
   Max: 120
@@ -9,6 +11,14 @@ Layout/LineLength:
 
 Style/Documentation:
   Enabled: false
+
+Style/StringLiterals:
+  Exclude:
+    - 'Formula/**/*.rb'
+
+Style/StringLiteralsInInterpolation:
+  Exclude:
+    - 'Formula/**/*.rb'
 
 Metrics/MethodLength:
   Max: 20
