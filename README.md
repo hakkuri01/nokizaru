@@ -238,7 +238,7 @@ By default, exports are written to:
 └── YYYY-MM-DD_HH-MM-SS.html
 ```
 
-Each target gets its own directory, and each run is timestamped for easy organization and sorting. You can override the directory with `-cd` or the basename with `-of.`
+Each target gets its own directory, and each run is timestamped for easy organization and sorting. You can override the directory with `-cd` or the basename with `-of`.
 
 ## Workspaces / Caching / Diffing
 
