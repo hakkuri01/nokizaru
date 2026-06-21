@@ -1,10 +1,10 @@
 <p align="center">
-<img src="https://i.imgur.com/VzJRb9H.png">
+  <img src="assets/nokizaru.png" alt="Nokizaru" width="100%">
 </p>
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v2.2.8-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v2.3.8-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -13,6 +13,8 @@ Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface.
 > [!IMPORTANT]
 > 
 > *Nokizaru is intended for authorized security testing and research. Always ensure you have explicit permission to scan targets you do not own.*
+
+---
 
 ## Architecture
 
@@ -27,6 +29,8 @@ Nokizaru runs a full web recon pass with shared target context, bounded module b
 - **Dir Enum Noise Control:** WAF/soft-404-heavy responses are kept inspectable in exports, but stdout favors actionable paths over bulk false positives
 - **Port Scan Context:** port checks are native TCP probes with lightweight service/category/TLS/HTTP/exposure hints
 - **Wayback Fallbacks:** archive lookups use bounded source aggregation and expose manual pivots when upstream archive APIs are degraded
+
+---
 
 ## Installation
 
@@ -70,6 +74,8 @@ gem build nokizaru.gemspec
 gem install nokizaru-*.gem
 nokizaru --help
 ```
+
+---
 
 ## Configuration
 
@@ -148,6 +154,8 @@ Default config file is available at `~/.config/nokizaru/config.json`
 }
 ```
 
+---
+
 ## Usage
 
 ```bash
@@ -225,6 +233,8 @@ nokizaru --crawl --dir --target https://example.com \
 
 Custom headers are applied only to in-scope target requests. Nokizaru does not echo supplied header values back in module banners.
 
+---
+
 ## Output / Exports
 
 Nokizaru is **ephemeral by default** (stdout). If you specify `--export`, it will write **TXT**, **JSON**, and **HTML** reports (unless you narrow formats with `-o`).
@@ -239,6 +249,8 @@ By default, exports are written to:
 ```
 
 Each target gets its own directory, and each run is timestamped for easy organization and sorting. You can override the directory with `-cd` or the basename with `-of`.
+
+---
 
 ## Workspaces / Caching / Diffing
 

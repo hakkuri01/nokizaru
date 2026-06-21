@@ -58,7 +58,7 @@ module Nokizaru
     end
 
     def ssl_options(verify_ssl)
-      opts = { alpn_protocols: %w[http/1.1] }
+      opts = {}
       opts[:verify_mode] = OpenSSL::SSL::VERIFY_NONE unless verify_ssl
       opts
     end
@@ -171,15 +171,15 @@ module Nokizaru
       http.with(**build_client_options(headers, op_timeout, persistent, verify_ssl))
     rescue StandardError => e
       warn "[ConnectionPool] Warning: #{e.message}, using fallback client"
-      fallback_client(headers, timeout_s)
+      fallback_client(headers, timeout_s, verify_ssl)
     end
 
     # Build a minimal fallback client when advanced pooling is unavailable
-    def fallback_client(headers, timeout_s)
+    def fallback_client(headers, timeout_s, verify_ssl)
       HTTPX.with(
         headers: DEFAULT_HEADERS.merge(headers),
         timeout: { operation_timeout: timeout_s || 30.0 },
-        ssl: { alpn_protocols: %w[http/1.1] }
+        ssl: ssl_options(verify_ssl)
       )
     end
 

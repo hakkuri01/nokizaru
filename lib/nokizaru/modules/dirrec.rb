@@ -392,6 +392,7 @@ module Nokizaru
       def init_runtime(scan)
         runtime = {
           mutex: Mutex.new,
+          slot_cv: ConditionVariable.new,
           progress_output_lock: Mutex.new,
           output_closed: false,
           responses: [],
@@ -401,6 +402,7 @@ module Nokizaru
           confirmed_found: [],
           low_confidence_found: [],
           all_found: [],
+          stop_status_code_shape: nil,
           first_actionable_at: nil,
           first_actionable_count: nil,
           redirect_signals: init_redirect_signals,
@@ -420,6 +422,7 @@ module Nokizaru
           retired_clients: [],
           target_shape: init_target_shape(scan),
           extension_state: init_extension_state,
+          dispatch_state: init_dispatch_state,
           concurrency_state: init_concurrency_state(scan),
           activity_state: init_activity_state(scan),
           adaptation_state: init_adaptation_state
@@ -444,6 +447,14 @@ module Nokizaru
           enabled: false,
           reason: nil,
           checked_at: 0
+        }
+      end
+
+      def init_dispatch_state
+        {
+          mode: 'threaded',
+          http2_confirmed: false,
+          fallback_reason: nil
         }
       end
 
@@ -565,8 +576,13 @@ module Nokizaru
         prepare_runtime_client!(scan, runtime, num_workers)
         start_progress_ticker!(runtime, scan)
         start_stall_watchdog!(runtime, scan)
-        workers = Array.new(num_workers) { Thread.new { run_worker_loop(scan, runtime) } }
-        workers.each(&:join)
+        if batch_dispatch_candidate?(scan, runtime[:stop_state])
+          runtime[:dispatch_state][:mode] = 'http2_probe'
+          run_batch_dispatcher(scan, runtime, num_workers)
+        else
+          runtime[:dispatch_state][:mode] = 'threaded'
+          run_threaded_workers(scan, runtime, num_workers)
+        end
       ensure
         stop_progress_ticker!(runtime) if runtime
         stop_stall_watchdog!(runtime) if runtime
@@ -605,6 +621,7 @@ module Nokizaru
         state[:tripped] = true
         runtime[:stop_state][:stop] = true
         runtime[:stop_state][:reason] ||= stall_stop_reason(idle_s, state[:stall_timeout_s].to_f)
+        capture_stop_status_code_shape!(runtime)
         Log.write("[dirrec] Stall watchdog triggered: #{runtime[:stop_state][:reason]}")
         print_progress(runtime, scan, force: true)
       end
@@ -728,27 +745,177 @@ module Nokizaru
         url && !stop_state[:stop] && !Nokizaru::InterruptState.interrupted?
       end
 
+      def batch_dispatch_candidate?(scan, stop_state)
+        return false if custom_request_headers?(stop_state) && stop_state[:allow_redirects]
+
+        URI.parse(scan[:normalized_target].to_s).scheme == 'https'
+      rescue StandardError
+        false
+      end
+
+      def run_threaded_workers(scan, runtime, num_workers)
+        workers = Array.new(num_workers) { Thread.new { run_worker_loop(scan, runtime) } }
+        workers.each(&:join)
+      end
+
+      def run_batch_dispatcher(scan, runtime, num_workers)
+        error_streak = 0
+        http2_confirmed = false
+        loop do
+          urls = next_request_batch(runtime, limit: batch_limit(http2_confirmed, runtime))
+          break if urls.empty?
+
+          responses = request_batch_with_active_slots(scan, runtime, urls, error_streak)
+          unless responses.is_a?(Array)
+            error_streak = responses
+            runtime[:dispatch_state][:fallback_reason] ||= 'batch_probe_error'
+            break if fallback_to_threaded_workers?(scan, runtime, num_workers, http2_confirmed)
+
+            next
+          end
+
+          if http2_batch_confirmed?(http2_confirmed, responses)
+            mark_http2_batch_confirmed!(runtime)
+            http2_confirmed = true
+          end
+          error_streak = process_batch_responses(scan, runtime, urls, responses, error_streak)
+          break if runtime[:stop_state][:stop] || Nokizaru::InterruptState.interrupted?
+          break if fallback_to_threaded_workers?(scan, runtime, num_workers, http2_confirmed)
+        end
+      end
+
+      def http2_batch_confirmed?(http2_confirmed, responses)
+        !http2_confirmed && http2_batch_responses?(responses)
+      end
+
+      def mark_http2_batch_confirmed!(runtime)
+        runtime[:dispatch_state][:http2_confirmed] = true
+        runtime[:dispatch_state][:mode] = 'http2_batch'
+      end
+
+      def fallback_to_threaded_workers?(scan, runtime, num_workers, http2_confirmed)
+        return false if http2_confirmed
+
+        runtime[:dispatch_state][:mode] = 'threaded_fallback'
+        runtime[:dispatch_state][:fallback_reason] ||= 'http2_not_confirmed'
+        run_threaded_workers(scan, runtime, num_workers)
+        true
+      end
+
+      def batch_limit(http2_confirmed, runtime)
+        return nil if http2_confirmed
+
+        [runtime.dig(:concurrency_state, :current).to_i, 2].min
+      end
+
+      def next_request_batch(runtime, limit: nil)
+        batch = []
+        runtime[:mutex].synchronize do
+          batch_limit = [limit || runtime.dig(:concurrency_state, :current).to_i, 1].max
+          reserve_batch_urls!(runtime, batch, batch_limit)
+          touch_runtime_activity!(runtime) if batch.any?
+        end
+        batch
+      end
+
+      def reserve_batch_urls!(runtime, batch, batch_limit)
+        while batch.length < batch_limit
+          break if should_stop_now?(runtime[:issued], runtime[:start_time], runtime[:stop_state])
+
+          url = pop_queue_url(runtime[:queue])
+          break unless worker_active?(url, runtime[:stop_state])
+
+          runtime[:issued] += 1
+          batch << url
+        end
+      end
+
+      def request_batch_with_active_slots(scan, runtime, urls, error_streak)
+        mark_batch_requests_active!(runtime, urls.length)
+        responses = safe_batch_http_results(scan, runtime, urls, error_streak)
+        return responses unless responses.is_a?(Array)
+
+        release_batch_request_slots!(runtime, urls.length)
+        responses
+      end
+
+      def safe_batch_http_results(scan, runtime, urls, error_streak)
+        batch_http_results(runtime, urls)
+      rescue StandardError => e
+        release_batch_request_slots!(runtime, urls.length)
+        process_batch_exception(scan, runtime, urls, e, error_streak)
+      end
+
+      def mark_batch_requests_active!(runtime, count)
+        runtime[:mutex].synchronize do
+          runtime[:active_requests] += count.to_i
+          touch_runtime_activity!(runtime)
+        end
+      end
+
+      def release_batch_request_slots!(runtime, count)
+        runtime[:mutex].synchronize do
+          runtime[:active_requests] = [runtime[:active_requests].to_i - count.to_i, 0].max
+        end
+      end
+
+      def http2_batch_responses?(responses)
+        responses.any? do |result|
+          response = result.respond_to?(:response) ? result.response : nil
+          response.respond_to?(:version) && response.version.to_s.start_with?('2')
+        end
+      end
+
+      def process_batch_responses(scan, runtime, urls, responses, error_streak)
+        urls.each_with_index do |url, index|
+          http_result = responses[index] || worker_http_result(runtime, url)
+          error_streak = process_batch_response(scan, runtime, url, http_result, error_streak)
+          break if runtime[:stop_state][:stop] || Nokizaru::InterruptState.interrupted?
+        end
+        error_streak
+      end
+
+      def process_batch_response(scan, runtime, url, http_result, error_streak)
+        return process_worker_error(scan, runtime, url, http_result, error_streak + 1) unless http_result.success?
+
+        process_worker_success(scan, runtime, url, http_result)
+        0
+      rescue StandardError => e
+        handle_worker_exception(scan, runtime, url, e, error_streak)
+      end
+
+      def process_batch_exception(scan, runtime, urls, error, error_streak)
+        urls.each do |url|
+          process_worker_exception(scan, runtime, url, error)
+          error_streak += 1
+        end
+        sleep(error_backoff_s(error_streak, runtime[:stop_state][:mode]))
+        error_streak
+      end
+
       # Reserve one request slot before dispatch so request budgets remain strict under concurrency
       def reserve_request_slot!(runtime)
-        loop do
-          reserved = runtime[:mutex].synchronize do
+        runtime[:mutex].synchronize do
+          loop do
             return false if should_stop_now?(runtime[:issued], runtime[:start_time], runtime[:stop_state])
-            next :wait if runtime[:active_requests].to_i >= runtime.dig(:concurrency_state, :current).to_i
+
+            if runtime[:active_requests].to_i >= runtime.dig(:concurrency_state, :current).to_i
+              runtime[:slot_cv].wait(runtime[:mutex], 0.2)
+              next
+            end
 
             runtime[:issued] += 1
             runtime[:active_requests] += 1
             touch_runtime_activity!(runtime)
-            true
+            return true
           end
-          return true if reserved == true
-
-          sleep(0.02)
         end
       end
 
       def release_request_slot!(runtime)
         runtime[:mutex].synchronize do
           runtime[:active_requests] = [runtime[:active_requests].to_i - 1, 0].max
+          runtime[:slot_cv].signal
         end
       end
 
@@ -767,6 +934,10 @@ module Nokizaru
         HttpResult.new(raw_resp)
       end
 
+      def batch_http_results(runtime, urls)
+        request_urls(runtime[:client], urls, runtime[:stop_state]).map { |response| HttpResult.new(response) }
+      end
+
       def handle_worker_exception(scan, runtime, url, error, error_streak)
         process_worker_exception(scan, runtime, url, error)
         next_streak = error_streak + 1
@@ -775,16 +946,37 @@ module Nokizaru
       end
 
       def process_worker_success(scan, runtime, url, http_result)
+        sample = response_sample(http_result, request_url: url)
+        decision_input = nil
         runtime[:mutex].synchronize do
-          process_synchronized_success(scan, runtime, url, http_result)
+          decision_input = process_synchronized_success(scan, runtime, url, http_result, sample)
+        end
+        return unless decision_input
+
+        decision = confidence_decision_for_success(scan, url, decision_input)
+        runtime[:mutex].synchronize do
+          track_confidence_finding(scan, runtime, url, decision_input[:status], decision)
         end
       end
 
-      def process_synchronized_success(scan, runtime, url, http_result)
+      def process_synchronized_success(scan, runtime, url, http_result, sample)
         increment_count!(runtime[:stats], runtime)
         handle_runtime_adaptation!(scan, runtime)
-        handle_success_status(scan, runtime, url, http_result)
+        decision_input = handle_success_status(scan, runtime, url, http_result, sample)
         print_progress(runtime, scan) if (runtime[:count] % PROGRESS_EVERY).zero?
+        decision_input
+      end
+
+      def confidence_decision_for_success(scan, url, input)
+        decision = finding_confidence(url, input[:status], input[:sample], input[:baseline], scan[:normalized_target])
+        apply_waf_confidence_adjustment(
+          decision,
+          input[:status],
+          input[:sample],
+          url,
+          scan[:normalized_target],
+          input[:confidence_context]
+        )
       end
 
       def increment_count!(stats, runtime)
@@ -1063,6 +1255,34 @@ module Nokizaru
 
         runtime[:stop_state][:stop] = true
         runtime[:stop_state][:reason] ||= marginal_value_stop_reason(runtime)
+        capture_stop_status_code_shape!(runtime)
+      end
+
+      def capture_stop_status_code_shape!(runtime)
+        return unless runtime.is_a?(Hash)
+        return unless runtime[:stop_status_code_shape].to_s.empty?
+
+        shape = status_code_shape_summary(runtime[:responses])
+        runtime[:stop_status_code_shape] = shape unless shape.empty?
+      end
+
+      def status_code_shape_summary(responses)
+        statuses = Array(responses).filter_map do |(_url, status)|
+          code = status.to_i
+          code.positive? ? code : nil
+        end
+        return '' if statuses.empty?
+
+        total = statuses.length
+        counts = statuses.tally
+        counts.sort_by { |status, count| [-count, status] }
+              .map { |status, count| status_code_shape_part(status, count, total) }
+              .join(', ')
+      end
+
+      def status_code_shape_part(status, count, total)
+        percent = (count.to_f / total * 100.0).round(1)
+        "#{status}=#{count}/#{total} (#{percent}%)"
       end
 
       def marginal_value_stop?(runtime)
@@ -1105,27 +1325,22 @@ module Nokizaru
     module DirectoryEnum
       module_function
 
-      def handle_success_status(scan, runtime, url, http_result)
+      def handle_success_status(scan, runtime, url, http_result, sample)
         status = http_result.status.to_i
         runtime[:responses] << [url, status]
         track_raw_finding(runtime[:all_found], scan[:scan_target], url, status)
         runtime[:signal_responses] << [url, status] if SOFT_404_SAMPLE_STATUSES.include?(status)
         track_redirect_signal(runtime[:redirect_signals], url, http_result, status)
-        return unless FINDING_CANDIDATE_STATUSES.include?(status)
+        return nil unless FINDING_CANDIDATE_STATUSES.include?(status)
 
-        sample = response_sample(http_result, request_url: url)
         baseline = update_soft_404_runtime_baseline!(runtime, sample)
-        decision = finding_confidence(url, status, sample, baseline, scan[:normalized_target])
-        update_confidence_context!(runtime, status, sample, baseline, decision)
-        decision = apply_waf_confidence_adjustment(
-          decision,
-          status,
-          sample,
-          url,
-          scan[:normalized_target],
-          confidence_context_snapshot(runtime)
-        )
-        track_confidence_finding(scan, runtime, url, status, decision)
+        update_confidence_context!(runtime, status, sample, baseline, nil)
+        {
+          status: status,
+          sample: sample,
+          baseline: baseline,
+          confidence_context: confidence_context_snapshot(runtime)
+        }
       end
 
       def track_raw_finding(all_found, target, url, status)
@@ -1240,7 +1455,7 @@ module Nokizaru
       def maybe_stop!(runtime)
         return unless should_stop_now?(runtime[:count], runtime[:start_time], runtime[:stop_state])
 
-        stop!(runtime[:stop_state], runtime[:count], runtime[:start_time], runtime[:client])
+        stop!(runtime[:stop_state], runtime[:count], runtime[:start_time], runtime[:client], runtime: runtime)
       end
 
       def adapt_timeout_if_needed!(scan, runtime)
@@ -1752,6 +1967,20 @@ module Nokizaru
         client.get(url)
       end
 
+      def request_urls(client, urls, stop_state)
+        return urls.map { |url| request_url(client, url, stop_state) } if manual_redirect_batch_fallback?(stop_state)
+
+        headers = custom_request_headers?(stop_state) ? stop_state[:request_headers] : nil
+        responses = perform_client_batch_request(client, urls, stop_state, headers: headers)
+        confirm_head_batch!(client, urls, responses, stop_state, headers)
+      rescue NoMethodError
+        urls.map { |url| client.get(url) }
+      end
+
+      def manual_redirect_batch_fallback?(stop_state)
+        custom_request_headers?(stop_state) && stop_state[:allow_redirects]
+      end
+
       def custom_request_headers?(stop_state)
         Nokizaru::RequestHeaders.any?(stop_state[:request_headers])
       end
@@ -1801,6 +2030,46 @@ module Nokizaru
           client.head(url)
         else
           client.get(url)
+        end
+      end
+
+      def perform_client_batch_request(client, urls, stop_state, headers: nil, force_method: nil)
+        method = (force_method || stop_state[:request_method]).to_s
+        request_headers = headers || {}
+        responses = if method == 'head' && client.respond_to?(:head)
+                      client.head(*urls, headers: request_headers)
+                    else
+                      client.get(*urls, headers: request_headers)
+                    end
+        Array(responses)
+      rescue ArgumentError
+        if method == 'head' && client.respond_to?(:head)
+          Array(client.head(*urls))
+        else
+          Array(client.get(*urls))
+        end
+      end
+
+      def confirm_head_batch!(client, urls, responses, stop_state, headers)
+        return responses unless stop_state[:request_method].to_s == 'head'
+
+        confirmations = head_confirmation_urls(urls, responses, stop_state)
+        return responses if confirmations.empty?
+
+        confirmed = perform_client_batch_request(
+          client,
+          confirmations.map(&:last),
+          stop_state,
+          headers: headers,
+          force_method: :get
+        )
+        confirmations.each_with_index { |(index, _url), confirmed_index| responses[index] = confirmed[confirmed_index] }
+        responses
+      end
+
+      def head_confirmation_urls(urls, responses, stop_state)
+        responses.each_with_index.filter_map do |response, index|
+          [index, urls[index]] if head_confirmation_required?(stop_state, response)
         end
       end
 
@@ -1990,12 +2259,13 @@ module Nokizaru
         false
       end
 
-      def stop!(stop_state, count, start_time, client = nil)
+      def stop!(stop_state, count, start_time, client = nil, runtime: nil)
         return if stop_state[:stop]
 
         budgets = stop_budgets(stop_state)
         stop_state[:stop] = true
         stop_state[:reason] ||= stop_reason(budgets, count, start_time)
+        capture_stop_status_code_shape!(runtime) if runtime
 
         close_client!(stop_state, client)
       end
@@ -2091,9 +2361,17 @@ module Nokizaru
         stats[:adaptation_state] = runtime[:adaptation_state]
         stats[:extension_phase_enabled] = runtime.dig(:extension_state, :enabled) == true
         stats[:extension_phase_reason] = runtime.dig(:extension_state, :reason)
+        decorate_dir_dispatch_stats!(runtime, stats)
         stats[:adaptive_concurrency] = runtime.dig(:concurrency_state, :current).to_i
         stats[:time_to_first_actionable_s] = time_to_first_actionable(runtime)
         stats[:requests_to_first_actionable] = runtime[:first_actionable_count].to_i
+      end
+
+      def decorate_dir_dispatch_stats!(runtime, stats)
+        stats[:dispatch_mode] = runtime.dig(:dispatch_state, :mode).to_s
+        stats[:dispatch_http2_confirmed] = runtime.dig(:dispatch_state, :http2_confirmed) == true
+        stats[:dispatch_fallback_reason] = runtime.dig(:dispatch_state, :fallback_reason).to_s
+        stats[:stop_status_code_shape] = runtime[:stop_status_code_shape].to_s
       end
 
       def dir_stop_meta(stop_state)
@@ -2246,8 +2524,17 @@ module Nokizaru
         {
           'extension_phase_enabled' => stats[:extension_phase_enabled],
           'extension_phase_reason' => stats[:extension_phase_reason],
+          'dispatch_mode' => stats[:dispatch_mode],
+          'dispatch_http2_confirmed' => stats[:dispatch_http2_confirmed],
+          'dispatch_fallback_reason' => stats[:dispatch_fallback_reason],
+          'stop_status_code_shape' => empty_string_as_nil(stats[:stop_status_code_shape]),
           'adaptive_concurrency' => stats[:adaptive_concurrency]
         }.merge(dir_runtime_first_actionable_stats(stats))
+      end
+
+      def empty_string_as_nil(value)
+        text = value.to_s
+        text.empty? ? nil : text
       end
 
       def dir_runtime_first_actionable_stats(stats)
@@ -2296,7 +2583,8 @@ module Nokizaru
         puts
         count_rows = redirect_signal_count_rows(redirect_signals)
         counts = dir_summary_counts(runtime)
-        label_width = dir_summary_label_width(count_rows, stop_reason, counts)
+        status_shape = runtime[:stop_status_code_shape].to_s
+        label_width = dir_summary_label_width(count_rows, stop_reason, status_shape, counts)
 
         UI.row(:info, 'Requests/second', rps, label_width: label_width)
         UI.row(:info, 'Directories found', counts[:found], label_width: label_width)
@@ -2304,6 +2592,7 @@ module Nokizaru
         UI.row(:info, 'Low confidence', counts[:low], label_width: label_width) if counts[:low].positive?
         print_redirect_signals(redirect_signals, count_rows, label_width)
         UI.row(:info, 'Stop Reason', stop_reason, label_width: label_width) unless stop_reason.to_s.strip.empty?
+        UI.row(:info, 'Status Code Shape', status_shape, label_width: label_width) unless status_shape.empty?
         puts
       end
 
@@ -2315,11 +2604,12 @@ module Nokizaru
         }
       end
 
-      def dir_summary_label_width(count_rows, stop_reason, counts)
+      def dir_summary_label_width(count_rows, stop_reason, status_shape, counts)
         labels = ['Requests/second', 'Directories found', 'Prioritized found']
         labels << '3xx Signals' unless count_rows.empty?
         labels << 'Low confidence' if counts[:low].positive?
         labels << 'Stop Reason' unless stop_reason.to_s.strip.empty?
+        labels << 'Status Code Shape' unless status_shape.to_s.empty?
         labels.map(&:length).max
       end
 
@@ -2525,7 +2815,7 @@ module Nokizaru
         pressure_streak = state[:pressure_streak].to_i
         low_yield_streak = state[:low_yield_streak].to_i
 
-        stopped = apply_hostile_no_signal_stop!(current_mode, count, stop_state, runtime[:stats])
+        stopped = apply_hostile_no_signal_stop!(current_mode, count, stop_state, runtime[:stats], runtime)
         return stopped if stopped
 
         if seeded_pressure_downgrade?(current_mode, count, pressure_streak)
@@ -2539,6 +2829,7 @@ module Nokizaru
         if hostile_low_yield_stop?(current_mode, pressure_streak, low_yield_streak)
           stop_state[:stop] = true
           stop_state[:reason] ||= hostile_low_yield_stop_reason(state)
+          capture_stop_status_code_shape!(runtime)
           return :stopped
         end
 
@@ -2564,11 +2855,12 @@ module Nokizaru
           "(pressure_streak=#{state[:pressure_streak]}, low_yield_streak=#{state[:low_yield_streak]})"
       end
 
-      def apply_hostile_no_signal_stop!(current_mode, count, stop_state, stats)
+      def apply_hostile_no_signal_stop!(current_mode, count, stop_state, stats, runtime = nil)
         return nil unless hostile_no_signal_stop?(current_mode, count, stats)
 
         stop_state[:stop] = true
         stop_state[:reason] ||= hostile_no_signal_stop_reason(count, stats)
+        capture_stop_status_code_shape!(runtime) if runtime
         :stopped
       end
 
