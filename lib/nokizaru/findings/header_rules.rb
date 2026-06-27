@@ -21,6 +21,7 @@ module Nokizaru
 
       def call(headers_result)
         return [] unless headers_result.is_a?(Hash)
+        return [] if headers_result.key?('error') || headers_result.key?('Error')
 
         headers = normalized_headers(headers_result)
         missing_header_findings(headers) + cookie_flag_findings(headers['set-cookie'])

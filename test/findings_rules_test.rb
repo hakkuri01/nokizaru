@@ -12,6 +12,12 @@ class FindingsRulesTest < Minitest::Test
     assert_empty HeaderRules.call(nil)
   end
 
+  def test_header_rules_suppress_posture_findings_when_header_fetch_failed
+    findings = HeaderRules.call('headers' => {}, 'error' => 'Failed to retrieve headers')
+
+    assert_empty findings
+  end
+
   def test_header_rules_detect_missing_security_headers_and_cookie_flags
     findings = HeaderRules.call(
       'headers' => {

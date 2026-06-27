@@ -34,7 +34,14 @@ module Nokizaru
           parsed = PublicSuffix.parse(hostname)
           [parsed.sld.to_s, parsed.tld.to_s]
         rescue StandardError
-          [hostname.to_s, '']
+          fallback_domain_parts(hostname)
+        end
+
+        def fallback_domain_parts(hostname)
+          labels = hostname.to_s.downcase.split('.').reject(&:empty?)
+          return [hostname.to_s, ''] if labels.length < 2
+
+          [labels[0...-1].join('.'), labels[-1]]
         end
       end
     end

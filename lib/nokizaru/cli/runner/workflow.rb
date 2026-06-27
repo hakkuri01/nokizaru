@@ -81,14 +81,38 @@ module Nokizaru
         end
 
         def run_optional_modules(enabled, target, info, ctx)
-          safe_run_module(:ps, enabled[:ps], ctx, timeout_s: module_timeout_s(info, :ps)) do
-            Nokizaru::Modules::PortScan.call(info[:ip], info[:pscan_threads], ctx, port_spec: info[:pscan_ports])
-          end
+          run_portscan(enabled, info, ctx)
           safe_run_module(:crawl, enabled[:crawl], ctx) do
             Nokizaru::Modules::Crawler.call(target, info[:protocol], info[:netloc], ctx)
           end
           run_directory_enum(enabled, target, info, ctx)
           run_wayback(enabled, target, info, ctx)
+        end
+
+        def run_portscan(enabled, info, ctx)
+          return unless enabled[:ps]
+          return skip_portscan_without_ip(ctx, info) if info[:ip].to_s.empty?
+
+          safe_run_module(:ps, true, ctx, timeout_s: module_timeout_s(info, :ps)) do
+            Nokizaru::Modules::PortScan.call(info[:ip], info[:pscan_threads], ctx, port_spec: info[:pscan_ports])
+          end
+        end
+
+        def skip_portscan_without_ip(ctx, info)
+          reason = info[:ip_resolution_error].to_s
+          message = if reason.empty?
+                      'Target IP address could not be resolved'
+                    else
+                      "Target IP address could not be resolved: #{reason}"
+                    end
+          UI.line(:error, "Skipping Port Scan : #{message}")
+          Log.write("[portscan] Skipped: #{message}")
+          ctx.run['modules']['portscan'] = {
+            'status' => 'skipped',
+            'error' => message,
+            'open_ports' => [],
+            'ports' => []
+          }
         end
 
         def run_subdomains(enabled, info, ctx)

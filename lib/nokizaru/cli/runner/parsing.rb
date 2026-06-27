@@ -30,14 +30,15 @@ module Nokizaru
           warn_on_unusual_scheme_port(uri)
           hostname = parse_hostname!(uri)
           protocol = uri.scheme.to_s
-          ip, type_ip = resolve_target_ip(hostname)
-          print_target_context(target, ip)
+          ip, type_ip, ip_resolution_error = resolve_target_ip(hostname)
+          print_target_context(target, ip, ip_resolution_error)
           base_info = target_base_info(uri, protocol, hostname, ip, type_ip)
-          base_info.merge(parse_runtime_options)
+          base_info.merge(ip_resolution_error: ip_resolution_error).merge(parse_runtime_options)
         end
 
-        def print_target_context(target, ip)
-          UI.rows(:info, [['Target', target], ['IP Address', ip]])
+        def print_target_context(target, ip, ip_resolution_error = nil)
+          ip_display = ip || "unresolved (#{ip_resolution_error})"
+          UI.rows(:info, [['Target', target], ['IP Address', ip_display]])
         end
 
         def warn_on_unusual_scheme_port(uri)
@@ -58,7 +59,7 @@ module Nokizaru
             suffix: suffix,
             ip: ip,
             type_ip: type_ip,
-            private_ip: IPAddr.new(ip).private?
+            private_ip: private_ip?(ip)
           )
         end
 
@@ -80,10 +81,13 @@ module Nokizaru
         end
 
         def resolve_target_ip(hostname)
-          return [hostname, true] if ip_literal?(hostname)
+          return [hostname, true, nil] if ip_literal?(hostname)
 
           ip = resolve_hostname_ip(hostname)
-          [ip, false]
+          [ip, false, nil]
+        rescue StandardError => e
+          Log.write("Target IP resolution failed for #{hostname}: #{e.class}: #{e.message}")
+          [nil, false, e.message]
         end
 
         def parse_runtime_options
@@ -135,6 +139,14 @@ module Nokizaru
 
         def bool_opt(key, default)
           @opts[key].nil? ? default : !!@opts[key]
+        end
+
+        def private_ip?(ip)
+          return false if ip.to_s.empty?
+
+          IPAddr.new(ip).private?
+        rescue StandardError
+          false
         end
       end
     end

@@ -120,7 +120,13 @@ module Nokizaru
           key, value = clean.split(':', 2)
           pairs << [key.strip, value.to_s.strip]
         else
-          misc << clean
+          misc << normalize_misc_line(clean)
+        end
+      end
+
+      def normalize_misc_line(line)
+        line.sub(/\ANo match for "([^"]+)"\.\z/i) do
+          "No match for #{Regexp.last_match(1).downcase}"
         end
       end
     end

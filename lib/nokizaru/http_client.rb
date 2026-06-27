@@ -43,7 +43,7 @@ module Nokizaru
     end
 
     def timeout_override?(timeout_s)
-      timeout_s && ((timeout_s.to_f - 10.0).abs > Float::EPSILON)
+      timeout_s&.to_f&.positive?
     end
 
     # Get a client optimized for bulk/parallel requests

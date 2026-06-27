@@ -40,4 +40,11 @@ class HTTPClientHelpersTest < Minitest::Test
     refute Nokizaru::HTTPClient.http_success?(Response.new(status: 404))
     assert Nokizaru::HTTPClient.http_redirect?(Response.new(status: 302), [301, 302])
   end
+
+  def test_default_sized_timeout_is_still_an_explicit_override
+    assert Nokizaru::HTTPClient.timeout_override?(10.0)
+    assert Nokizaru::HTTPClient.timeout_override?(1.0)
+    refute Nokizaru::HTTPClient.timeout_override?(nil)
+    refute Nokizaru::HTTPClient.timeout_override?(0)
+  end
 end
