@@ -35,8 +35,10 @@ module Nokizaru
       }.freeze
 
       def call(target, ctx, timeout_s: 10.0)
-        UI.module_header('Starting WayBack Machine...')
+        UI.module_header('WayBack Machine')
+        ctx.progress&.update(:wayback, stage: 'querying archive')
         result = execute_query(target, timeout_s)
+        ctx.progress&.update(:wayback, stage: 'complete', detail: "#{Array(result[:urls]).length} urls")
         persist_wayback(ctx, result)
         Log.write('[wayback] Completed')
       rescue StandardError => e

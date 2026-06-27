@@ -14,14 +14,17 @@ module Nokizaru
       # Run this module and store normalized results in the run context
       def call(hostname, ssl_port, ctx)
         result = {}
-        UI.module_header('SSL Certificate Information :')
+        UI.module_header('SSL Certificate Information')
 
+        ctx.progress&.update(:sslinfo, stage: 'checking tls')
         if ssl_available?(hostname, ssl_port)
+          ctx.progress&.update(:sslinfo, stage: 'fetching certificate')
           collect_ssl_certificate(hostname, ssl_port, result)
         else
           mark_ssl_unavailable(result)
         end
 
+        ctx.progress&.update(:sslinfo, stage: 'complete', detail: result['cert'] ? 'certificate found' : 'no tls')
         finalize_ssl_module(ctx, result)
       end
 

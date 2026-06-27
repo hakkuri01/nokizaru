@@ -16,8 +16,10 @@ module Nokizaru
         db_json = load_whois_database
         return missing_whois_database!(ctx) unless db_json
 
-        UI.module_header('Whois Lookup :')
+        UI.module_header('Whois Lookup')
+        ctx.progress&.update(:whois, stage: 'querying')
         result = whois_result(domain, tld, db_json, ctx)
+        ctx.progress&.update(:whois, stage: 'complete', detail: "#{result.fetch('whois', '').lines.count} lines")
       rescue KeyError
         result = unsupported_suffix_result
       rescue StandardError => e

@@ -2,6 +2,7 @@
 
 require_relative 'nokizaru/version'
 require_relative 'nokizaru/ui'
+require_relative 'nokizaru/progress_rail'
 require_relative 'nokizaru/paths'
 require_relative 'nokizaru/settings'
 require_relative 'nokizaru/log'

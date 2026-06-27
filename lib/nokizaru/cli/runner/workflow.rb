@@ -11,7 +11,12 @@ module Nokizaru
           initialize_runtime!
           ensure_modules_selected!
           setup_run_context
-          execute_modules(@enabled, @target, @info, @ctx)
+          begin
+            start_progress_rail!
+            execute_modules(@enabled, @target, @info, @ctx)
+          ensure
+            stop_progress_rail!
+          end
           finalize_run!
         end
 
@@ -32,6 +37,8 @@ module Nokizaru
             cache: @cache
           )
           @enabled = resolve_enabled_modules
+          @progress_rail = Nokizaru::ProgressRail.new(enabled_modules: enabled_module_keys(@enabled))
+          @ctx.progress = @progress_rail
         end
 
         def context_options(options, info)
@@ -176,16 +183,30 @@ module Nokizaru
         def safe_run_module(key, enabled, ctx, timeout_s: nil, &)
           return unless enabled
 
+          ctx.progress&.module_started(key, label: module_label(key))
           timeout = timeout_s.to_f
           if timeout.positive?
             Timeout.timeout(timeout, &)
           else
             yield
           end
+          ctx.progress&.module_finished(key)
         rescue Timeout::Error => e
+          ctx.progress&.module_failed(key, error: e)
           handle_module_failure(key, ctx, e, timeout_s: timeout)
         rescue StandardError => e
+          ctx.progress&.module_failed(key, error: e)
           handle_module_failure(key, ctx, e)
+        end
+
+        def start_progress_rail!
+          UI.active_progress_rail = @progress_rail
+          @progress_rail&.start
+        end
+
+        def stop_progress_rail!
+          @progress_rail&.stop
+          UI.active_progress_rail = nil
         end
 
         def handle_module_failure(key, ctx, error, timeout_s: nil)
@@ -271,6 +292,10 @@ module Nokizaru
           @skip.each { |mod, skip| enabled[mod] = false if skip }
           ensure_any_enabled!(enabled)
           enabled
+        end
+
+        def enabled_module_keys(enabled)
+          enabled.select { |_, is_enabled| is_enabled }.keys
         end
 
         def module_enabled?(mod)

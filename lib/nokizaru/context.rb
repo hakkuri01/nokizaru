@@ -7,13 +7,15 @@ module Nokizaru
   # Persistence/export when the user asks for it
   class Context
     attr_reader :run, :options, :workspace, :cache
+    attr_accessor :progress
 
     # Capture runtime options and prepare shared state used by this object
-    def initialize(run:, options:, workspace: nil, cache: nil)
+    def initialize(run:, options:, workspace: nil, cache: nil, progress: nil)
       @run = run
       @options = options
       @workspace = workspace
       @cache = cache
+      @progress = progress
 
       @run['modules'] ||= {}
       @run['artifacts'] ||= {}

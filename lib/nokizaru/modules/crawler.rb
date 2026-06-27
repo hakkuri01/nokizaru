@@ -77,11 +77,14 @@ module Nokizaru
 
       def call(target, _protocol, _netloc, ctx)
         result = initialize_result
-        UI.module_header('Starting Crawler...')
+        UI.module_header('Crawler')
+        ctx.progress&.update(:crawl, stage: 'fetching target')
         page = crawl_main_page(target, ctx, result)
         return if page.nil?
 
+        ctx.progress&.update(:crawl, stage: 'extracting links')
         crawl_page_resources!(result, page)
+        ctx.progress&.update(:crawl, stage: 'complete', detail: "#{result.dig('stats', 'total_unique').to_i} urls")
         finalize_crawl!(ctx, result)
       end
 

@@ -38,15 +38,17 @@ module Nokizaru
 
       # Run this module and store normalized results in the run context
       def call(hostname, timeout, ctx, conf_path)
-        UI.module_header('Starting Subdomain Enumeration...')
+        UI.module_header('Sub-Domain Enumeration')
 
         cache_key = ctx.cache&.key_for(['subdomains', hostname]) || "subdomains:#{hostname}"
         SubdomainModules::Base.start_output_capture(subdomain_provider_names)
+        ctx.progress&.update(:sub, stage: 'providers', current: 0, total: subdomain_provider_names.length, found: 0)
         found = ctx.cache_fetch(cache_key, ttl_s: 43_200) do
-          enumerate(hostname, timeout, conf_path)
+          enumerate(hostname, timeout, conf_path, progress: ctx.progress)
         end
         SubdomainModules::Base.flush_output_capture
         found = Array(found).sort
+        ctx.progress&.update(:sub, stage: 'complete', detail: "#{found.length} subdomains")
 
         print_results(found)
 
@@ -72,7 +74,7 @@ module Nokizaru
           end
         end
 
-        puts
+        UI.blank_line
         width = ['Results truncated', 'Total unique subdomains found'].map(&:length).max
         UI.row(:info, 'Total unique subdomains found', found.length, label_width: width)
       end

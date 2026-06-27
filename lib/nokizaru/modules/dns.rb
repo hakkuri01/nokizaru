@@ -19,10 +19,12 @@ module Nokizaru
 
       def call(domain, dns_servers, ctx)
         result = { 'records' => {} }
-        UI.module_header('Starting DNS Enumeration...')
+        UI.module_header('DNS Enumeration')
+        ctx.progress&.update(:dns, stage: 'checking domain')
         state = build_dns_state(domain, dns_servers)
         return mark_domain_missing(result, ctx) unless domain_exists?(state)
 
+        ctx.progress&.update(:dns, stage: 'enumerating records')
         state[:record_pairs] =
           ResolverHelpers.enumerate_records(state[:domain], state[:nameservers], state[:per_query_timeout])
         complete_enumeration!(result, ctx, state)
@@ -45,6 +47,7 @@ module Nokizaru
         merge_record_pairs!(result, ResolverHelpers.sorted_record_pairs(state[:record_pairs]))
         merge_dmarc_records!(result, state[:domain], state[:nameservers], state[:per_query_timeout])
         print_records(result)
+        ctx.progress&.update(:dns, stage: 'complete', detail: "#{display_rows(result).length} records")
         persist_dns_result(ctx, result)
       end
 

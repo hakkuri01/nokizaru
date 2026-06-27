@@ -16,11 +16,14 @@ module Nokizaru
       DEFAULT_UA = "Nokizaru/#{Nokizaru::VERSION} (+https://github.com/hakkuri01)".freeze
 
       def call(target, timeout, ctx, _conf_path)
-        UI.module_header('Starting Architecture Fingerprinting...')
+        UI.module_header('Architecture Fingerprinting')
+        ctx.progress&.update(:arch, stage: 'checking api key')
         api_key = KeyStore.fetch('wappalyzer', env: 'NK_WAPPALYZER_KEY')
         return mark_skipped(ctx) if api_key.to_s.strip.empty?
 
+        ctx.progress&.update(:arch, stage: 'fingerprinting')
         technologies = collect_technologies(target, timeout, api_key)
+        ctx.progress&.update(:arch, stage: 'complete', detail: "#{technologies.length} technologies")
         Presenter.print(technologies)
         persist_result(ctx, technologies)
       rescue StandardError => e
@@ -46,6 +49,7 @@ module Nokizaru
 
       def mark_skipped(ctx)
         UI.row(:error, 'Skipping Architecture Fingerprinting', 'API key not found!')
+        ctx.progress&.update(:arch, stage: 'skipped', detail: 'api key not found')
         Log.write('[arch] API key not found')
         ctx.run['modules']['architecture_fingerprinting'] = { 'technologies' => [], 'status' => 'skipped_no_key' }
       end

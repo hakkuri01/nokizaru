@@ -52,14 +52,14 @@ module Nokizaru
         'Chaos' => 8.0
       }.freeze
 
-      def enumerate(hostname, timeout, conf_path)
+      def enumerate(hostname, timeout, conf_path, progress: nil)
         found = ResultSet.new(hostname, VALID)
         overall_budget = timeout.to_f.clamp(5.0, 30.0)
         vendor_default = [overall_budget, 12.0].min
         vendor_timeouts = build_vendor_timeouts(vendor_default)
         base_http = build_subdomain_http(vendor_default)
         jobs = subdomain_jobs(hostname, conf_path, found)
-        run_subdomain_jobs(jobs, base_http, vendor_timeouts, overall_budget)
+        run_subdomain_jobs(jobs, base_http, vendor_timeouts, overall_budget, progress: progress, found: found)
         finalize_subdomains(found, hostname)
       end
 
@@ -79,14 +79,15 @@ module Nokizaru
         )
       end
 
-      def run_subdomain_jobs(jobs, base_http, vendor_timeouts, overall_budget)
+      def run_subdomain_jobs(jobs, base_http, vendor_timeouts, overall_budget, progress: nil, found: nil)
         queue = Queue.new
         jobs.each { |job| queue << job }
         deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + overall_budget
         http_pool = build_timeout_http_pool(base_http, vendor_timeouts)
+        tracker = { total: jobs.length, completed: Concurrent::AtomicFixnum.new(0), progress: progress, found: found }
         worker_count = [10, jobs.length].min
         workers = Array.new(worker_count) do
-          Thread.new { worker_loop(queue, deadline, http_pool, base_http, vendor_timeouts) }
+          Thread.new { worker_loop(queue, deadline, http_pool, base_http, vendor_timeouts, tracker) }
         end
         workers.each(&:join)
       end
@@ -97,7 +98,7 @@ module Nokizaru
         end
       end
 
-      def worker_loop(queue, deadline, http_pool, base_http, vendor_timeouts)
+      def worker_loop(queue, deadline, http_pool, base_http, vendor_timeouts, tracker = nil)
         loop do
           break if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
 
@@ -105,7 +106,17 @@ module Nokizaru
           break unless job
 
           run_subdomain_job(job, http_pool, base_http, vendor_timeouts)
+          update_subdomain_progress(tracker) if tracker
         end
+      end
+
+      def update_subdomain_progress(tracker)
+        current = tracker[:completed].increment
+        found_count = tracker[:found]&.to_a&.length.to_i
+        tracker[:progress]&.update(
+          :sub,
+          stage: 'providers', current: current, total: tracker[:total], found: found_count
+        )
       end
 
       def pop_job(queue)

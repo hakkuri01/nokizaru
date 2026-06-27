@@ -19,9 +19,11 @@ module Nokizaru
       # Run this module and store normalized results in the run context
       def call(target, ctx)
         result = { 'headers' => {}, 'target_profile' => {} }
-        UI.module_header('Headers :')
+        UI.module_header('Headers')
 
+        ctx.progress&.update(:headers, stage: 'fetching')
         populate_headers_result!(target, result, ctx.options[:request_headers] || {})
+        ctx.progress&.update(:headers, stage: 'complete', detail: "#{result['headers'].length} headers")
         ctx.run['modules']['headers'] = result
         Log.write('[headers] Completed')
       end

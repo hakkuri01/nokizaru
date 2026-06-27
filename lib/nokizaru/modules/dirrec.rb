@@ -125,8 +125,6 @@ module Nokizaru
       SOFT_404_MAX_LEARNING_SAMPLES = 96
       SOFT_404_MIN_DOMINANCE_RATIO = 0.6
       PROGRESS_EVERY = 1
-      PROGRESS_RENDER_INTERVAL_S = 0.11
-      PROGRESS_PLAIN_EVERY = 50
       STALL_WATCHDOG_INTERVAL_S = 0.2
       MIN_STALL_TIMEOUT_S = 20.0
       MAX_STALL_TIMEOUT_S = 90.0
@@ -393,8 +391,7 @@ module Nokizaru
         runtime = {
           mutex: Mutex.new,
           slot_cv: ConditionVariable.new,
-          progress_output_lock: Mutex.new,
-          output_closed: false,
+          output_lock: Mutex.new,
           responses: [],
           signal_responses: [],
           found: [],
@@ -418,7 +415,6 @@ module Nokizaru
           queue: nil,
           timeout_state: { current: scan[:timeout], min: MIN_ADAPTIVE_TIMEOUT_S },
           stop_state: init_stop_state(scan),
-          progress_ui: init_progress_ui,
           retired_clients: [],
           target_shape: init_target_shape(scan),
           extension_state: init_extension_state,
@@ -510,17 +506,6 @@ module Nokizaru
         }
       end
 
-      def init_progress_ui
-        {
-          started_at_mono: nil,
-          last_render_at: nil,
-          last_plain_count: 0,
-          ticker_active: false,
-          ticker_stop: false,
-          ticker_thread: nil
-        }
-      end
-
       def init_stats
         {
           success: 0,
@@ -574,7 +559,6 @@ module Nokizaru
       def run_workers(scan, runtime)
         num_workers = [runtime[:concurrency_state][:max].to_i, 1].max
         prepare_runtime_client!(scan, runtime, num_workers)
-        start_progress_ticker!(runtime, scan)
         start_stall_watchdog!(runtime, scan)
         if batch_dispatch_candidate?(scan, runtime[:stop_state])
           runtime[:dispatch_state][:mode] = 'http2_probe'
@@ -584,7 +568,6 @@ module Nokizaru
           run_threaded_workers(scan, runtime, num_workers)
         end
       ensure
-        stop_progress_ticker!(runtime) if runtime
         stop_stall_watchdog!(runtime) if runtime
         close_retired_clients!(runtime) if runtime
         close_client!(runtime[:stop_state], runtime[:client]) if runtime
@@ -660,34 +643,6 @@ module Nokizaru
           nil
         end
         retired.clear
-      end
-
-      def start_progress_ticker!(runtime, scan)
-        return unless progress_output_tty?
-
-        ui = runtime[:progress_ui]
-        ui[:ticker_active] = true
-        ui[:ticker_stop] = false
-        ui[:started_at_mono] = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        ui[:ticker_thread] = Thread.new do
-          loop do
-            break if ui[:ticker_stop]
-
-            print_progress(runtime, scan, force: true)
-            sleep(PROGRESS_RENDER_INTERVAL_S)
-          end
-        end
-      end
-
-      def stop_progress_ticker!(runtime)
-        ui = runtime[:progress_ui]
-        return unless ui[:ticker_active]
-
-        ui[:ticker_stop] = true
-        thread = ui[:ticker_thread]
-        thread&.join(0.2)
-        ui[:ticker_active] = false
-        ui[:ticker_thread] = nil
       end
 
       def prepare_runtime_client!(scan, runtime, num_workers)
@@ -1466,10 +1421,9 @@ module Nokizaru
         runtime[:stop_state][:request_timeout] = runtime[:timeout_state][:current]
         runtime[:stats][:timeout_downshifts] += 1
         with_output_lock(runtime) do
-          clear_progress_line(runtime, locked: true)
           UI.row(:plus, 'Adaptive Timeout', "reduced to #{runtime[:timeout_state][:current]}s (timeout-heavy target)")
-          print_progress(runtime, scan, force: true, locked: true) if progress_output_tty?
         end
+        print_progress(runtime, scan, force: true)
       end
 
       def client_config(scan, runtime)
@@ -1486,10 +1440,7 @@ module Nokizaru
 
       def finalize_scan(scan, runtime)
         runtime[:stats][:elapsed] = Time.now - runtime[:start_time]
-        with_output_lock(runtime) do
-          print_progress(runtime, scan, force: true, locked: true)
-          clear_progress_line(runtime, locked: true)
-        end
+        print_progress(runtime, scan, force: true)
         dir_output(runtime: runtime, scan: scan)
         Log.write('[dirrec] Completed')
       end
@@ -1529,10 +1480,9 @@ module Nokizaru
 
         runtime[:stdout_found] << url
         with_output_lock(runtime) do
-          clear_progress_line(runtime, locked: true)
           UI.line(:info, "#{colorize_status(status)} | #{url}")
-          print_progress(runtime, scan, force: true, locked: true) if progress_output_tty?
         end
+        print_progress(runtime, scan, force: true)
       end
 
       # Colorize status code so findings are easy to scan at a glance
@@ -1566,11 +1516,11 @@ module Nokizaru
 
       # Print directory scan banner and run configuration details
       def print_banner(scan)
-        UI.module_header('Starting Directory Enum...')
+        UI.module_header('Directory Enum')
         rows = banner_rows(scan)
         rows.insert(3, ['Effective Timeout', scan[:timeout]]) if effective_timeout_changed?(scan)
         UI.rows(:plus, rows)
-        puts
+        UI.blank_line
       end
 
       def banner_rows(scan)
@@ -1604,86 +1554,32 @@ module Nokizaru
       module_function
 
       # Print periodic directory scan progress updates
-      def print_progress(runtime, scan, force: false, locked: false)
-        progress_ui = runtime[:progress_ui]
-        return unless render_progress?(runtime, scan, progress_ui, force)
+      def print_progress(runtime, scan, force: false)
+        return unless force || progress_output_tty?
 
-        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        tty = progress_output_tty?
-        line = UI.direnum_progress(
+        ctx = scan[:options][:ctx]
+        ctx.progress&.update(
+          :dir,
           current: runtime[:count],
           total: scan[:total_urls],
           elapsed_s: Time.now - runtime[:start_time],
-          frame_index: progress_frame_index(progress_ui, now),
-          stats: {
-            success: runtime[:stats][:success],
-            errors: runtime[:stats][:errors],
-            found: runtime[:found].length
-          },
-          tty: tty
+          success: runtime[:stats][:success],
+          errors: runtime[:stats][:errors],
+          found: runtime[:found].length
         )
-
-        emit_progress_output(runtime, line, tty: tty, locked: locked)
-        progress_ui[:last_render_at] = now
-        progress_ui[:last_plain_count] = runtime[:count] unless tty
-      end
-
-      def emit_progress_output(runtime, line, tty:, locked: false)
-        writer = proc do
-          tty ? print(line) : puts(line)
-          $stdout.flush
-        end
-        return writer.call if locked
-
-        with_output_lock(runtime, &writer)
       end
 
       def with_output_lock(runtime, &)
-        lock = runtime[:progress_output_lock]
-        return if runtime[:output_closed]
+        lock = runtime[:output_lock]
         return yield unless lock
 
         lock.synchronize(&)
       rescue Errno::EPIPE
-        runtime[:output_closed] = true
         nil
-      end
-
-      def render_progress?(runtime, _scan, progress_ui, force)
-        return true if force
-        return false if progress_output_tty? && progress_ui[:ticker_active]
-        return render_tty_progress?(progress_ui) if progress_output_tty?
-
-        (runtime[:count] - progress_ui[:last_plain_count]) >= PROGRESS_PLAIN_EVERY
-      end
-
-      def progress_frame_index(progress_ui, now)
-        start = progress_ui[:started_at_mono] || now
-        progress_ui[:started_at_mono] ||= start
-        ((now - start) / PROGRESS_RENDER_INTERVAL_S).floor
-      end
-
-      def render_tty_progress?(progress_ui)
-        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        last = progress_ui[:last_render_at]
-        last.nil? || (now - last) >= PROGRESS_RENDER_INTERVAL_S
       end
 
       def progress_output_tty?
         $stdout.tty?
-      end
-
-      # Clear transient progress line before printing final summary rows
-      def clear_progress_line(runtime = nil, locked: false)
-        return unless progress_output_tty?
-
-        writer = proc do
-          print("\r\e[K")
-          $stdout.flush
-        end
-        return writer.call if locked || runtime.nil?
-
-        with_output_lock(runtime, &writer)
       end
 
       # Load and normalize wordlist entries used for directory enumeration
@@ -2580,7 +2476,7 @@ module Nokizaru
       end
 
       def print_dir_summary(rps, runtime, stop_reason, redirect_signals)
-        puts
+        UI.blank_line
         count_rows = redirect_signal_count_rows(redirect_signals)
         counts = dir_summary_counts(runtime)
         status_shape = runtime[:stop_status_code_shape].to_s
@@ -2593,7 +2489,7 @@ module Nokizaru
         print_redirect_signals(redirect_signals, count_rows, label_width)
         UI.row(:info, 'Stop Reason', stop_reason, label_width: label_width) unless stop_reason.to_s.strip.empty?
         UI.row(:info, 'Status Code Shape', status_shape, label_width: label_width) unless status_shape.empty?
-        puts
+        UI.blank_line
       end
 
       def dir_summary_counts(runtime)

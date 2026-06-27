@@ -44,20 +44,20 @@ module Nokizaru
         result = { 'open_ports' => [], 'ports' => [] }
         entries = port_entries(port_spec)
         setup_scan_ui(threads, port_spec)
-        scan_ports(ip_addr, threads, result, entries: entries, port_spec: port_spec)
-        finalize_scan_output(result)
+        scan_ports(ip_addr, threads, result, entries: entries, port_spec: port_spec, progress: ctx.progress)
+        finalize_scan_output(result, progress: ctx.progress)
         save_scan_result(ctx, result)
       end
 
       def setup_scan_ui(threads, port_spec = nil)
-        UI.module_header('Starting Port Scan...')
+        UI.module_header('Port Scan')
         UI.row(:plus, scan_label(port_spec), threads)
-        puts
+        UI.blank_line
       end
 
-      def scan_ports(ip_addr, threads, result, entries: nil, port_spec: nil)
+      def scan_ports(ip_addr, threads, result, entries: nil, port_spec: nil, progress: nil)
         entries ||= port_entries(port_spec)
-        tracker = build_scan_tracker(entries.length)
+        tracker = build_scan_tracker(entries.length, progress: progress)
         result['total_ports'] = entries.length
         return scan_ports_nonblocking(ip_addr, threads, result, entries, tracker) unless default_port_spec?(port_spec)
 
@@ -67,22 +67,24 @@ module Nokizaru
         pool.wait_for_termination
       end
 
-      def build_scan_tracker(total)
+      def build_scan_tracker(total, progress: nil)
         {
           total: total,
           counter: Concurrent::AtomicFixnum.new(0),
+          open_count: Concurrent::AtomicFixnum.new(0),
           mutex: Mutex.new,
           progress_mutex: Mutex.new,
           rate_mutex: Mutex.new,
           rate_interval: 1.0 / DEFAULT_RATE_PER_SECOND,
           next_probe_at: 0.0,
-          last_progress_at: 0.0
+          last_progress_at: 0.0,
+          progress: progress
         }
       end
 
       def scan_ports_nonblocking(ip_addr, threads, result, entries, tracker)
         on_open = lambda do |port, name, latency_ms|
-          record_found_port(ip_addr, port, name, latency_ms, result, tracker[:mutex])
+          record_found_port(ip_addr, port, name, latency_ms, result, tracker)
         end
         NonblockingScanner.scan(
           ip_addr,
@@ -109,7 +111,7 @@ module Nokizaru
 
       def scan_port(ip_addr, port, name, result, tracker)
         throttle_probe!(tracker)
-        record_open_port(ip_addr, port, name, result, tracker[:mutex])
+        record_open_port(ip_addr, port, name, result, tracker)
       rescue StandardError
         nil
       ensure
@@ -128,18 +130,19 @@ module Nokizaru
         end
       end
 
-      def record_open_port(ip_addr, port, name, result, mutex)
+      def record_open_port(ip_addr, port, name, result, tracker)
         started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         return unless open_port?(ip_addr, port)
 
-        record_found_port(ip_addr, port, name, elapsed_ms(started_at), result, mutex)
+        record_found_port(ip_addr, port, name, elapsed_ms(started_at), result, tracker)
       end
 
-      def record_found_port(ip_addr, port, name, latency_ms, result, mutex)
-        mutex.synchronize do
-          puts("\r\e[K#{UI.prefix(:info)} #{UI::C}#{port} (#{name})#{UI::W}")
+      def record_found_port(ip_addr, port, name, latency_ms, result, tracker)
+        tracker[:mutex].synchronize do
+          UI.line(:info, "#{UI::C}#{port} (#{name})")
           result['open_ports'] << "#{port} (#{name})"
           result['ports'] << open_port_record(ip_addr, port, name, latency_ms)
+          tracker[:open_count].increment
         end
       end
 
@@ -151,9 +154,13 @@ module Nokizaru
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           next unless force || progress == tracker[:total] || now - tracker[:last_progress_at] >= PROGRESS_TIME_INTERVAL
 
-          print(UI.progress(:plus, 'Scanning', "#{progress}/#{tracker[:total]}"))
+          update_scan_progress(tracker, progress)
           tracker[:last_progress_at] = now
         end
+      end
+
+      def update_scan_progress(tracker, current)
+        tracker[:progress]&.update(:ps, current: current, total: tracker[:total], open: tracker[:open_count].value)
       end
 
       def elapsed_ms(started_at)
@@ -205,12 +212,11 @@ module Nokizaru
         SENSITIVE_PORTS.include?(port.to_i) ? 'sensitive' : 'standard'
       end
 
-      def finalize_scan_output(result)
+      def finalize_scan_output(result, progress: nil)
         total = result['total_ports'] || PORT_LIST.length
-        print(UI.progress(:plus, 'Scanning', "#{total}/#{total}"))
-        puts
+        progress&.update(:ps, current: total, total: total, open: Array(result['open_ports']).length)
         UI.line(:info, 'Scan completed!')
-        puts
+        UI.blank_line
         result['open_ports'].uniq!
         result['ports'] = unique_port_records(result['ports'])
         classify_portscan_shape!(result)
