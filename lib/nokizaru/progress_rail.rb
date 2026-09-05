@@ -10,7 +10,6 @@ module Nokizaru
       @io = io
       @interval_s = interval_s.to_f.positive? ? interval_s.to_f : DEFAULT_INTERVAL_S
       @mutex = Mutex.new
-      @started_at = Time.now
       @frame_index = 0
       @running = false
       @rendered = false
@@ -39,15 +38,15 @@ module Nokizaru
     end
 
     def module_started(key, label: nil)
-      update(key, phase: 'running', label: label || key.to_s, started_at: Time.now)
+      update(key, phase: 'running', label: label || key.to_s)
     end
 
     def module_finished(key)
-      update(key, phase: 'done', finished_at: Time.now)
+      update(key, phase: 'done')
     end
 
-    def module_failed(key, error: nil)
-      update(key, phase: 'failed', error: error&.class&.name || error.to_s, finished_at: Time.now)
+    def module_failed(key)
+      update(key, phase: 'failed')
     end
 
     def update(key, fields = {})
@@ -60,13 +59,13 @@ module Nokizaru
       end
     end
 
-    def with_output(&block)
-      return block.call unless tty?
+    def with_output
+      return yield unless tty?
 
       @mutex.synchronize do
         clear_locked
         begin
-          block.call
+          yield
         ensure
           render_locked if @running
         end
@@ -86,7 +85,6 @@ module Nokizaru
       {
         enabled_modules: @enabled_modules,
         current_module: @enabled_modules.first,
-        started_at: @started_at,
         modules: @enabled_modules.to_h { |mod| [mod, { phase: 'pending', label: mod.to_s }] }
       }
     end

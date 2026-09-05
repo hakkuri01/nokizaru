@@ -3,13 +3,10 @@
 require_relative '../../log'
 require_relative '../../keys'
 require_relative '../../http_client'
-require_relative 'base_legacy'
-require_relative 'base_http'
 
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Shared helpers for subdomain source modules
       module Base
         module_function
 
@@ -24,32 +21,26 @@ module Nokizaru
 
         OUTPUT_GROUP_ORDER = %i[requesting status_info skipping status_error exception found].freeze
 
-        # Print provider request start message
         def requesting(name)
           emit_or_print(:requesting, name, nil)
         end
 
-        # Print provider success summary
         def found(name, count)
           emit_or_print(:found, name, count)
         end
 
-        # Print provider error status
         def status_error(name, status, reason = '')
           emit_or_print(:status_error, name, { status: status, reason: reason })
         end
 
-        # Print provider status line without error context
         def status_info(name, status)
           emit_or_print(:status_info, name, status)
         end
 
-        # Print provider exception
         def exception(name, error)
           emit_or_print(:exception, name, error)
         end
 
-        # Print provider skip reason
         def skipping(name, reason)
           emit_or_print(:skipping, name, reason)
         end
@@ -171,54 +162,83 @@ module Nokizaru
           end
         end
 
-        # Wrap raw HTTPX response in HttpResult for consistent handling
-        def wrap_response(raw_response)
-          HttpResult.new(raw_response)
-        end
-
-        # Legacy helper - maintained for backward compatibility
-        # New code should use HttpResult directly
         def safe_status(resp)
-          BaseLegacy.safe_status(resp)
+          return resp.status if resp.respond_to?(:status)
+
+          nil
         end
 
-        # Legacy helper - maintained for backward compatibility
-        # New code should use HttpResult#body directly
         def safe_body(resp)
-          BaseLegacy.safe_body(resp)
+          return '' unless resp
+
+          body = extract_body(resp)
+          return body unless body.empty?
+
+          fallback_body(resp)
+        rescue StandardError
+          ''
         end
 
-        # Create a compact body preview for readable error messages
+        def extract_body(resp)
+          return '' unless resp.respond_to?(:body)
+
+          value = resp.body
+          value ? value.to_s : ''
+        end
+
+        def fallback_body(resp)
+          return '' unless resp.respond_to?(:to_s)
+
+          value = resp.to_s
+          return '' if value.include?('HTTPX::') || value.include?('headers=>') || value.start_with?('#<')
+
+          value
+        end
+
         def body_snippet(resp, max: 220)
-          BaseLegacy.body_snippet(resp, max: max)
+          normalized = safe_body(resp).to_s.strip.gsub(/\s+/, ' ')
+          return '' if normalized.empty?
+
+          normalized.length > max ? "#{normalized[0, max]}…" : normalized
+        rescue StandardError
+          ''
         end
 
-        # Human-readable reason for HTTPX failures
-        # Works with both raw responses and HttpResult objects
         def failure_reason(resp)
-          BaseLegacy.failure_reason(resp)
+          return '' unless resp
+          return resp.error? ? resp.error_message : '' if resp.is_a?(HttpResult)
+          return error_reason(resp.error) if resp.respond_to?(:error) && resp.error
+          return resp.exception.to_s.strip if resp.respond_to?(:exception) && resp.exception
+
+          body_snippet(resp)
+        rescue StandardError
+          ''
         end
 
-        # Print status with improved formatting
-        # Works with both raw responses and HttpResult objects
+        def error_reason(error)
+          message = error.to_s
+          message = message.split(' {', 2).first if message.include?(' {')
+          message = message.split(' (', 2).first if message.start_with?('HTTP Error:') && message.include?(' (')
+          message.strip
+        end
+
         def print_status(vendor, resp)
-          BaseLegacy.print_status(vendor, resp)
+          if resp.is_a?(HttpResult)
+            return status_info(vendor, resp.status) if resp.success?
+
+            return status_error(vendor, resp.status || 'ERR', resp.error_message)
+          end
+
+          status_error(vendor, status_label(resp), failure_reason(resp))
         end
 
-        # Build a stable status label for provider logs and terminal output
         def status_label(resp)
-          BaseLegacy.status_label(resp)
+          status = safe_status(resp)
+          status ? status.to_s : 'ERR'
         end
 
-        # Centralized key lookup
-        def ensure_key(name, _conf_path, env)
+        def ensure_key(name, env)
           KeyStore.fetch(name, env: env)
-        end
-
-        # Make HTTP request and return HttpResult
-        # Provides a consistent interface for all subdomain modules
-        def fetch_with_result(client, url, **)
-          BaseHTTP.fetch_with_result(client, url, **)
         end
       end
     end

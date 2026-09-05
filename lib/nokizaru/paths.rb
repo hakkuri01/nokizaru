@@ -2,14 +2,7 @@
 
 require 'fileutils'
 
-begin
-  require 'ronin/support/home'
-rescue LoadError
-  # Ronin-support is optional at runtime; fall back to manual XDG paths
-end
-
 module Nokizaru
-  # Centralized paths for Nokizaru runtime state and shipped templates
   module Paths
     APP_DIR = 'nokizaru'
 
@@ -22,19 +15,11 @@ module Nokizaru
     end
 
     def self.user_data_dir
-      @user_data_dir ||= ensure_dir(xdg_dir(:local_share_dir, 'XDG_DATA_HOME', '.local/share'))
+      @user_data_dir ||= ensure_dir(xdg_dir('XDG_DATA_HOME', '.local/share'))
     end
 
     def self.config_dir
-      @config_dir ||= ensure_dir(xdg_dir(:config_dir, 'XDG_CONFIG_HOME', '.config'))
-    end
-
-    def self.cache_dir
-      @cache_dir ||= ensure_dir(xdg_dir(:cache_dir, 'XDG_CACHE_HOME', '.cache'))
-    end
-
-    def self.workspace_dir
-      @workspace_dir ||= ensure_dir(File.join(user_data_dir, 'workspaces'))
+      @config_dir ||= ensure_dir(xdg_dir('XDG_CONFIG_HOME', '.config'))
     end
 
     def self.dumps_dir
@@ -53,7 +38,7 @@ module Nokizaru
       return 'unknown' if domain.nil? || domain.to_s.strip.empty?
 
       sanitized = domain.to_s.strip.downcase
-      sanitized = sanitized.gsub(%r{[/\\:*?"<>|]}, '_').gsub(/\.+/, '.')
+      sanitized = sanitized.gsub(%r{[/\\:*?"<>|]}, '_').squeeze('.')
       sanitized = sanitized.gsub(/\A\.+|\.+\z/, '').slice(0, 128)
       sanitized.empty? ? 'unknown' : sanitized
     end
@@ -63,9 +48,7 @@ module Nokizaru
       path
     end
 
-    def self.xdg_dir(ronin_method, env_key, fallback_suffix)
-      return Ronin::Support::Home.public_send(ronin_method, APP_DIR) if defined?(Ronin::Support::Home)
-
+    def self.xdg_dir(env_key, fallback_suffix)
       env = ENV.fetch(env_key, nil)
       base = env && !env.empty? ? env : File.join(home, fallback_suffix)
       File.join(base, APP_DIR)

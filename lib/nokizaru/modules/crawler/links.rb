@@ -3,7 +3,6 @@
 module Nokizaru
   module Modules
     module Crawler
-      # Link extraction helpers for initial page data
       module Links
         private
 
@@ -81,12 +80,13 @@ module Nokizaru
         end
 
         def parse_robots_line(line, base_url)
-          return nil unless line.start_with?('Disallow', 'Allow', 'Sitemap')
+          match = line.match(/\A\s*(Disallow|Allow|Sitemap)\s*:\s*(\S.*?)\s*\z/i)
+          return nil unless match
 
-          value = line.split(': ', 2)[1]&.strip
-          return nil if value.to_s.empty?
-
-          { url: url_filter(base_url, value), sitemap: value.end_with?('xml') ? value : nil }
+          directive, value = match.captures
+          url = url_filter(base_url, value)
+          sitemap = url if directive.casecmp?('Sitemap')
+          { url: url, sitemap: sitemap }
         end
 
         def sitemap(result, url, discovered, request_headers)

@@ -52,6 +52,7 @@ class ProgressRailTest < Minitest::Test
     rail.stop
 
     output = io.string
+
     assert_includes output, "\r\e[K"
     assert_includes output, 'live finding'
     assert_includes output, 'Directory Enum'
@@ -63,13 +64,12 @@ class ProgressRailTest < Minitest::Test
     io = TTYStringIO.new
     rail = Nokizaru::ProgressRail.new(enabled_modules: [:ps], io: io, interval_s: 0.01)
 
-    rail.start
     rail.module_started(:ps, label: 'Port Scan')
     rail.update(:ps, current: 80, total: 100, open: 3)
-    sleep 0.03
-    rail.stop
+    rail.send(:render_locked)
 
     output = io.string
+
     assert_includes output, 'Module'
     assert_includes output, '/1'
     assert_includes output, 'Port Scan'
@@ -77,8 +77,6 @@ class ProgressRailTest < Minitest::Test
     assert_includes output, '100'
     assert_includes output, 'open'
     assert_includes output, '3'
-  ensure
-    rail&.stop
   end
 
   def test_run_status_line_colorizes_active_tty_numbers
@@ -100,24 +98,6 @@ class ProgressRailTest < Minitest::Test
     assert_includes line, "#{Nokizaru::UI::Y}25#{Nokizaru::UI::W}/100"
     assert_includes line, "found #{Nokizaru::UI::Y}3#{Nokizaru::UI::W}"
     refute_includes line, '⟦!⟧'
-  end
-
-  def test_single_directory_module_status_line
-    snapshot = {
-      enabled_modules: [:dir],
-      current_module: :dir,
-      modules: {
-        dir: { phase: 'running', label: 'Directory Enum', current: 12, total: 40, elapsed_s: 3.0, found: 2 }
-      }
-    }
-
-    line = Nokizaru::UI.run_status_line(snapshot, frame_index: 2, tty: false)
-
-    assert_includes line, 'Module 1/1'
-    assert_includes line, '┃ Directory Enum ┃'
-    assert_includes line, '12/40'
-    assert_includes line, 'avg 4.0r/s'
-    assert_includes line, 'found 2'
   end
 
   def test_single_portscan_module_status_line

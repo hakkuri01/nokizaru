@@ -6,13 +6,11 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Nokizaru::Modules::SubdomainModules::Shodan implementation
       module Shodan
         module_function
 
-        # Run this module and store normalized results in the run context
-        def call(hostname, conf_path, http, found)
-          sho_key = Base.ensure_key('shodan', conf_path, 'NK_SHODAN_KEY')
+        def call(hostname, http, found)
+          sho_key = Base.ensure_key('shodan', 'NK_SHODAN_KEY')
           return missing_shodan_key unless sho_key
 
           Base.requesting('Shodan')

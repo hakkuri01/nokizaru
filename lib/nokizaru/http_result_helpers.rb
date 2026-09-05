@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module Nokizaru
-  # Private helper methods shared by HttpResult
   module HttpResultHelpers
     private
 
@@ -9,21 +8,6 @@ module Nokizaru
       return nil unless descriptor_closed?
 
       'Connection closed unexpectedly - target may have dropped the connection'
-    end
-
-    def io_descriptor_hint
-      return nil unless @error.is_a?(IOError)
-
-      message = @error.message.to_s
-      return nil unless message.include?('descriptor closed') || message.include?('closed stream')
-
-      'Try using HTTP instead of HTTPS'
-    end
-
-    def descriptor_hint
-      return nil unless descriptor_closed?
-
-      'Try using HTTP instead of HTTPS'
     end
 
     def descriptor_closed?

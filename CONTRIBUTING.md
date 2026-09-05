@@ -26,79 +26,36 @@ Nokizaru is a Ruby recon CLI focused on practical web pentest and bug bounty wor
 6. Before opening a PR, clean test-only scaffolding from your branch so `main` remains tidy.
 7. Open a pull request and complete the PR checklist.
 
-## Benchmark Contribution Contract
-
-Nokizaru benchmarking is designed to optimize both scan speed and quality of surfaced recon data.
-If you contribute benchmark-driven changes, follow this contract so results remain comparable and useful.
-
-### What to run
-
-Use the repository benchmark tooling (do not invent ad-hoc scripts) and include the exact commands used.
-
-Recommended baseline commands:
-
-```bash
-ruby bench/comprehensive_benchmark_suite.rb --track track_a
-ruby bench/bb_live_target_suite.rb --profile canonical --runs 1 --concurrency 5 --no-skip-existing
-```
-
-When requested by maintainers, also run:
-
-```bash
-ruby bench/bb_live_target_suite.rb --profile canonical --runs 1 --concurrency 5 --no-skip-existing --write-baseline
-```
-
-### What to submit in PRs
-
-Do not commit raw benchmark artifacts. Instead, include a concise benchmark report in the PR body with:
-
-- Commit SHA tested
-- Commands executed
-- Target profile (`canonical`, `fast`, etc.)
-- Before vs after summary metrics:
-  - pass/warn/fail
-  - speed_fail / quality_fail
-  - balance_median
-- Notable target-level deltas (improved + regressed)
-- Any known transient/environmental anomalies (timeouts, DNS issues, upstream rate limits)
-
-Include runner metadata for reproducibility:
-
-- OS + version
-- Ruby version
-- CPU model / core count
-- RAM
-- Approximate region/network context
-
-### Data handling and privacy
-
-- `bench/results/` artifacts are ignored and must not be committed.
-- Do not post raw logs that may contain cookies, response headers, discovered URLs, or subdomain lists unless redacted.
-- Do not benchmark private/non-public targets in this public workflow.
-- Never include secrets, API keys, tokens, or local credential material in benchmark evidence.
-
-### Tuning/iteration policy
-
-Benchmark-driven code changes should improve real-world balance, not only one axis.
-
-- Avoid tuning solely for speed if quality drops.
-- Avoid tuning solely for quality if runtime becomes unstable.
-- Prefer changes validated across multiple runs and, when available, multiple machines.
-- Treat one-machine single-run regressions as investigation signals, not automatic ground truth.
-- Prioritize fixes in this order:
-  1. both speed+quality failures
-  2. quality-only failures
-  3. speed-only failures
-
-Long-term goal: aggregate results from multiple contributor machines to reduce "works on my machine" bias and improve robustness against web variance over time.
-
 ## Local Setup
+
+Source development requires Ruby 4.x and Bundler 4.0.14 or newer.
 
 ```bash
 git clone https://github.com/hakkuri01/nokizaru.git
 cd nokizaru
 bundle install
 bundle exec ruby bin/nokizaru --help
+bundle exec ruby -Itest -e 'Dir["test/**/*_test.rb"].sort.each { |file| require_relative file }'
+bundle exec rubocop
+```
+
+Nix contributors can use the pinned development environment and run the complete Nix release checks:
+
+```bash
+nix develop
+nix flake check
+nix flake check --all-systems --no-build
+```
+
+Nix is the only maintained package-manager release target. Contributors may propose complete, contributor-owned pipelines for other package managers through a pull request.
+
+When dependencies change, update both locks with Bundler 4.0.14 or newer, then regenerate and verify the Nix hashes:
+
+```bash
+bundle update GEM --conservative
+BUNDLE_FORCE_RUBY_PLATFORM=true BUNDLE_LOCKFILE=Gemfile.nix.lock bundle update GEM --conservative
+nix develop --command bundix --gemfile Gemfile --lockfile Gemfile.nix.lock --gemset gemset.nix
+nix flake check
 ```
 
 ## Coding Expectations
@@ -143,10 +100,6 @@ A solid PR includes:
 - Security impact (if any) and mitigation rationale.
 - Performance impact (if relevant, with numbers).
 - Any docs/man page updates.
-- Benchmark methodology and command set used (for benchmark-driven changes).
-- Before/after speed-quality-balance summary (for benchmark-driven changes).
-- Runner metadata (OS/Ruby/CPU/RAM/region) when reporting benchmark data.
-- Confirmation that raw `bench/results/` artifacts were not committed.
 
 Note: temporary test scaffolding is acceptable in development, but the final branch should be cleaned before merge in line with this repo's shipping style.
 
@@ -155,7 +108,7 @@ Note: temporary test scaffolding is acceptable in development, but the final bra
 Please include:
 
 - Nokizaru version
-- Ruby version and OS
+- Installation method and runtime details (Nix system or Ruby version and OS)
 - Full command used (redacted)
 - Reproduction steps
 - Expected vs actual behavior

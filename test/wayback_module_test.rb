@@ -20,12 +20,13 @@ class WaybackModuleTest < Minitest::Test
     Wayback.persist_wayback(ctx, result)
 
     payload = ctx.run.dig('modules', 'wayback')
+
     assert_equal 'unknown', payload['availability']
     assert_equal 'service_unavailable', payload['availability_reason']
     assert_equal 'degraded', payload['archive_status']
     assert_equal 'archive_degraded', payload['cdx_status']
     assert_equal ['service_unavailable'], payload['cdx_reasons']
-    assert_equal 1.2346, payload['elapsed_s']
+    assert_in_delta(1.2346, payload['elapsed_s'])
     assert_includes payload.dig('manual_pivots', 'calendar_url'), 'web.archive.org/web/*/'
   end
 end

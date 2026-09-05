@@ -18,19 +18,19 @@ class DirectoryEnumSignalTuningTest < Minitest::Test
       }
     )
 
-    plan = DirectoryEnum.build_scan_plan(target: 'https://example.com', words: ['login'], filext: '', ctx: ctx)
+    plan = DirectoryEnum.__send__(
+      :build_scan_plan, target: 'https://example.com', words: ['login'], filext: '', ctx: ctx
+    )
 
     assert_operator plan[:seed_urls].index('https://example.com/admin/console'), :<,
                     plan[:seed_urls].index('https://example.com/catalog')
   end
 
   def test_sensitive_status_noise_demotes_without_high_composite_waf_score
-    adjusted = DirectoryEnum.apply_waf_confidence_adjustment(
+    adjusted = DirectoryEnum.__send__(
+      :apply_waf_confidence_adjustment,
       { level: :likely, reason: 'meaningful_sensitive_status' },
-      403,
-      {},
       'https://example.com/admin',
-      'https://example.com',
       noisy_sensitive_context
     )
 
@@ -42,29 +42,31 @@ class DirectoryEnumSignalTuningTest < Minitest::Test
     reason = 'marginal directory value collapsed under dominant target shape ' \
              '(wildcard=false, redirect_cluster=true, low_confidence_ratio=0.96)'
 
-    assert_equal 'Uniform redirects or soft-404s detected', DirectoryEnum.display_stop_reason(reason)
+    assert_equal 'Uniform redirects or soft-404s detected', DirectoryEnum.__send__(:display_stop_reason, reason)
   end
 
   def test_display_stop_reason_simplifies_hostile_transport_details
     reason = 'sustained hostile transport failures with no useful signal (requests=320, success=0, errors=320)'
 
-    assert_equal 'Hostile transport failures limited reliable checks', DirectoryEnum.display_stop_reason(reason)
+    assert_equal 'Hostile transport failures limited reliable checks',
+                 DirectoryEnum.__send__(:display_stop_reason, reason)
   end
 
   def test_display_stop_reason_simplifies_hostile_pressure_details
     reason = 'sustained hostile pressure with low prioritized yield (pressure_streak=4, low_yield_streak=5)'
 
-    assert_equal 'Hostile pressure with low reliable yield', DirectoryEnum.display_stop_reason(reason)
+    assert_equal 'Hostile pressure with low reliable yield', DirectoryEnum.__send__(:display_stop_reason, reason)
   end
 
   def test_display_stop_reason_simplifies_budget_and_stall_details
-    assert_equal 'Request limit reached', DirectoryEnum.display_stop_reason('request budget hit (1800/1800)')
-    assert_equal 'Time limit reached', DirectoryEnum.display_stop_reason('time budget hit (180.0s/180.0s)')
-    assert_equal 'Responses stalled', DirectoryEnum.display_stop_reason('scan stalled after 30.0s idle')
+    assert_equal 'Request limit reached', DirectoryEnum.__send__(:display_stop_reason, 'request budget hit (1800/1800)')
+    assert_equal 'Time limit reached', DirectoryEnum.__send__(:display_stop_reason, 'time budget hit (180.0s/180.0s)')
+    assert_equal 'Responses stalled',
+                 DirectoryEnum.__send__(:display_stop_reason, 'inactivity budget hit (30.0s/30.0s)')
   end
 
   def test_dir_stats_preserve_technical_and_display_stop_reasons
-    stats = DirectoryEnum.init_stats
+    stats = DirectoryEnum.__send__(:init_stats)
     stop_meta = {
       mode: 'seeded',
       reason: 'request budget hit (1800/1800)',
@@ -73,7 +75,7 @@ class DirectoryEnumSignalTuningTest < Minitest::Test
       budgets: {}
     }
 
-    result = DirectoryEnum.dir_stats(stats, stop_meta, 1.0, 1.0)
+    result = DirectoryEnum.__send__(:dir_stats, stats, stop_meta, 1.0, 1.0)
 
     assert_equal 'request budget hit (1800/1800)', result['stop_reason']
     assert_equal 'Request limit reached', result['stop_reason_display']

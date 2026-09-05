@@ -7,19 +7,19 @@ body:
     attributes:
       value: |
         Thanks for reporting. Keep details reproducible and redact secrets/private target data.
-        Maintainer policy note: accepted changes are merged into `main` using squash merges only.
   - type: input
     id: version
     attributes:
       label: Nokizaru version
-      placeholder: e.g. 1.x.x
+      placeholder: e.g. 2.4.11
     validations:
       required: true
   - type: input
-    id: ruby
+    id: runtime
     attributes:
-      label: Ruby version
-      placeholder: e.g. ruby 3.x.x
+      label: Installation / runtime
+      description: For Nix, include the system architecture; for source installs, include the Ruby version.
+      placeholder: e.g. Nix aarch64-linux or ruby 4.0.5
     validations:
       required: true
   - type: input
@@ -33,7 +33,7 @@ body:
     id: command
     attributes:
       label: Command used (redacted)
-      placeholder: nokizaru --sub --url https://example.com -T 10
+      placeholder: nokizaru --sub --target https://example.com -T 10
     validations:
       required: true
   - type: textarea

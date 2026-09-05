@@ -2,7 +2,6 @@
 
 module Nokizaru
   module Findings
-    # DNS-focused findings rules
     module DNSRules
       module_function
 
@@ -16,12 +15,12 @@ module Nokizaru
       end
 
       def spf_record_present?(dns_result)
-        txt_records = Array(dns_result.dig('records', 'TXT')) + Array(dns_result['txt'])
+        txt_records = Array(dns_result.dig('records', 'TXT'))
         txt_records.any? { |record| record.to_s.downcase.include?('v=spf1') }
       end
 
       def dmarc_record_present?(dns_result)
-        dmarc_records = Array(dns_result.dig('records', 'DMARC')) + Array(dns_result['dmarc'])
+        dmarc_records = Array(dns_result.dig('records', 'DMARC'))
         dmarc_records.any? { |record| record.to_s.downcase.include?('v=dmarc1') }
       end
 

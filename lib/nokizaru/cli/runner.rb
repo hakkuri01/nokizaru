@@ -6,12 +6,10 @@ require_relative 'runner/parsing'
 require_relative 'runner/parsing_support'
 require_relative 'runner/runtime'
 require_relative 'runner/workflow'
-require_relative 'runner/workspace'
-require_relative 'runner/workspace_status'
+require_relative 'runner/exporting'
 
 module Nokizaru
   class CLI
-    # Scan runner orchestration class
     class Runner
       SKIPPABLE_MODULES = %w[headers sslinfo whois crawl dns sub arch dir wayback ps].freeze
 
@@ -21,8 +19,7 @@ module Nokizaru
       include Runner::ParsingSupport
       include Runner::Runtime
       include Runner::Workflow
-      include Runner::Workspace
-      include Runner::WorkspaceStatus
+      include Runner::Exporting
 
       def initialize(options, argv = [])
         @opts = options
@@ -32,7 +29,7 @@ module Nokizaru
 
       def parse_skip_flags(argv)
         SKIPPABLE_MODULES.to_h do |name|
-          [name.to_sym, argv.include?("--skip-#{name}") || argv.include?("--no-#{name}")]
+          [name.to_sym, argv.include?("--no-#{name}")]
         end
       end
 

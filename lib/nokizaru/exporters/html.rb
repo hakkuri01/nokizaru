@@ -6,16 +6,13 @@ require_relative 'html_template'
 
 module Nokizaru
   module Exporters
-    # Nokizaru::Exporters::Html implementation
     class Html
       TEMPLATE = HtmlTemplate::TEMPLATE
 
-      # Append log entries with timestamps for troubleshooting and auditability
       def write(run, path)
         meta = run.fetch('meta', {})
         findings = Array(run['findings'])
         modules = run.fetch('modules', {})
-        diff = run['diff']
 
         renderer = ERB.new(TEMPLATE)
         html = renderer.result(binding)
@@ -24,12 +21,10 @@ module Nokizaru
 
       private
 
-      # Escape HTML content before embedding it in generated reports
       def h(str)
         CGI.escapeHTML(str.to_s)
       end
 
-      # Pretty print JSON for readable HTML sections
       def pretty(obj)
         case obj
         when String

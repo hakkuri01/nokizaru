@@ -4,7 +4,6 @@ require 'time'
 
 module Nokizaru
   module Findings
-    # TLS and certificate-focused findings rules
     module TLSRules
       module_function
 
@@ -33,8 +32,7 @@ module Nokizaru
       def certificate_not_after(ssl_result)
         return nil unless ssl_result.is_a?(Hash)
 
-        cert = ssl_result['cert'] || ssl_result
-        cert['notAfter'] || cert['not_after'] || cert['not_after_gmt']
+        ssl_result.dig('cert', 'notAfter')
       end
 
       def parse_time(value)

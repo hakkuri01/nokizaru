@@ -26,15 +26,12 @@ module Nokizaru
       raise ArgumentError, 'Custom header cannot contain CR/LF characters' if text.match?(/[\r\n]/)
 
       name, value = text.split(':', 2)
-      raise ArgumentError, "Invalid custom header '#{text}': expected 'Name: Value'" if value.nil?
+      raise ArgumentError, "Invalid custom header: expected 'Name: Value'" if value.nil?
 
       normalized_name = name.to_s.strip
       raise ArgumentError, 'Custom header name cannot be empty' if normalized_name.empty?
 
-      unless normalized_name.match?(HEADER_NAME_RE)
-        raise ArgumentError,
-              "Invalid custom header name '#{normalized_name}'"
-      end
+      raise ArgumentError, 'Invalid custom header name' unless normalized_name.match?(HEADER_NAME_RE)
 
       [normalized_name, value.lstrip]
     end
@@ -75,13 +72,6 @@ module Nokizaru
       return 'none' if count.zero?
 
       "#{count} supplied"
-    end
-
-    def apply_to_request(request, headers)
-      Array(headers).each do |name, value|
-        request[name] = value
-      end
-      request
     end
   end
 end

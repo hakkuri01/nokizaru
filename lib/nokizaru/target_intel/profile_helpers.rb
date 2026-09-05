@@ -2,7 +2,6 @@
 
 module Nokizaru
   module TargetIntel
-    # Profile mutation helpers for target intel decisions
     module ProfileHelpers
       module_function
 
@@ -27,7 +26,7 @@ module Nokizaru
         if TargetIntel.http_to_https_upgrade?(original_uri, resolved_uri)
           apply_http_upgrade_profile!(profile, resolved_uri, target)
         elsif TargetIntel.same_scope_host?(original_uri.host, resolved_uri.host)
-          apply_same_scope_profile!(profile)
+          apply_same_scope_profile!(profile, resolved_uri, target)
         else
           apply_cross_scope_profile!(profile)
         end
@@ -40,10 +39,15 @@ module Nokizaru
         profile['effective_url'] = TargetIntel.canonical_url_for(target, resolved_uri)
       end
 
-      def apply_same_scope_profile!(profile)
+      def apply_same_scope_profile!(profile, resolved_uri, target)
         profile['mode'] = 'same_scope_redirect'
-        profile['confidence'] = 'medium'
+        profile['confidence'] = if TargetIntel.canonical_redirect_path?(URI.parse(target), resolved_uri)
+                                  'medium'
+                                else
+                                  'low'
+                                end
         profile['reason'] = 'Redirect detected within the same target scope'
+        profile['effective_url'] = TargetIntel.canonical_url_for(target, resolved_uri)
       end
 
       def apply_cross_scope_profile!(profile)

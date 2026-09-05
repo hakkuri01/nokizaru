@@ -10,11 +10,10 @@ require_relative 'crawler/link_support'
 require_relative 'crawler/sitemaps'
 require_relative 'crawler/javascript'
 require_relative 'crawler/stats'
-require_relative 'crawler/threads'
+require_relative 'crawler/concurrency'
 
 module Nokizaru
   module Modules
-    # Crawler module orchestration
     module Crawler
       module_function
 
@@ -26,7 +25,7 @@ module Nokizaru
       extend Crawler::Sitemaps
       extend Crawler::JavaScript
       extend Crawler::Stats
-      extend Crawler::Threads
+      extend Crawler::Concurrency
 
       TIMEOUT = 10
       MAX_HTTP_RETRIES = 2

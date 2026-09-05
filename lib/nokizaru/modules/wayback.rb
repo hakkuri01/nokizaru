@@ -16,7 +16,6 @@ module Nokizaru
       AVAIL_URL = 'https://archive.org/wayback/available'
       CDX_URL = 'https://web.archive.org/cdx/search/cdx'
       TOTAL_TIMEOUT = 10
-      CONNECT_TIMEOUT = 5
       READ_TIMEOUT = 10
       MAX_URLS = 5000
       RETRIES = 2

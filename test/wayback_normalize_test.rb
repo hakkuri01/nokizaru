@@ -30,13 +30,6 @@ class WaybackNormalizeTest < Minitest::Test
     refute Normalize.meaningful_archive_fallback?('not a url')
   end
 
-  def test_sanitize_url_rejects_spaces_truncated_encoding_and_noisy_control_paths
-    assert_equal '', Normalize.sanitize_url('https://example.com/a b')
-    assert_equal '', Normalize.sanitize_url('https://example.com/%A')
-    assert_equal '', Normalize.sanitize_url('https://example.com/%00')
-    assert_equal 'https://example.com/admin', Normalize.sanitize_url('https://example.com/admin,')
-  end
-
   def test_filter_urls_keeps_scope_dedupes_and_removes_low_signal_assets
     urls = [
       'https://example.com/admin',
@@ -72,15 +65,5 @@ class WaybackNormalizeTest < Minitest::Test
     scope = Normalize.target_scope('https://www.example.com/app')
 
     assert_equal 'example.com', scope
-    assert Normalize.in_scope?('https://api.example.com/admin', scope)
-    refute Normalize.in_scope?('https://example.net/admin', scope)
-    refute Normalize.in_scope?('not a url', scope)
-  end
-
-  def test_low_signal_and_score_helpers_handle_assets_and_invalid_urls
-    assert Normalize.low_signal_asset?('https://example.com/app.js')
-    refute Normalize.low_signal_asset?('not a url')
-    assert_operator Normalize.score_url('https://example.com/admin/settings?tab=users'), :>, 0
-    assert_equal 0, Normalize.score_url('not a url')
   end
 end

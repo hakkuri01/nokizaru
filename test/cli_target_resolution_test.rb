@@ -26,34 +26,36 @@ class CLITargetResolutionTest < Minitest::Test
     runner = runner_with_resolution_failure
     info = nil
 
-    output = capture_stdout { info = runner.send(:parse_target, 'https://lofree.com') }
+    output, = capture_io { info = runner.send(:parse_target, 'https://www.example.com') }
 
     assert_nil info[:ip]
     refute info[:type_ip]
     refute info[:private_ip]
-    assert_equal 'lofree.com', info[:hostname]
-    assert_equal 'lofree', info[:domain]
+    assert_equal 'www.example.com', info[:hostname]
+    assert_equal 'example', info[:domain]
     assert_equal 'com', info[:suffix]
     assert_match(/stub resolver failure/, info[:ip_resolution_error])
     assert_includes output, 'unresolved (stub resolver failure)'
   end
 
   def test_parse_target_falls_back_to_last_label_suffix_when_public_suffix_rejects_domain
-    runner = Nokizaru::CLI::Runner.new({ target: 'https://httpbin.org' })
+    runner = Nokizaru::CLI::Runner.new({ target: 'https://service.example.invalid' })
     info = nil
     runner.define_singleton_method(:resolve_hostname_ip) { |_hostname| '203.0.113.10' }
 
-    capture_stdout { info = runner.send(:parse_target, 'https://httpbin.org') }
+    PublicSuffix.stub(:parse, proc { raise ArgumentError, 'stub public suffix failure' }) do
+      capture_io { info = runner.send(:parse_target, 'https://service.example.invalid') }
+    end
 
-    assert_equal 'httpbin', info[:domain]
-    assert_equal 'org', info[:suffix]
+    assert_equal 'service.example', info[:domain]
+    assert_equal 'invalid', info[:suffix]
   end
 
   def test_ip_literal_targets_still_classify_private_addresses
     runner = Nokizaru::CLI::Runner.new({ target: 'http://192.168.1.10' })
     info = nil
 
-    capture_stdout { info = runner.send(:parse_target, 'http://192.168.1.10') }
+    capture_io { info = runner.send(:parse_target, 'http://192.168.1.10') }
 
     assert_equal '192.168.1.10', info[:ip]
     assert info[:type_ip]
@@ -72,9 +74,10 @@ class CLITargetResolutionTest < Minitest::Test
       timeout: 1.0
     }
 
-    output = capture_stdout { runner.send(:run_portscan, { ps: true }, info, ctx) }
+    output, = capture_io { runner.send(:run_portscan, { ps: true }, info, ctx) }
 
     result = ctx.run.fetch('modules').fetch('portscan')
+
     assert_equal 'skipped', result['status']
     assert_empty result['open_ports']
     assert_empty result['ports']
@@ -97,7 +100,7 @@ class CLITargetResolutionTest < Minitest::Test
   end
 
   def runner_with_resolution_failure
-    runner = Nokizaru::CLI::Runner.new({ target: 'https://lofree.com' })
+    runner = Nokizaru::CLI::Runner.new({ target: 'https://www.example.com' })
     runner.define_singleton_method(:resolve_hostname_ip) do |_hostname|
       raise SocketError, 'stub resolver failure'
     end

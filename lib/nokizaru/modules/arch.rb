@@ -9,13 +9,12 @@ require_relative 'arch/presenter'
 
 module Nokizaru
   module Modules
-    # Architecture fingerprinting orchestration module
     module ArchitectureFingerprinting
       module_function
 
       DEFAULT_UA = "Nokizaru/#{Nokizaru::VERSION} (+https://github.com/hakkuri01)".freeze
 
-      def call(target, timeout, ctx, _conf_path)
+      def call(target, timeout, ctx)
         UI.module_header('Architecture Fingerprinting')
         ctx.progress&.update(:arch, stage: 'checking api key')
         api_key = KeyStore.fetch('wappalyzer', env: 'NK_WAPPALYZER_KEY')

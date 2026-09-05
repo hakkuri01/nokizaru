@@ -6,13 +6,11 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Nokizaru::Modules::SubdomainModules::VirusTotal implementation
       module VirusTotal
         module_function
 
-        # Run this module and store normalized results in the run context
-        def call(hostname, conf_path, http, found)
-          vt_key = Base.ensure_key('virustotal', conf_path, 'NK_VT_KEY')
+        def call(hostname, http, found)
+          vt_key = Base.ensure_key('virustotal', 'NK_VT_KEY')
           return missing_vt_key unless vt_key
 
           Base.requesting('VirusTotal')

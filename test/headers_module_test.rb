@@ -18,18 +18,13 @@ class HeadersModuleTest < Minitest::Test
   def test_fetch_falls_back_to_net_http_when_httpx_returns_nil
     uri = URI.parse('https://google.com')
     fake_response = FakeNetResponse.new(code: '301', body: '')
-    original_httpx_fetch = Headers.method(:httpx_fetch)
-    original_net_http_response = Headers.method(:net_http_response)
 
-    Headers.define_singleton_method(:httpx_fetch) { |_uri, **| nil }
-    Headers.define_singleton_method(:net_http_response) { |_uri, _headers| fake_response }
-    response = Headers.fetch(uri)
+    response = Headers.stub(:httpx_fetch, nil) do
+      Headers.stub(:net_http_response, fake_response) { Headers.fetch(uri) }
+    end
 
     assert_equal 301, response.status
     assert_equal 'https://www.google.com/', response.headers['location']
     assert_equal 'text/html; charset=UTF-8', response.headers['content-type']
-  ensure
-    Headers.define_singleton_method(:httpx_fetch, original_httpx_fetch)
-    Headers.define_singleton_method(:net_http_response, original_net_http_response)
   end
 end

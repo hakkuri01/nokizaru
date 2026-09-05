@@ -7,33 +7,35 @@ require 'zlib'
 module Nokizaru
   module Modules
     module Crawler
-      # Sitemap crawling and recursive expansion helpers
       module Sitemaps
         private
 
         def populate_deep_links!(result, page_url, request_headers)
-          result['urls_inside_sitemap'] = sm_crawl(result, result['sitemap_links'], request_headers)
+          result['urls_inside_sitemap'] = sm_crawl(result, result['sitemap_links'], page_url, request_headers)
           result['urls_inside_js'] = js_crawl(result, result['js_links'], page_url, request_headers)
         end
 
-        def sm_crawl(result, sitemap_links, request_headers)
+        def sm_crawl(result, sitemap_links, page_url, request_headers)
           apply_adaptive_budget!(result)
           return [] if crawl_budget_exhausted?(result)
 
-          state = init_sitemap_state(sitemap_links)
+          state = init_sitemap_state(sitemap_links, URI.parse(page_url).host)
           return [] if state[:pending].empty?
 
           crawl_sitemap_graph(result, state, request_headers)
+          result['sitemap_links'] = cap_links(state[:sitemaps], adaptive_limit(result, :max_sitemap_links))
           links = state[:links].uniq
           step_row(:info, 'Crawling Sitemaps', links.length)
           links
         end
 
-        def init_sitemap_state(sitemap_links)
+        def init_sitemap_state(sitemap_links, target_host)
           normalized = Array(sitemap_links).compact.map(&:strip).uniq
           {
             links: [],
-            pending: normalized.select { |url| sitemap_candidate?(url) },
+            sitemaps: normalized,
+            pending: scoped_sitemap_candidates(normalized, target_host),
+            target_host: target_host,
             seen: Set.new
           }
         end
@@ -48,7 +50,7 @@ module Nokizaru
             break if batch.empty?
 
             batch.each { |url| state[:seen].add(url) }
-            state[:pending] = crawl_sitemap_batch(result, batch, state[:links], request_headers)
+            state[:pending] = crawl_sitemap_batch(result, batch, state, request_headers)
           end
         end
 
@@ -58,26 +60,23 @@ module Nokizaru
           fresh.first(remaining)
         end
 
-        def crawl_sitemap_batch(result, batch, links, request_headers)
+        def crawl_sitemap_batch(result, batch, state, request_headers)
           discovered = []
           mutex = Mutex.new
-          each_in_threads(batch) do |sitemap_url|
+          each_concurrently(batch) do |sitemap_url|
             next if crawl_budget_exhausted?(result)
 
             page_links, child_sitemaps = parse_sitemap_document(result, sitemap_url, request_headers)
-            mutex.synchronize do
-              links.concat(page_links)
-              links.uniq!
-              max_sitemap_urls = adaptive_limit(result, :max_sitemap_urls)
-              links.slice!(max_sitemap_urls..) if links.length > max_sitemap_urls
-
-              discovered.concat(child_sitemaps)
-              discovered.uniq!
-              max_sitemaps = adaptive_limit(result, :max_sitemaps)
-              discovered.slice!(max_sitemaps..) if discovered.length > max_sitemaps
-            end
+            mutex.synchronize { merge_sitemap_batch!(result, state, page_links, child_sitemaps, discovered) }
           end
           discovered.uniq
+        end
+
+        def merge_sitemap_batch!(result, state, page_links, child_sitemaps, discovered)
+          state[:links] = cap_links(state[:links] + page_links, adaptive_limit(result, :max_sitemap_urls))
+          state[:sitemaps] = cap_links(state[:sitemaps] + child_sitemaps, adaptive_limit(result, :max_sitemap_links))
+          discovered.concat(scoped_sitemap_candidates(child_sitemaps, state[:target_host]))
+          discovered.replace(cap_links(discovered, adaptive_limit(result, :max_sitemaps)))
         end
 
         def parse_sitemap_document(result, sitemap_url, request_headers)
@@ -99,15 +98,23 @@ module Nokizaru
         end
 
         def sitemap_candidate?(url)
-          lowered = url.to_s.downcase
-          lowered.end_with?('.xml') || lowered.end_with?('.xml.gz')
+          uri = URI.parse(url.to_s)
+          path = uri.path.to_s.downcase
+          uri.is_a?(URI::HTTP) && uri.host && path.end_with?('.xml', '.xml.gz')
+        rescue StandardError
+          false
+        end
+
+        def scoped_sitemap_candidates(urls, target_host)
+          # Security: target-controlled sitemap URLs stay as intel but cannot expand fetch scope
+          Array(urls).select { |url| sitemap_candidate?(url) && same_scope_url?(url, target_host) }
         end
 
         def sitemap_body(response, sitemap_url)
           body = Nokizaru::HTTPClient.response_body(response)
           return body if body.empty?
 
-          return body unless gzip_sitemap_body?(response, sitemap_url)
+          return body unless gzip_sitemap_body?(body)
 
           Zlib::GzipReader.new(StringIO.new(body)).read
         rescue StandardError => e
@@ -115,11 +122,8 @@ module Nokizaru
           ''
         end
 
-        def gzip_sitemap_body?(response, sitemap_url)
-          encoding = Nokizaru::HTTPClient.header_value(response, 'content-encoding').to_s.downcase
-          encoding.include?('gzip') || sitemap_url.to_s.downcase.end_with?('.gz')
-        rescue StandardError
-          sitemap_url.to_s.downcase.end_with?('.gz')
+        def gzip_sitemap_body?(body)
+          body.to_s.b.start_with?("\x1F\x8B".b)
         end
 
         def log_sitemap_fetch_skip(sitemap_url, fetch)

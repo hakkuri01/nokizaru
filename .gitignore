@@ -1,23 +1,17 @@
-# =========================
 # OS / Editor
-# =========================
 .DS_Store
 .AppleDouble
 .LSOverride
 ._*
 Thumbs.db
-*.swp
-*.swo
-*.swn
+*.sw[opn]
 *~
 .idea/
 .vscode/
 *.vim
 .netrwhist
 
-# =========================
 # Ruby / Bundler
-# =========================
 .bundle/
 vendor/bundle/
 pkg/
@@ -31,22 +25,16 @@ doc/
 coverage/
 *.rbc
 
-# =========================
 # Nokizaru runtime outputs
-# =========================
 *.log
 tmp/
 log/
 /bench/
 
-# =========================
 # Secrets / local config
-# =========================
-.env
 *.env
+.env.*
 /keys.json
-conf/keys.json.bak
-conf/keys.json.old
 config.local.json
 config.local.yml
 config.local.yaml
@@ -58,3 +46,7 @@ keys.json.old
 *.p12
 *.pfx
 *.crt
+
+# Nix
+/result
+/result-*

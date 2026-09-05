@@ -25,23 +25,18 @@ require_relative 'modules/crawler'
 require_relative 'modules/dirrec'
 require_relative 'modules/wayback'
 require_relative 'findings/engine'
-require_relative 'workspace'
-require_relative 'cache_store'
 require_relative 'context'
-require_relative 'diff'
 require_relative 'export_manager'
 require_relative 'cli/class_interface'
 require_relative 'cli/options'
 
 module Nokizaru
-  # Nokizaru::CLI implementation
   class CLI < Thor
     extend CLIClassInterface
     extend CLIOptions
 
     require_relative 'cli/runner'
 
-    R = "\e[31m"
     G = "\e[32m"
     C = "\e[36m"
     W = "\e[0m"

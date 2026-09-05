@@ -6,13 +6,11 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Nokizaru::Modules::SubdomainModules::FacebookCT implementation
       module FacebookCT
         module_function
 
-        # Run this module and store normalized results in the run context
-        def call(hostname, conf_path, http, found)
-          fb_key = Base.ensure_key('facebook', conf_path, 'NK_FB_KEY')
+        def call(hostname, http, found)
+          fb_key = Base.ensure_key('facebook', 'NK_FB_KEY')
           return missing_facebook_key unless fb_key
 
           Base.requesting('Facebook')

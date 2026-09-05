@@ -1,20 +1,14 @@
 # frozen_string_literal: true
 
 module Nokizaru
-  # Shared context passed through modules during a scan
-  # Explain this block so future maintainers understand its intent
-  # Ethos: default to ephemeral runs (stdout) while enabling optional
-  # Persistence/export when the user asks for it
+  # In-memory scan context shared across modules unless explicitly exported
   class Context
-    attr_reader :run, :options, :workspace, :cache
+    attr_reader :run, :options
     attr_accessor :progress
 
-    # Capture runtime options and prepare shared state used by this object
-    def initialize(run:, options:, workspace: nil, cache: nil, progress: nil)
+    def initialize(run:, options:, progress: nil)
       @run = run
       @options = options
-      @workspace = workspace
-      @cache = cache
       @progress = progress
 
       @run['modules'] ||= {}
@@ -22,7 +16,6 @@ module Nokizaru
       @run['findings'] ||= []
     end
 
-    # Add normalized artifacts to the run for export and diffing
     def add_artifact(kind, values)
       kind = kind.to_s
       return if values.nil?
@@ -32,25 +25,7 @@ module Nokizaru
       return if additions.empty?
 
       seen = existing.to_set
-      append_missing(existing, additions, seen)
-    end
-
-    def append_missing(existing, additions, seen)
-      additions.each do |value|
-        next if seen.include?(value)
-
-        existing << value
-        seen.add(value)
-      end
-    end
-
-    private :append_missing
-
-    # Read from cache first and compute values only on cache miss
-    def cache_fetch(key, ttl_s: 3600, &)
-      return yield unless @cache
-
-      @cache.fetch(key, ttl_s: ttl_s, &)
+      additions.each { |value| existing << value if seen.add?(value) }
     end
   end
 end

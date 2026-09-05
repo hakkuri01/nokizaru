@@ -3,7 +3,6 @@
 module Nokizaru
   class CLI
     class Runner
-      # Banner rendering and API key persistence helpers
       module Keys
         VALID_KEYS = %w[
           bevigil binedge facebook netlas shodan virustotal zoomeye hunter chaos censys_api_id censys_api_secret
@@ -83,6 +82,7 @@ module Nokizaru
           keys_json = load_keys_json
           keys_json[key_name] = key_value
           File.write(Paths.keys_file, JSON.pretty_generate(keys_json))
+          Paths.secure_keys_file!
         end
 
         def load_keys_json

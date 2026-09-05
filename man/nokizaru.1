@@ -26,9 +26,13 @@ Nokizaru \- Recon Refined
 
 .fi
 Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface.
-It can collect common recon signals from a target such as HTTP headers, SSL/TLS certificate details, WHOIS, DNS records, subdomains,
-architecture fingerprinting, crawler link extraction, directory enumeration, Wayback URLs, and also features a fast port scan.
-.SH REQUIRED OPTIONS
+It can collect common recon signals from a target such as HTTP headers,
+SSL/TLS certificate details, WHOIS, DNS records, subdomains, architecture
+fingerprinting, crawler link extraction, directory enumeration, Wayback URLs,
+and also features a fast port scan.
+.SH SCAN TARGET
+The target is required for scans, but not for help, version output, or saving
+an API key.
 .TS
 box, allbox;
 l l.
@@ -54,10 +58,6 @@ OPTION	MODULE
 --full	Full Recon
 --no-[MODULE]	Skip specified modules above during full scan (e.g. --no-dir)
 --export	Write results to export directory
---project [NAME]	Enable a persistent workspace (profiles, caching, diffing)
---cache	Enable caching even without a project
---no-cache	Disable caching (even in a project)
---diff last / [ID]	Diff this run against the last (or another run ID in the workspace)
 .TE
 .SH EXTRA OPTIONS
 .TS
@@ -67,26 +67,27 @@ OPTION	MEANING	DEFAULT / NOTES
 -h, --help	Show help and exit	-
 -v, --version	Show version number and exit	-
 -nb	Hide Banner	-
--dt DT	Directory enum threads	30
--pt PT	Port scan threads	50
--p PORTS	Port scan ports	80,443,1000-65535
--T T	Request timeout (seconds)	30.0
--w W	Path to wordlist	wordlists/dirb_common.txt
--H HEADER	Add custom request header (repeatable)	Example: Cookie: PHPSESSID=abc
+-dt DT	Directory enum threads	50
+-pt PT	Port scan concurrency	50
+-p PORTS	Port scan ports	Curated top 100+ ports
+-T T	Base timeout / module budget (seconds)	30.0
+-w W	Wordlist size (small, medium, large) or custom path	medium
+-H, --header HEADER	Add custom request header (repeatable)	Example: Cookie: PHPSESSID=abc
 -r	Follow redirects during directory enum	False
 -s	Enable SSL verification for directory enum	False
 -sp SP	Specify SSL port	443
--d D	Custom DNS servers	1.1.1.1
--e E	File extension(s) (comma separated)	txt,xml,php,etc.
+-d D	Custom DNS servers	8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1
+-e E	File extension(s) (comma separated)	Example: txt,xml,php
 -o O	Export Format(s) (comma-separated)	txt,json,html
--cd CD	Export directory for this run (requires --export)	~/.local/share/nokizaru/dumps/nk_<domain>
+-cd CD	Export directory for this run (requires --export)	XDG data dir/nokizaru/dumps/nk_<hostname>
 -of OF	Export filename base for this run (requires --export)	YYYY-MM-DD_HH-MM-SS
 -k K	Add API key (NAME@KEY)	shodan@key
 .TE
 .SH API KEYS
-Some subdomain sources require API keys.
-Keys may be provided via environment variables (NK_*) or saved to:
-.IR ~/.local/share/nokizaru/keys.json .
+Some providers require API keys. Missing credentials skip only that provider;
+architecture fingerprinting is skipped entirely without a Wappalyzer key.
+Keys may be provided via environment variables (NK_*) or saved under the XDG
+data directory.
 .PP
 .TS
 box, allbox;
@@ -112,14 +113,15 @@ To add a key from the CLI:
 nokizaru -k shodan@YOURKEY
 .fi
 .SH FILES
+Paths honor XDG_CONFIG_HOME and XDG_DATA_HOME. The defaults are shown below.
 .TS
 box, allbox;
 l l.
 PATH	PURPOSE
-~/.config/nokizaru/config.json	Main configuration file
-~/.local/share/nokizaru/keys.json	API keys file (optional)
-~/.local/share/nokizaru/dumps/	Export directory for run outputs
-~/.local/share/nokizaru/nokizaru.log	Runtime log file
+$HOME/.config/nokizaru/config.json	Main configuration file
+$HOME/.local/share/nokizaru/keys.json	API keys file (optional)
+$HOME/.local/share/nokizaru/dumps/	Export directory for run outputs
+$HOME/.local/share/nokizaru/nokizaru.log	Runtime log file
 .TE
 .SH EXAMPLES
 .TS
@@ -132,7 +134,7 @@ nokizaru --arch --target https://example.com	Architecture fingerprinting
 nokizaru --dir --target https://example.com -e php,xml	Directory enum with extensions
 nokizaru --crawl --dir --target https://example.com -H 'Cookie: PHPSESSID=abc; uid=52'	Authenticated in-scope scan
 nokizaru --wayback --target https://example.com	Wayback URLs
-nokizaru --ps --target https://example.com -pt 80	Port scan with more threads
+nokizaru --ps --target https://example.com -pt 80	Port scan with higher concurrency
 nokizaru --ps --target https://example.com -p all	Port scan all TCP ports
 .TE
 .SH EXIT STATUS
@@ -140,9 +142,10 @@ nokizaru --ps --target https://example.com -p all	Port scan all TCP ports
 box, allbox;
 l l.
 CODE	MEANING
-0	Success
+0	Run completed; individual modules may be failed or skipped
 1	Failure (invalid target, missing target, runtime error)
 130	Interrupted (Ctrl-C)
+143	Terminated (SIGTERM)
 .TE
 .SH SECURITY NOTES
 Run ONLY against targets you have explicit permission to test.

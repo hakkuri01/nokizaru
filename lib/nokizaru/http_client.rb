@@ -5,7 +5,6 @@ require_relative 'connection_pool'
 require_relative 'http_result_helpers'
 
 module Nokizaru
-  # Nokizaru::HTTPClient implementation
   module HTTPClient
     module_function
 
@@ -14,7 +13,6 @@ module Nokizaru
       'Accept-Encoding' => 'gzip'
     }.freeze
 
-    # Build HTTP clients with shared defaults for reliability and performance
     def build(timeout_s: 10.0, headers: {}, follow_redirects: true, persistent: true, verify_ssl: true)
       ConnectionPool.instance.client(
         headers: DEFAULT_HEADERS.merge(headers || {}),
@@ -25,7 +23,6 @@ module Nokizaru
       )
     end
 
-    # Get a persistent client optimized for a specific host
     def for_host(origin, timeout_s: 10.0, headers: {}, follow_redirects: true, verify_ssl: true)
       base_client = ConnectionPool.instance.for_host(
         origin,
@@ -46,13 +43,12 @@ module Nokizaru
       timeout_s&.to_f&.positive?
     end
 
-    # Get a client optimized for bulk/parallel requests
     def for_bulk_requests(target, timeout_s: 8.0, headers: {}, **options)
-      opts = default_bulk_options(timeout_s, options)
+      opts = default_bulk_options(options)
       base_client = for_host(
         target,
         timeout_s: timeout_s,
-        headers: headers.merge('Connection' => 'keep-alive'),
+        headers: headers,
         follow_redirects: opts[:follow_redirects],
         verify_ssl: opts[:verify_ssl]
       )
@@ -60,13 +56,12 @@ module Nokizaru
       base_client.with(**bulk_client_overrides(timeout_s, opts))
     end
 
-    def default_bulk_options(timeout_s, options)
+    def default_bulk_options(options)
       {
         follow_redirects: false,
         verify_ssl: true,
         max_concurrent: 50,
-        retries: nil,
-        timeout_s: timeout_s.to_f
+        retries: nil
       }.merge(options || {})
     end
 
@@ -87,13 +82,6 @@ module Nokizaru
         write_timeout: 3.0,
         operation_timeout: timeout_s.to_f
       }
-    end
-
-    # Convenience method to make a single GET request
-    # Uses connection pooling automatically
-    def get(url, headers: {}, timeout_s: 10.0, verify_ssl: true)
-      client = for_host(url, timeout_s: timeout_s, verify_ssl: verify_ssl)
-      client.get(url, headers: DEFAULT_HEADERS.merge(headers || {}))
     end
 
     def request_headers(base: {}, user_agent: nil)
@@ -145,25 +133,12 @@ module Nokizaru
       defined?(HTTPX::ErrorResponse) && response.is_a?(HTTPX::ErrorResponse)
     end
 
-    # Shutdown all connections. Call this during application shutdown
     def shutdown
       ConnectionPool.instance.shutdown
     end
-
-    # Get connection pool statistics for debugging
-    def stats
-      ConnectionPool.instance.stats
-    end
   end
 
-  # Shared message catalogs for HTTP transport error normalization
   module HTTPErrorCatalog
-    SSL_HINTS = {
-      'wrong version number' => 'Try using HTTP instead of HTTPS',
-      'record layer failure' => 'Try using HTTP instead of HTTPS',
-      'certificate verify failed' => 'Use -s flag to disable SSL verification (testing only)'
-    }.freeze
-
     SSL_MESSAGES = {
       'wrong version number' => 'SSL/TLS handshake failed - server may not support HTTPS on this port',
       'certificate verify failed' => 'SSL certificate verification failed - likely self-signed certificate',
@@ -177,46 +152,38 @@ module Nokizaru
     }.freeze
   end
 
-  # Wrapper class for consistent HTTP response handling
-  # Safely handles both successful responses and HTTPX::ErrorResponse objects
+  # Normalizes HTTPX responses and errors behind one interface
   class HttpResult
     include HttpResultHelpers
 
     attr_reader :response, :error
 
-    # Capture runtime options and prepare shared state used by this object
     def initialize(response)
       @response = response
       @is_error = response.is_a?(HTTPX::ErrorResponse)
       @error = @is_error ? response.error : nil
     end
 
-    # Report whether the HTTP response is successful for module logic
     def success?
       !@is_error
     end
 
-    # Report whether the HTTP response represents an error case
     def error?
       @is_error
     end
 
-    # Expose response headers in a normalized hash shape
     def headers
       success? ? @response.headers : {}
     end
 
-    # Expose response body text for parsing and error diagnostics
     def body
       success? ? @response.body.to_s : nil
     end
 
-    # Expose response status code across success and error wrappers
     def status
       success? ? @response.status : nil
     end
 
-    # Returns a user-friendly error message with actionable suggestions
     def error_message
       return nil if success?
 
@@ -227,19 +194,6 @@ module Nokizaru
       return mapped_message if mapped_message
 
       fallback_error_message
-    end
-
-    # Returns a short hint for how to fix the error
-    def error_hint
-      return nil if success?
-
-      ssl_hint = ssl_error_hint
-      return ssl_hint if ssl_hint
-
-      mapped_hint = mapped_error_hint
-      return mapped_hint if mapped_hint
-
-      io_descriptor_hint || descriptor_hint
     end
 
     private
@@ -263,25 +217,6 @@ module Nokizaru
 
     def fallback_error_message
       descriptor_message || @error.message
-    end
-
-    def ssl_error_hint
-      return nil unless @error.is_a?(OpenSSL::SSL::SSLError)
-
-      message = @error.message.to_s
-      Nokizaru::HTTPErrorCatalog::SSL_HINTS.each do |pattern, hint|
-        return hint if message.include?(pattern)
-      end
-      nil
-    end
-
-    def mapped_error_hint
-      case @error
-      when Errno::ECONNREFUSED
-        'Check if the target service is running'
-      when Errno::ETIMEDOUT
-        'Try increasing timeout with -T option'
-      end
     end
   end
 end

@@ -6,13 +6,11 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Nokizaru::Modules::SubdomainModules::BinaryEdge implementation
       module BinaryEdge
         module_function
 
-        # Run this module and store normalized results in the run context
-        def call(hostname, conf_path, http, found)
-          key = Base.ensure_key('binedge', conf_path, 'NK_BINEDGE_KEY')
+        def call(hostname, http, found)
+          key = Base.ensure_key('binedge', 'NK_BINEDGE_KEY')
           return missing_binedge_key unless key
 
           Base.requesting('BinaryEdge')

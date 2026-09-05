@@ -8,7 +8,6 @@ require_relative 'portscan/nonblocking_scanner'
 
 module Nokizaru
   module Modules
-    # Nokizaru::Modules::PortScan implementation
     module PortScan
       module_function
 
@@ -26,6 +25,7 @@ module Nokizaru
       ALL_OPEN_LATENCY_CV_MAX = 0.35
       DEFAULT_PORT_SPECS = %w[top default 100].freeze
       ALL_PORT_SPEC = 'all'
+      WEB_PORTS = [80, 443].freeze
       TLS_PORTS = [443, 465, 636, 990, 993, 995, 2376, 4443, 6443, 8443].freeze
       HTTP_HINT_TOKENS = %w[http https proxy grafana jenkins sonarqube kibana webmin elasticsearch couchdb].freeze
       SENSITIVE_PORTS = [2375, 27_017, 6379, 9200, 11_211].freeze
@@ -39,7 +39,6 @@ module Nokizaru
         dns: %w[DNS]
       }.freeze
 
-      # Run this module and store normalized results in the run context
       def call(ip_addr, threads, ctx, port_spec: nil)
         result = { 'open_ports' => [], 'ports' => [] }
         entries = port_entries(port_spec)
@@ -259,7 +258,7 @@ module Nokizaru
 
       def downgrade_tarpit_ports!(records)
         records.each do |record|
-          next if [80, 443].include?(record['port'].to_i)
+          next if WEB_PORTS.include?(record['port'].to_i)
 
           record['confidence'] = 'low'
           record['exposure'] = 'unverified'
@@ -289,14 +288,11 @@ module Nokizaru
       end
 
       def artifact_ports(result)
-        structured = Array(result['ports']).filter_map do |record|
+        Array(result['ports']).filter_map do |record|
           next if record['confidence'].to_s == 'low'
 
           record['port']&.to_s
         end
-        return structured unless structured.empty?
-
-        Array(result['open_ports']).map { |item| item.to_s.split.first }
       end
 
       def port_entries(port_spec = nil)
@@ -368,7 +364,6 @@ module Nokizaru
         raise ArgumentError, "Invalid TCP port: #{value}"
       end
 
-      # Probe a single port quickly and report only confirmed open sockets
       def open_port?(ip, port, retries: DEFAULT_RETRIES, verify: DEFAULT_VERIFY,
                      connect_timeout: DEFAULT_CONNECT_TIMEOUT)
         attempts = retries.to_i + 1

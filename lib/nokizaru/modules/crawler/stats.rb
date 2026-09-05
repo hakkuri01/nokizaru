@@ -3,7 +3,6 @@
 module Nokizaru
   module Modules
     module Crawler
-      # Stats aggregation and preview output helpers
       module Stats
         require 'uri'
 
@@ -84,15 +83,9 @@ module Nokizaru
 
           UI.tree_header("#{label} Preview")
           rows = values.first(Crawler::PREVIEW_LIMIT).map { |link| ['URL', link] }
+          remaining = values.length - Crawler::PREVIEW_LIMIT
+          rows << ['More', remaining] if remaining.positive?
           UI.tree_rows(rows)
-          print_remaining_count(values.length)
-        end
-
-        def print_remaining_count(total)
-          remaining = total - Crawler::PREVIEW_LIMIT
-          return unless remaining.positive?
-
-          UI.tree_rows([['More', remaining]])
         end
       end
     end

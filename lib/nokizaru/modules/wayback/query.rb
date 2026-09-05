@@ -7,7 +7,6 @@ require 'uri'
 module Nokizaru
   module Modules
     module Wayback
-      # Query orchestration helpers for Wayback APIs
       module Query
         module_function
 
@@ -185,27 +184,6 @@ module Nokizaru
             { limit: 25, timeout_share: 0.75, collapse: false, status_filter: false, pattern_index: 0 },
             { limit: 25, timeout_share: 0.25, collapse: false, status_filter: true, pattern_index: 1 }
           ]
-        end
-
-        def availability_after_cdx(target, cdx_status, urls, deadline_at: nil)
-          return { state: :unknown, snapshots: nil, reason: 'not_needed' } unless urls.empty?
-          return { state: :unknown, snapshots: nil, reason: 'not_needed' } unless cdx_status.to_s.include?('timeout')
-
-          timeout = bounded_timeout(availability_timeout(remaining_time(deadline_at, 0.0)), deadline_at: deadline_at)
-          return { state: :unknown, snapshots: nil, reason: 'timeout' } unless timeout.positive?
-
-          availability_status(target, timeout, deadline_at: deadline_at)
-        end
-
-        def apply_availability_fallback(urls, cdx_status, snapshots)
-          list = Array(urls)
-          return [list, cdx_status] unless list.empty? && cdx_status.to_s.include?('timeout')
-
-          fallback = Normalize.fallback_urls_from_availability(snapshots)
-          return [list, cdx_status] if fallback.empty?
-
-          Presenter.fallback_used(fallback.length)
-          [fallback, 'timeout_with_fallback']
         end
 
         def fetch_cdx_with_fallback(target, timeout_s, snapshots, deadline_at: nil)

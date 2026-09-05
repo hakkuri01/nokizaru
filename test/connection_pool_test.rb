@@ -15,4 +15,10 @@ class ConnectionPoolTest < Minitest::Test
     assert_equal OpenSSL::SSL::VERIFY_NONE, options[:verify_mode]
     refute_includes options.keys, :alpn_protocols
   end
+
+  def test_default_headers_do_not_send_http1_connection_header_over_http2
+    keys = Nokizaru::ConnectionPool::DEFAULT_HEADERS.keys.map(&:downcase)
+
+    refute_includes keys, 'connection'
+  end
 end

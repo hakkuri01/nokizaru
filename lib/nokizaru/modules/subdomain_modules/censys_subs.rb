@@ -6,17 +6,15 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Nokizaru::Modules::SubdomainModules::Censys implementation
       module Censys
         module_function
 
         MAX_PAGES = 3
         PER_PAGE = 100
 
-        # Run this module and store normalized results in the run context
-        def call(hostname, conf_path, http, found)
-          api_id = Base.ensure_key('censys_api_id', conf_path, 'NK_CENSYS_API_ID')
-          api_secret = Base.ensure_key('censys_api_secret', conf_path, 'NK_CENSYS_API_SECRET')
+        def call(hostname, http, found)
+          api_id = Base.ensure_key('censys_api_id', 'NK_CENSYS_API_ID')
+          api_secret = Base.ensure_key('censys_api_secret', 'NK_CENSYS_API_SECRET')
           return missing_censys_credentials unless api_id && api_secret
 
           Base.requesting('Censys')
@@ -38,7 +36,6 @@ module Nokizaru
           Log.write("[censys_subs] Exception = #{e}")
         end
 
-        # Paginate provider responses and merge subdomains across result pages
         def fetch_all_subdomains(hostname, http, api_id, api_secret)
           state = { query: "names: #{hostname}", cursor: nil, page: 0, out: [] }
           crawl_censys_pages(hostname, http, api_id, api_secret, state)
@@ -76,7 +73,6 @@ module Nokizaru
           false
         end
 
-        # Request one provider page using authenticated search payload settings
         def search_page(query, cursor, http, api_id, api_secret)
           http.post(censys_url, headers: censys_headers(api_id, api_secret),
                                 body: JSON.generate(censys_payload(query, cursor)))
@@ -97,19 +93,16 @@ module Nokizaru
           { q: query, per_page: PER_PAGE, cursor: cursor }
         end
 
-        # Encode API credentials for provider basic authentication headers
         def pack_basic_auth(api_id, api_secret)
           ["#{api_id}:#{api_secret}"].pack('m0')
         end
 
-        # Extract and normalize hostnames from provider records for this target
         def extract_subdomains(hostname, data)
           hits = Array(data.dig('result', 'hits'))
           return [] if hits.empty?
 
           names = hits.flat_map { |hit| Array(hit['names']) }
-          names.map(&:to_s)
-               .map(&:downcase)
+          names.map { |name| name.to_s.downcase }
                .select { |name| name.end_with?(hostname.downcase) }
                .reject(&:empty?)
                .uniq

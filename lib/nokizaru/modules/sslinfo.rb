@@ -7,22 +7,15 @@ require_relative 'sslinfo/presenter'
 
 module Nokizaru
   module Modules
-    # Nokizaru::Modules::SSLInfo implementation
     module SSLInfo
       module_function
 
-      # Run this module and store normalized results in the run context
       def call(hostname, ssl_port, ctx)
         result = {}
         UI.module_header('SSL Certificate Information')
 
-        ctx.progress&.update(:sslinfo, stage: 'checking tls')
-        if ssl_available?(hostname, ssl_port)
-          ctx.progress&.update(:sslinfo, stage: 'fetching certificate')
-          collect_ssl_certificate(hostname, ssl_port, result)
-        else
-          mark_ssl_unavailable(result)
-        end
+        ctx.progress&.update(:sslinfo, stage: 'fetching certificate')
+        collect_ssl_certificate(hostname, ssl_port, result)
 
         ctx.progress&.update(:sslinfo, stage: 'complete', detail: result['cert'] ? 'certificate found' : 'no tls')
         finalize_ssl_module(ctx, result)
@@ -33,25 +26,11 @@ module Nokizaru
         Log.write('[sslinfo] Completed')
       end
 
-      def ssl_available?(hostname, ssl_port)
-        probe_socket = Socket.tcp(hostname, ssl_port, connect_timeout: 5)
-        probe_socket.close
-        true
-      rescue StandardError
-        false
-      end
-
-      def mark_ssl_unavailable(result)
-        UI.line(:error, 'SSL is not Present on Target URL...Skipping...')
-        result['Error'] = 'SSL is not Present on Target URL'
-        Log.write('[sslinfo] SSL is not Present on Target URL...Skipping...')
-      end
-
       def collect_ssl_certificate(hostname, ssl_port, result)
         ssl = open_ssl_socket(hostname, ssl_port)
         cert_dict = build_cert_payload(ssl)
         result['cert'] = cert_dict
-        Presenter.process_cert(cert_dict, result)
+        Presenter.process_cert(cert_dict)
       rescue StandardError => e
         UI.line(:error, "Exception : #{e}")
         result['Error'] = e.to_s
@@ -113,7 +92,6 @@ module Nokizaru
         { 'notBefore' => validity[:not_before], 'notAfter' => validity[:not_after] }
       end
 
-      # Convert certificate name objects into a stable key value hash
       def x509_name_to_hash(name)
         h = {}
         name.to_a.each do |(oid, val, _type)|
@@ -122,7 +100,6 @@ module Nokizaru
         h
       end
 
-      # Extract SAN entries used for host and wildcard visibility
       def extract_san(cert)
         ext = cert.extensions.find { |e| e.oid == 'subjectAltName' }
         return [] unless ext

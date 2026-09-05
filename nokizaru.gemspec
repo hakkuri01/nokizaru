@@ -23,32 +23,22 @@ Gem::Specification.new do |spec|
     'bin/*',
     'lib/**/*',
     'conf/**/*',
-    'data/**/*',
     'wordlists/**/*',
     'man/*',
     'README.md',
     'LICENSE'
   ]
 
-  spec.bindir        = 'bin'
-  spec.executables   = ['nokizaru']
-  spec.require_paths = ['lib']
+  spec.executables = ['nokizaru']
 
-  spec.add_dependency 'activesupport', '~> 7.2', '>= 7.2.3.1'
   spec.add_dependency 'async', '~> 2.10'
-  spec.add_dependency 'async-io', '~> 1.35'
   spec.add_dependency 'concurrent-ruby', '~> 1.3', '>= 1.3.7'
   spec.add_dependency 'dnsruby', '~> 1.72'
-  spec.add_dependency 'erb', '>= 6.0.1.1'
+  spec.add_dependency 'erb', '~> 6.0', '>= 6.0.1.1'
   spec.add_dependency 'httpx', '~> 1.3'
-  spec.add_dependency 'json', '>= 2.19.2', '< 3.0'
+  spec.add_dependency 'json', '>= 2.19.9', '< 3.0'
   spec.add_dependency 'nokogiri', '~> 1.19', '>= 1.19.4'
-  spec.add_dependency 'pstore'
   spec.add_dependency 'public_suffix', '~> 5.0'
   spec.add_dependency 'thor', '~> 1.3'
   spec.add_dependency 'whois', '~> 5.0'
-  # Persistent workspaces + diffing built on the Ronin Database
-  spec.add_dependency 'ronin-db', '~> 0.2'
-  spec.add_dependency 'ronin-support', '~> 1.0'
-  spec.add_dependency 'sqlite3', '~> 1.6'
 end

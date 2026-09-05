@@ -27,7 +27,7 @@ class PortScanTest < Minitest::Test
   end
 
   def test_setup_scan_ui_renders_dynamic_label
-    output = capture_stdout { PortScan.setup_scan_ui(50, '80,443,1000-2000') }
+    output, = capture_io { PortScan.setup_scan_ui(50, '80,443,1000-2000') }
 
     assert_includes(output, 'Scanning custom ports 80,443,1000-2000 with threads')
     assert_includes(output, '50')
@@ -61,7 +61,7 @@ class PortScanTest < Minitest::Test
     accept_thread = accept_connections(server)
     result = { 'open_ports' => [], 'ports' => [] }
 
-    capture_stdout do
+    capture_io do
       PortScan.scan_ports(
         '127.0.0.1',
         1,
@@ -75,6 +75,7 @@ class PortScanTest < Minitest::Test
     refute_includes(result['open_ports'], "#{closed_port} (test-closed)")
 
     record = result['ports'].find { |item| item['port'] == open_port }
+
     assert_equal('tcp', record['protocol'])
     assert_equal('open', record['state'])
     assert_equal('confirmed', record['confidence'])
@@ -110,6 +111,15 @@ class PortScanTest < Minitest::Test
     }
 
     assert_equal ['80'], PortScan.artifact_ports(result)
+  end
+
+  def test_artifact_ports_does_not_restore_all_low_confidence_ports
+    result = {
+      'ports' => [{ 'port' => 22, 'confidence' => 'low' }],
+      'open_ports' => ['22 (SSH)']
+    }
+
+    assert_empty PortScan.artifact_ports(result)
   end
 
   private

@@ -7,7 +7,7 @@ require_relative 'test_helper'
 class CLISettingsPathsTest < Minitest::Test
   SETTINGS_IVARS = %i[
     @timeout @custom_dns @ssl_port @port_scan_threads @dir_enum_threads @dir_enum_redirect
-    @dir_enum_verify_ssl @dir_enum_extension @dir_enum_wordlist @export_format
+    @dir_enum_verify_ssl @dir_enum_extension @dir_enum_wordlist
   ].freeze
 
   def setup
@@ -31,18 +31,6 @@ class CLISettingsPathsTest < Minitest::Test
     assert_equal ['scan', '--nb', '--cd=/tmp/out', '--of', 'json'], argv
   end
 
-  def test_cli_argv_normalizes_scan_help_forms
-    command_help = %w[scan --help]
-    global_help = %w[--help scan]
-
-    Nokizaru::CLIArgv.normalize_help_invocation!(command_help)
-    Nokizaru::CLIArgv.normalize_help_invocation!(global_help)
-
-    assert_equal %w[help scan], command_help
-    assert_equal %w[help scan], global_help
-    refute Nokizaru::CLIArgv.command_help_invocation?(%w[version --help])
-  end
-
   def test_paths_sanitize_domains_for_safe_dump_directories
     assert_equal 'unknown', Nokizaru::Paths.send(:sanitize_domain_for_path, nil)
     assert_equal 'example.com', Nokizaru::Paths.send(:sanitize_domain_for_path, '..Example.COM..')
@@ -50,17 +38,14 @@ class CLISettingsPathsTest < Minitest::Test
     assert_equal 128, Nokizaru::Paths.send(:sanitize_domain_for_path, 'a' * 200).length
   end
 
-  def test_paths_find_template_returns_first_existing_candidate
-    original_project_root = Nokizaru::Paths.instance_variable_get(:@project_root)
+  def test_keys_file_permissions_are_owner_only
     Dir.mktmpdir do |dir|
-      FileUtils.mkdir_p(File.join(dir, 'metadata'))
-      path = File.join(dir, 'metadata', 'config.json')
+      path = File.join(dir, 'keys.json')
       File.write(path, '{}')
-      Nokizaru::Paths.instance_variable_set(:@project_root, dir)
 
-      assert_equal path, Nokizaru::Paths.default_config_template
-    ensure
-      Nokizaru::Paths.instance_variable_set(:@project_root, original_project_root)
+      Nokizaru::Paths.stub(:keys_file, path) { Nokizaru::Paths.secure_keys_file! }
+
+      assert_equal 0o600, File.stat(path).mode & 0o777
     end
   end
 
@@ -76,7 +61,13 @@ class CLISettingsPathsTest < Minitest::Test
     assert_equal true, Nokizaru::Settings.dir_enum_verify_ssl
     assert_equal 'php,txt', Nokizaru::Settings.dir_enum_extension
     assert_match(%r{/wordlists/raft_med-dir_5k\.txt\z}, Nokizaru::Settings.dir_enum_wordlist)
-    assert_equal 'json', Nokizaru::Settings.export_format
+  end
+
+  def test_wordlist_option_resolves_curated_sizes_and_custom_paths
+    assert_match(%r{/wordlists/raft_small-dir_2k\.txt\z}, Nokizaru::Settings.wordlist('small'))
+    assert_match(%r{/wordlists/raft_med-dir_5k\.txt\z}, Nokizaru::Settings.wordlist('medium'))
+    assert_match(%r{/wordlists/raft_big-dir_10k\.txt\z}, Nokizaru::Settings.wordlist('LARGE'))
+    assert_equal '/tmp/custom.txt', Nokizaru::Settings.wordlist('/tmp/custom.txt')
   end
 
   def test_settings_config_sections_require_expected_keys
@@ -90,8 +81,7 @@ class CLISettingsPathsTest < Minitest::Test
       'common' => { 'timeout' => 12, 'dns_servers' => ['1.1.1.1'] },
       'ssl_cert' => { 'ssl_port' => 443 },
       'port_scan' => { 'threads' => 20 },
-      'dir_enum' => { 'threads' => 10, 'redirect' => false, 'verify_ssl' => true, 'extension' => 'php,txt' },
-      'export' => { 'format' => 'json' }
+      'dir_enum' => { 'threads' => 10, 'redirect' => false, 'verify_ssl' => true, 'extension' => 'php,txt' }
     }
   end
 end

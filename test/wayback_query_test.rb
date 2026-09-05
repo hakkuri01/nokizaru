@@ -10,8 +10,8 @@ class WaybackQueryTest < Minitest::Test
     snapshots = { 'closest' => { 'url' => 'https://web.archive.org/web/20240101000000/https://example.com/login' } }
     reduced_called = false
 
-    with_query_stub(:fetch_staged_cdx, [[], true]) do
-      with_query_stub(:fetch_reduced_cdx, proc do
+    Wayback::Query.stub(:fetch_staged_cdx, [[], true]) do
+      Wayback::Query.stub(:fetch_reduced_cdx, proc do
         reduced_called = true
         []
       end) do
@@ -34,7 +34,7 @@ class WaybackQueryTest < Minitest::Test
       [[], true]
     end
 
-    with_query_stub(:fetch_staged_cdx, staged_stub) do
+    Wayback::Query.stub(:fetch_staged_cdx, staged_stub) do
       urls, status = Wayback::Query.fetch_cdx_with_fallback('https://example.com', 3.0, snapshots)
 
       assert observed_fallback
@@ -49,7 +49,7 @@ class WaybackQueryTest < Minitest::Test
       [['https://example.com/should-not-run'], false]
     ]
 
-    with_query_stub(:fetch_urls_with_timeout, proc { attempts.shift }) do
+    Wayback::Query.stub(:fetch_urls_with_timeout, proc { attempts.shift }) do
       urls, timed_out = Wayback::Query.fetch_staged_cdx('https://example.com', 5.0, fallback_available: true)
 
       assert_empty urls
@@ -59,8 +59,8 @@ class WaybackQueryTest < Minitest::Test
   end
 
   def test_fetch_cdx_with_fallback_uses_reduced_query_after_clean_empty_staged_response
-    with_query_stub(:fetch_staged_cdx, [[], false]) do
-      with_query_stub(:fetch_reduced_cdx, ['https://example.com/admin']) do
+    Wayback::Query.stub(:fetch_staged_cdx, [[], false]) do
+      Wayback::Query.stub(:fetch_reduced_cdx, ['https://example.com/admin']) do
         urls, status = Wayback::Query.fetch_cdx_with_fallback('https://example.com', 3.0, nil)
 
         assert_equal ['https://example.com/admin'], urls
@@ -76,8 +76,8 @@ class WaybackQueryTest < Minitest::Test
       []
     end
 
-    with_query_stub(:fetch_staged_cdx, [[], false]) do
-      with_query_stub(:fetch_reduced_cdx, reduced_stub) do
+    Wayback::Query.stub(:fetch_staged_cdx, [[], false]) do
+      Wayback::Query.stub(:fetch_reduced_cdx, reduced_stub) do
         deadline_at = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10.0
 
         Wayback::Query.fetch_cdx_with_fallback('https://example.com', 3.0, nil, deadline_at: deadline_at)
@@ -90,7 +90,7 @@ class WaybackQueryTest < Minitest::Test
   def test_fetch_urls_deduplicates_cdx_lines_while_preserving_order
     body = "\nhttps://example.com/a\nhttps://example.com/b\nhttps://example.com/a\n  https://example.com/c  \n"
 
-    with_http_stub(:get, FakeResponse.new(200, body)) do
+    Wayback::HTTP.stub(:get, FakeResponse.new(200, body)) do
       urls = Wayback::Query.fetch_urls({ 'url' => 'https://example.com/*' })
 
       assert_equal ['https://example.com/a', 'https://example.com/b', 'https://example.com/c'], urls
@@ -101,14 +101,15 @@ class WaybackQueryTest < Minitest::Test
     commoncrawl = [Wayback::Query.archive_record('https://example.com/admin', 'commoncrawl', '20240101000000')]
     virustotal = [Wayback::Query.archive_record('https://example.com/login', 'virustotal')]
 
-    with_query_stub(:fetch_cdx_with_fallback, [['https://example.com/login'], 'found', []]) do
-      with_archive_stub(:fetch_commoncrawl_records, commoncrawl) do
-        with_archive_stub(:fetch_virustotal_records, virustotal) do
+    Wayback::Query.stub(:fetch_cdx_with_fallback, [['https://example.com/login'], 'found', []]) do
+      Wayback::ArchiveSources.stub(:fetch_commoncrawl_records, commoncrawl) do
+        Wayback::ArchiveSources.stub(:fetch_virustotal_records, virustotal) do
           urls, status, _reasons, records = Wayback::Query.fetch_urls_with_status('https://example.com', 5.0, nil)
 
           assert_equal ['https://example.com/login', 'https://example.com/admin'], urls
           assert_equal 'found', status
           sources = records.map { |record| record['source'] }
+
           assert_equal %w[wayback commoncrawl], sources
         end
       end
@@ -150,9 +151,9 @@ class WaybackQueryTest < Minitest::Test
   end
 
   def test_availability_timeout_reserves_cdx_budget
-    assert_equal 12.0, Wayback::Query.availability_timeout(24.0)
-    assert_equal 6.0, Wayback::Query.availability_timeout(4.0)
-    assert_equal 12.0, Wayback::Query.cdx_timeout(24.0, 12.0)
+    assert_in_delta(12.0, Wayback::Query.availability_timeout(24.0))
+    assert_in_delta(6.0, Wayback::Query.availability_timeout(4.0))
+    assert_in_delta(12.0, Wayback::Query.cdx_timeout(24.0, 12.0))
   end
 
   def test_cdx_target_patterns_include_wildcard_root_and_host_fallbacks
@@ -201,22 +202,13 @@ class WaybackQueryTest < Minitest::Test
     assert_includes pivots['cdx_query_url'], 'web.archive.org/cdx/search/cdx?'
   end
 
-  def test_apply_availability_fallback_uses_snapshot_after_timeout
-    snapshots = { 'closest' => { 'url' => 'https://web.archive.org/web/20240101000000/https://example.com/admin' } }
-
-    urls, status = Wayback::Query.apply_availability_fallback([], 'timeout', snapshots)
-
-    assert_equal ['https://example.com/admin'], urls
-    assert_equal 'timeout_with_fallback', status
-  end
-
   def test_fetch_staged_cdx_deduplicates_across_attempts
     attempts = [
       [['https://example.com/a', 'https://example.com/b'], false],
       [['https://example.com/b', 'https://example.com/c'], false]
     ]
 
-    with_query_stub(:fetch_urls_with_timeout, proc { attempts.shift }) do
+    Wayback::Query.stub(:fetch_urls_with_timeout, proc { attempts.shift }) do
       urls, timed_out = Wayback::Query.fetch_staged_cdx('https://example.com', 5.0)
 
       assert_equal ['https://example.com/a', 'https://example.com/b'], urls
@@ -230,49 +222,11 @@ class WaybackQueryTest < Minitest::Test
       [['https://example.com/recovered'], false]
     ]
 
-    with_query_stub(:fetch_urls_with_timeout, proc { attempts.shift }) do
+    Wayback::Query.stub(:fetch_urls_with_timeout, proc { attempts.shift }) do
       urls, timed_out = Wayback::Query.fetch_staged_cdx('https://example.com', 5.0)
 
       assert_equal ['https://example.com/recovered'], urls
       refute timed_out
-    end
-  end
-
-  private
-
-  def with_query_stub(method_name, value)
-    original = Wayback::Query.method(method_name)
-    Wayback::Query.singleton_class.send(:define_method, method_name) do |*args, **kwargs|
-      value.respond_to?(:call) ? value.call(*args, **kwargs) : value
-    end
-    yield
-  ensure
-    Wayback::Query.singleton_class.send(:define_method, method_name) do |*args, **kwargs, &block|
-      original.call(*args, **kwargs, &block)
-    end
-  end
-
-  def with_http_stub(method_name, value)
-    original = Wayback::HTTP.method(method_name)
-    Wayback::HTTP.singleton_class.send(:define_method, method_name) do |*args, **kwargs|
-      value.respond_to?(:call) ? value.call(*args, **kwargs) : value
-    end
-    yield
-  ensure
-    Wayback::HTTP.singleton_class.send(:define_method, method_name) do |*args, **kwargs, &block|
-      original.call(*args, **kwargs, &block)
-    end
-  end
-
-  def with_archive_stub(method_name, value)
-    original = Wayback::ArchiveSources.method(method_name)
-    Wayback::ArchiveSources.singleton_class.send(:define_method, method_name) do |*args, **kwargs|
-      value.respond_to?(:call) ? value.call(*args, **kwargs) : value
-    end
-    yield
-  ensure
-    Wayback::ArchiveSources.singleton_class.send(:define_method, method_name) do |*args, **kwargs, &block|
-      original.call(*args, **kwargs, &block)
     end
   end
 end

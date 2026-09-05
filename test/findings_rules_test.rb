@@ -27,6 +27,7 @@ class FindingsRulesTest < Minitest::Test
     )
 
     ids = findings.map { |finding| finding['id'] }
+
     assert_includes ids, 'headers.missing_strict_transport_security'
     assert_includes ids, 'headers.missing_x_content_type_options'
     assert(findings.any? { |finding| finding['id'].start_with?('cookies.missing_flags') })
@@ -44,15 +45,15 @@ class FindingsRulesTest < Minitest::Test
 
   def test_tls_rules_detect_expired_and_expiring_certificates
     expired = TLSRules.call('cert' => { 'notAfter' => (Time.now - 86_400).utc.iso8601 })
-    expiring = TLSRules.call('not_after' => (Time.now + (3 * 86_400)).utc.iso8601)
+    expiring = TLSRules.call('cert' => { 'notAfter' => (Time.now + (3 * 86_400)).utc.iso8601 })
 
     assert_equal ['tls.cert_expired'], finding_ids(expired)
     assert_equal ['tls.cert_expiring'], finding_ids(expiring)
   end
 
   def test_tls_rules_ignore_invalid_or_distant_certificates
-    assert_empty TLSRules.call('not_after_gmt' => 'not a timestamp')
-    assert_empty TLSRules.call('notAfter' => (Time.now + (90 * 86_400)).utc.iso8601)
+    assert_empty TLSRules.call('cert' => { 'notAfter' => 'not a timestamp' })
+    assert_empty TLSRules.call('cert' => { 'notAfter' => (Time.now + (90 * 86_400)).utc.iso8601 })
     assert_nil TLSRules.parse_time('not a timestamp')
   end
 
@@ -65,13 +66,6 @@ class FindingsRulesTest < Minitest::Test
     assert_equal %w[dns.missing_spf dns.missing_dmarc], finding_ids(missing)
     assert_empty present
     assert_empty DNSRules.call(nil)
-  end
-
-  def test_dns_rules_accept_legacy_record_shapes
-    result = { 'txt' => ['V=SPF1 -all'], 'dmarc' => ['V=DMARC1; p=reject'] }
-
-    assert DNSRules.spf_record_present?(result)
-    assert DNSRules.dmarc_record_present?(result)
   end
 
   def test_directory_rules_prioritize_interesting_prioritized_paths

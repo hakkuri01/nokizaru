@@ -13,7 +13,7 @@ class WaybackQueryEdgeTest < Minitest::Test
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5.0
 
     assert_operator Wayback::Query.remaining_time(deadline), :>, 0.0
-    assert_equal 2.5, Wayback::Query.remaining_time(nil, 2.5)
+    assert_in_delta(2.5, Wayback::Query.remaining_time(nil, 2.5))
     assert_operator Wayback::Query.bounded_timeout(10.0, deadline_at: deadline), :<=, 5.0
   end
 

@@ -5,13 +5,16 @@ require 'fileutils'
 require_relative 'paths'
 
 module Nokizaru
-  # Ensure ~/.config/nokizaru exists and is seeded with default conf/
-  # Ensure ~/.local/share/nokizaru/dumps/ exists
-  # Load config.json and expose expected keys
+  # Bootstrap local config/data directories and expose configuration values
   module Settings
     module_function
 
-    # Load configuration from disk and keep defaults when values are missing
+    WORDLISTS = {
+      'small' => 'raft_small-dir_2k.txt',
+      'medium' => 'raft_med-dir_5k.txt',
+      'large' => 'raft_big-dir_10k.txt'
+    }.freeze
+
     def load!
       Paths.sync_default_conf!
 
@@ -30,11 +33,10 @@ module Nokizaru
     end
 
     def assign_values(config_json)
-      common, ssl_cert, port_scan, dir_enum, export = config_sections(config_json)
+      common, ssl_cert, port_scan, dir_enum = config_sections(config_json)
       assign_common_values(common, ssl_cert, port_scan)
       assign_dir_enum_values(dir_enum)
-      @dir_enum_wordlist = File.join(Paths.project_root, 'wordlists', 'raft_med-dir_5k.txt')
-      @export_format = export.fetch('format')
+      @dir_enum_wordlist = curated_wordlist('medium')
     end
 
     def config_sections(config_json)
@@ -42,8 +44,7 @@ module Nokizaru
         config_json.fetch('common'),
         config_json.fetch('ssl_cert'),
         config_json.fetch('port_scan'),
-        config_json.fetch('dir_enum'),
-        config_json.fetch('export')
+        config_json.fetch('dir_enum')
       ]
     end
 
@@ -61,25 +62,25 @@ module Nokizaru
       @dir_enum_extension = dir_enum.fetch('extension')
     end
 
-    # Return timeout setting with a safe numeric fallback
     def timeout = @timeout
-    # Return configured DNS resolver list for enumeration modules
     def custom_dns = @custom_dns
-    # Return configured SSL port used by certificate collection
     def ssl_port = @ssl_port
-    # Return thread count used by port scanning workers
     def port_scan_threads = @port_scan_threads
-    # Return thread count used by directory enumeration workers
     def dir_enum_threads = @dir_enum_threads
-    # Return redirect handling preference for directory enumeration
     def dir_enum_redirect = @dir_enum_redirect
-    # Return SSL verification preference for directory enumeration
     def dir_enum_verify_ssl = @dir_enum_verify_ssl
-    # Return configured extension list for directory enumeration variants
     def dir_enum_extension = @dir_enum_extension
-    # Return wordlist path used by directory enumeration
     def dir_enum_wordlist = @dir_enum_wordlist
-    # Return configured default export format list
-    def export_format = @export_format
+
+    # Resolve a curated size name while preserving custom paths
+    def wordlist(value)
+      WORDLISTS.key?(value.to_s.downcase) ? curated_wordlist(value) : value.to_s
+    end
+
+    def curated_wordlist(size)
+      File.join(Paths.project_root, 'wordlists', WORDLISTS.fetch(size.to_s.downcase))
+    end
+
+    private_class_method :curated_wordlist
   end
 end

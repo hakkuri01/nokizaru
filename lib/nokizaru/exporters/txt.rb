@@ -2,9 +2,7 @@
 
 module Nokizaru
   module Exporters
-    # Nokizaru::Exporters::Txt implementation
     class Txt
-      # Append log entries with timestamps for troubleshooting and auditability
       def write(run, path)
         File.open(path, 'w') { |file| write_sections(file, run) }
       end
@@ -13,7 +11,6 @@ module Nokizaru
         write_meta(file, run.fetch('meta', {}))
         write_findings(file, Array(run['findings']))
         write_modules(file, run.fetch('modules', {}))
-        write_diff(file, run['diff'])
       end
 
       def write_meta(file, meta)
@@ -46,26 +43,6 @@ module Nokizaru
           file.puts(payload.is_a?(String) ? payload : payload.inspect)
           file.puts
         end
-      end
-
-      def write_diff(file, diff)
-        return unless diff&.any?
-
-        file.puts('Diff')
-        file.puts('====')
-        diff.each { |kind, values| write_diff_block(file, kind, values) }
-      end
-
-      def write_diff_block(file, kind, values)
-        file.puts("#{kind} (+#{Array(values['added']).length} / -#{Array(values['removed']).length})")
-        write_diff_values(file, 'ADDED', values['added'])
-        write_diff_values(file, 'REMOVED', values['removed'])
-        file.puts
-      end
-
-      def write_diff_values(file, label, entries)
-        file.puts("  #{label}:")
-        Array(entries).each { |entry| file.puts("    #{entry}") }
       end
     end
   end

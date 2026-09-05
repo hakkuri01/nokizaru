@@ -17,7 +17,6 @@ Minitest.after_run do
     'lib/nokizaru/findings/engine.rb' => 90.0,
     'lib/nokizaru/findings/header_rules.rb' => 90.0,
     'lib/nokizaru/findings/port_rules.rb' => 90.0,
-    'lib/nokizaru/findings/rules.rb' => 90.0,
     'lib/nokizaru/findings/tls_rules.rb' => 90.0,
     'lib/nokizaru/http_result_helpers.rb' => 90.0,
     'lib/nokizaru/modules/crawler/link_support.rb' => 90.0,
@@ -66,8 +65,5 @@ end
 def total_line_coverage(result, root)
   lib_prefix = File.join(root, 'lib')
   files = result.select { |path, _data| path.start_with?(lib_prefix) }
-  relevant = files.flat_map { |_path, data| data.fetch(:lines).compact }
-  return 100.0 if relevant.empty?
-
-  relevant.count(&:positive?).fdiv(relevant.length) * 100.0
+  line_coverage_percent(files.flat_map { |_path, data| data.fetch(:lines) })
 end

@@ -4,11 +4,13 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v2.3.11-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v2.4.11-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
 Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface. Its goal is to provide a sufficiently expansive, high-signal overview of a target quickly, subverting the need to reach for heavier OSINT suites. Instead of running several tools in sequence, Nokizaru aims to produce comparable recon results with a single full-scan command. The ideal use case is collecting relevant information on a web target during the recon phase of a bug bounty/web app pentest engagement. As such, the primary audience is security researchers (not CTI analysts who may still prefer larger, more comprehensive OSINT suites).
+
+The supported interface is the CLI and JSON export schema. Internal Ruby modules are unstable and are not a supported user API.
 
 > [!IMPORTANT]
 > 
@@ -18,7 +20,7 @@ Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface.
 
 ## Architecture
 
-Nokizaru runs a full web recon pass with shared target context, bounded module budgets, and graceful degradation when targets are slow, hostile, or heavily canonicalized.
+Nokizaru runs a full web recon pass with shared target context, bounded or adaptive module execution, and graceful degradation when targets are slow, hostile, or heavily canonicalized. Healthy full directory scans complete their finite plan without a fixed total budget.
 
 ### Context-Aware Scanning Pipeline
 
@@ -34,25 +36,35 @@ Nokizaru runs a full web recon pass with shared target context, bounded module b
 
 ## Installation
 
-### Linux / macOS (Homebrew)
+### Nix (Primary)
 
-Homebrew is the primary install method for Linux/macOS:
+The Nix flake is the maintained package-manager release target and includes Ruby and native dependencies. Unqualified installs resolve the latest `main` revision, which Nix locks to an exact commit; immutable version tags remain available for explicit release pinning.
 
 ```bash
-brew tap hakkuri01/nokizaru https://github.com/hakkuri01/nokizaru
-brew install nokizaru
+nix profile install github:hakkuri01/nokizaru
 nokizaru --help
 man nokizaru
 ```
 
-For updates:
+Run without installing:
 
 ```bash
-brew update
-brew upgrade nokizaru
+nix run github:hakkuri01/nokizaru -- --help
 ```
 
-Nokizaru Homebrew releases are pinned to stable git tags. `brew upgrade nokizaru` will update your install whenever a newer stable formula version is published.
+NixOS flake configurations can install the package directly from the input:
+
+```nix
+inputs.nokizaru.url = "github:hakkuri01/nokizaru";
+
+environment.systemPackages = [
+  nokizaru.packages.${pkgs.stdenv.hostPlatform.system}.default
+];
+```
+
+`aarch64-linux` is release-tested. An `x86_64-linux` output is provided on a best-effort basis for community validation.
+
+Source builds require Ruby 4.x (`>= 4.0`, `< 5.0`).
 
 ### Build From Source (Git Clone)
 
@@ -64,12 +76,12 @@ gem install nokizaru-*.gem
 nokizaru --help
 ```
 
-### Tarball
+### Tarball (Latest `main`)
 
 ```bash
 curl -L -o nokizaru.tar.gz https://github.com/hakkuri01/nokizaru/archive/refs/heads/main.tar.gz
 tar -xzf nokizaru.tar.gz
-cd nokizaru
+cd nokizaru-main
 gem build nokizaru.gemspec
 gem install nokizaru-*.gem
 nokizaru --help
@@ -81,11 +93,11 @@ nokizaru --help
 
 ### API Keys
 
-Some modules use API keys to fetch data from different resources. These are optional—if you do not provide an API key, the module will be skipped.
+Some providers use optional API keys. Missing credentials skip only that provider; architecture fingerprinting is skipped entirely without a Wappalyzer key.
 
 #### Environment Variables
 
-Keys are read from environment variables if they are set; otherwise they are loaded from the user data directory (`~/.local/share/nokizaru/keys.json`).
+Keys are read from environment variables if they are set; otherwise they are loaded from `${XDG_DATA_HOME:-$HOME/.local/share}/nokizaru/keys.json`.
 
 ```bash
 NK_BEVIGIL_KEY, NK_BINEDGE_KEY, NK_CENSYS_API_ID, NK_CENSYS_API_SECRET,
@@ -98,7 +110,7 @@ export NK_SHODAN_KEY="kl32lcdqwcdfv"
 
 #### Saved Keys
 
-You can use **`-k`** to add keys which will be saved automatically in the config directory.
+You can use **`-k`** to add keys which will be saved automatically in the user data directory.
 
 ```bash
 # Usage
@@ -110,7 +122,7 @@ Valid Keys : 'bevigil', 'binedge', 'censys_api_id', 'censys_api_secret', 'chaos'
 nokizaru -k 'shodan@kl32lcdqwcdfv'
 ```
 
-`Path = $HOME/.local/share/nokizaru/keys.json`
+`Path = ${XDG_DATA_HOME:-$HOME/.local/share}/nokizaru/keys.json`
 
 | Source     | Module          | Link                                                                                                                                   |
 | ---------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -128,7 +140,7 @@ nokizaru -k 'shodan@kl32lcdqwcdfv'
 
 ### JSON Config File
 
-Default config file is available at `~/.config/nokizaru/config.json`
+The default config file is `${XDG_CONFIG_HOME:-$HOME/.config}/nokizaru/config.json`.
 
 ```json
 {
@@ -147,9 +159,6 @@ Default config file is available at `~/.config/nokizaru/config.json`
     "redirect": false,
     "verify_ssl": false,
     "extension": ""
-  },
-  "export": {
-    "format": "txt"
   }
 }
 ```
@@ -179,27 +188,21 @@ Arguments:
   --no-[MODULE]    Skip specified modules above during full scan (eg. --no-dir)
   --export         Write results to export directory
 
-Workspaces:
-  --project [NAME]    Enable a persistent workspace (profiles, caching, diffing)
-  --cache             Enable caching even without a project
-  --no-cache          Disable caching (even in a project)
-  --diff last / [ID]  Diff this run against the last (or another run ID in the workspace)
-
 Extra Options:
   -nb         Hide Banner
-  -dt DT      Number of threads for directory enum [ Default : 30 ]
-  -pt PT      Number of threads for port scan [ Default : 50 ]
+  -dt DT      Number of threads for directory enum [ Default : 50 ]
+  -pt PT      Port scan concurrency [ Default : 50 ]
   -p PORTS    Port scan ports [ Example : 80,443,1000-65535 ]
-  -T T        Request Timeout [ Default : 30.0 ]
-  -w W        Path to Wordlist [ Default : wordlists/raft_med-dir_5k.txt ]
-  -H HEADER   Add custom request header (repeatable)
+  -T T        Base timeout / module budget [ Default : 30.0 ]
+  -w W        Wordlist size (small, medium, large) or custom path [ Default : medium ]
+  -H, --header HEADER  Add custom request header (repeatable)
   -r          Follow redirects during directory enum [ Default : False ]
   -s          Enable SSL verification for directory enum [ Default : False ]
   -sp SP      Specify SSL Port [ Default : 443 ]
-  -d D        Custom DNS Servers [ Default : 1.1.1.1 ]
+  -d D        Custom DNS Servers [ Default : 8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1 ]
   -e E        File Extension(s) (comma separated) [ Example : txt,xml,php,etc. ]
   -o O        Export Format(s) (comma-separated) [ Default : txt,json,html ]
-  -cd CD      Export directory for this run (requires --export) [ Default : ~/.local/share/nokizaru/dumps/nk_<domain> ]
+  -cd CD      Export directory for this run (requires --export) [ Default : XDG data dir/nokizaru/dumps/nk_<hostname> ]
   -of OF      Export filename base for this run (requires --export) [ Default : YYYY-MM-DD_HH-MM-SS ]
   -k K        Add API key [ Example : shodan@key ]
 ```
@@ -219,6 +222,9 @@ nokizaru --crawl --target https://example.com
 # Directory enumeration
 nokizaru --dir --target https://example.com -e txt,php -w /path/to/wordlist
 
+# Directory enumeration with a curated wordlist size
+nokizaru --dir --target https://example.com -w large
+
 # Port scan a custom port set
 nokizaru --ps --target https://example.com -p 80,443,8000-8010
 
@@ -233,29 +239,23 @@ nokizaru --crawl --dir --target https://example.com \
 
 Custom headers are applied only to in-scope target requests. Nokizaru does not echo supplied header values back in module banners.
 
+Directory enumeration ships curated `small` (2K), `medium` (5K), and `large` (10K) wordlists. `medium` is the default; `-w` also accepts any custom wordlist path.
+
 ---
 
 ## Output / Exports
 
-Nokizaru is **ephemeral by default** (stdout). If you specify `--export`, it will write **TXT**, **JSON**, and **HTML** reports (unless you narrow formats with `-o`).
+Scan results are not persisted by default, although Nokizaru maintains its configuration, key store, and runtime log. If you specify `--export`, it writes **TXT**, **JSON**, and **HTML** reports unless you narrow formats with `-o`.
+
+JSON reports contain the top-level keys `meta`, `modules`, `artifacts`, and `findings`. In v2.4.11, directory result field `raw_found` was removed in favor of `found`, and `actionable_found` was renamed to `prioritized_found`.
 
 By default, exports are written to:
 
 ```bash
-~/.local/share/nokizaru/dumps/nk_<domain>/
+${XDG_DATA_HOME:-$HOME/.local/share}/nokizaru/dumps/nk_<hostname>/
 ├── YYYY-MM-DD_HH-MM-SS.txt
 ├── YYYY-MM-DD_HH-MM-SS.json
 └── YYYY-MM-DD_HH-MM-SS.html
 ```
 
 Each target gets its own directory, and each run is timestamped for easy organization and sorting. You can override the directory with `-cd` or the basename with `-of`.
-
----
-
-## Workspaces / Caching / Diffing
-
-If you specify `--project <name>`, Nokizaru can create a persistent workspace for a target using the Ronin Framework:
-
-- stores run metadata and results internally (so you can build a target profile over time) 
-- enables caching (speeding up repeated runs)
-- enables diffing between runs: `--diff last` (or `--diff <Run ID>`)

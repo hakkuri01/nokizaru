@@ -5,7 +5,6 @@ require 'timeout'
 module Nokizaru
   class CLI
     class Runner
-      # Main scan execution flow and module dispatch
       module Workflow
         def run
           initialize_runtime!
@@ -25,16 +24,11 @@ module Nokizaru
         def setup_run_context
           @target = validated_target!
           @info = parse_target(@target)
-          @workspace = build_workspace(@info)
-          @cache = build_cache(@workspace)
           @start_time = Time.now
           @run = initial_run_payload(@target, @info, @start_time)
-          @run_id = initialize_workspace_run(@workspace, @run)
           @ctx = Nokizaru::Context.new(
             run: @run,
-            options: context_options(@opts, @info),
-            workspace: @workspace,
-            cache: @cache
+            options: context_options(@opts, @info)
           )
           @enabled = resolve_enabled_modules
           @progress_rail = Nokizaru::ProgressRail.new(enabled_modules: enabled_module_keys(@enabled))
@@ -48,11 +42,8 @@ module Nokizaru
         def finalize_run!
           elapsed = finalize_run_timing(@run, @start_time)
           compute_findings!(@run)
-          enrich_workspace_db!(@workspace, @run)
-          handle_diff!(@workspace, @run_id, @run)
-          @workspace.save_run(@run_id, @run) if @workspace && @run_id
-          export_dir = export_if_enabled(@run, @info, @workspace, @run_id)
-          print_run_completion(elapsed, @workspace, @run_id, export_dir)
+          export_dir = export_if_enabled(@run, @info)
+          print_run_completion(elapsed, export_dir)
           Log.write('-' * 30)
         end
 
@@ -133,7 +124,7 @@ module Nokizaru
           return if info[:private_ip]
 
           safe_run_module(:sub, true, ctx, timeout_s: module_timeout_s(info, :sub)) do
-            Nokizaru::Modules::Subdomains.call(info[:hostname], info[:timeout], ctx, info[:conf_path])
+            Nokizaru::Modules::Subdomains.call(info[:hostname], info[:timeout], ctx)
           end
         end
 
@@ -141,7 +132,7 @@ module Nokizaru
           return unless enabled[:arch]
 
           safe_run_module(:arch, true, ctx, timeout_s: module_timeout_s(info, :arch)) do
-            Nokizaru::Modules::ArchitectureFingerprinting.call(target, info[:timeout], ctx, info[:conf_path])
+            Nokizaru::Modules::ArchitectureFingerprinting.call(target, info[:timeout], ctx)
           end
         end
 
@@ -151,14 +142,14 @@ module Nokizaru
           safe_run_module(:dir, true, ctx) do
             Nokizaru::Modules::DirectoryEnum.call(
               target,
-              info[:dir_threads],
-              info[:timeout],
-              info[:wordlist],
-              info[:allow_redirects],
-              info[:verify_ssl],
-              info[:extensions],
-              ctx,
-              info[:request_headers]
+              threads: info[:dir_threads],
+              timeout_s: info[:timeout],
+              wordlist: info[:wordlist],
+              allow_redirects: info[:allow_redirects],
+              verify_ssl: info[:verify_ssl],
+              extensions: info[:extensions],
+              ctx: ctx,
+              request_headers: info[:request_headers]
             )
           end
         end
@@ -192,10 +183,10 @@ module Nokizaru
           end
           ctx.progress&.module_finished(key)
         rescue Timeout::Error => e
-          ctx.progress&.module_failed(key, error: e)
+          ctx.progress&.module_failed(key)
           handle_module_failure(key, ctx, e, timeout_s: timeout)
         rescue StandardError => e
-          ctx.progress&.module_failed(key, error: e)
+          ctx.progress&.module_failed(key)
           handle_module_failure(key, ctx, e)
         end
 

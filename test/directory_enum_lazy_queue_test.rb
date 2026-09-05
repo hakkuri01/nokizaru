@@ -7,8 +7,8 @@ class DirectoryEnumLazyQueueTest < Minitest::Test
 
   def test_lazy_queue_resumes_extension_phase_after_signal_enabled_without_rebuild
     scan = lazy_scan(words: %w[admin login], filext: 'php')
-    runtime = extension_runtime(found: [])
-    queue = DirectoryEnum.build_work_queue(scan, runtime)
+    runtime = { extension_state: { enabled: false } }
+    queue = DirectoryEnum.__send__(:build_work_queue, scan, runtime)
 
     assert_equal 'https://example.com/robots.txt', queue.pop(true)
     assert_equal 'https://example.com/admin', queue.pop(true)
@@ -23,9 +23,8 @@ class DirectoryEnumLazyQueueTest < Minitest::Test
 
   def test_lazy_queue_deduplicates_seed_base_and_extension_candidates
     scan = lazy_scan(words: %w[admin admin robots.txt], filext: 'php')
-    runtime = extension_runtime(found: ['https://example.com/admin'])
-    runtime[:extension_state][:enabled] = true
-    queue = DirectoryEnum.build_work_queue(scan, runtime)
+    runtime = { extension_state: { enabled: true } }
+    queue = DirectoryEnum.__send__(:build_work_queue, scan, runtime)
     urls = drain_queue(queue)
 
     assert_equal [
@@ -38,23 +37,13 @@ class DirectoryEnumLazyQueueTest < Minitest::Test
   private
 
   def lazy_scan(words:, filext: '')
-    plan = DirectoryEnum.build_scan_plan(target: 'https://example.com', words: words, filext: filext, ctx: nil)
-    plan[:seed_urls] = ['https://example.com/robots.txt']
     {
       normalized_target: 'https://example.com',
-      url_plan: plan
-    }
-  end
-
-  def extension_runtime(found:)
-    {
-      count: 120,
-      found: found,
-      all_found: [],
-      low_confidence_found: [],
-      extension_state: { enabled: false, reason: nil, checked_at: 0 },
-      target_shape: {},
-      confidence_context: { snapshot: {} }
+      url_plan: {
+        seed_urls: ['https://example.com/robots.txt'],
+        words: words,
+        extensions: DirectoryEnum.__send__(:file_extensions, filext)
+      }
     }
   end
 

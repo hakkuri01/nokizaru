@@ -2,7 +2,6 @@
 
 module Nokizaru
   module TargetIntel
-    # URL and scope helper methods used by target profiling
     module URLHelpers
       module_function
 
@@ -18,6 +17,7 @@ module Nokizaru
         left = left_host.to_s.downcase
         right = right_host.to_s.downcase
         return true if left == right
+        return false if ip_address?(left) || ip_address?(right)
 
         left_reg = registrable_domain(left)
         right_reg = registrable_domain(right)
@@ -45,6 +45,13 @@ module Nokizaru
         PublicSuffix.domain(host)
       rescue StandardError
         host.to_s
+      end
+
+      def ip_address?(host)
+        IPAddr.new(host)
+        true
+      rescue IPAddr::InvalidAddressError
+        false
       end
 
       def decision_payload(reanchor, effective_target, reason_code, reason)

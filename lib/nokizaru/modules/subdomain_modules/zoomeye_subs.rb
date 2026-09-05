@@ -6,13 +6,11 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Nokizaru::Modules::SubdomainModules::ZoomEye implementation
       module ZoomEye
         module_function
 
-        # Run this module and store normalized results in the run context
-        def call(hostname, conf_path, http, found)
-          key = Base.ensure_key('zoomeye', conf_path, 'NK_ZOOMEYE_KEY')
+        def call(hostname, http, found)
+          key = Base.ensure_key('zoomeye', 'NK_ZOOMEYE_KEY')
           return missing_zoomeye_key unless key
 
           Base.requesting('ZoomEye')

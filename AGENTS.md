@@ -65,15 +65,7 @@ Do not introduce speculative complexity. Prefer simple, proven approaches with m
 
 ### Style Guide
 
-This section defines repository style expectations and can be extended over time.
-
-#### Comments
-
-- Add comments for cohesive logic blocks when intent or tradeoffs are not obvious from code alone
-- Keep comments concise and useful: usually 1 line, up to 2-3 lines for complex sections
-- Start comments with a capital letter
-- Do not end comments with a period
-- Explain what the block does and why that approach is used in this codebase context
+Follow the repository style guide in `CONTRIBUTING.md`.
 
 ---
 
@@ -124,7 +116,7 @@ Ensure strong coverage over:
 - edge cases
 - error handling paths
 - boundary conditions
-- performance-sensitive hot paths, at least via regression tests and/or benchmarks
+- performance-sensitive hot paths, via regression tests
 
 ### QA Double Check Pass
 
@@ -142,14 +134,8 @@ After implementing changes:
 
 Before optimizing, identify bottlenecks with real measurements:
 - Prefer Ruby profiling tools appropriate to the stack, such as a sampling profiler or allocation profiler
-- Benchmark relevant functions end-to-end where feasible
-
-### Benchmarks Live Beside The Code
-
-- Add or update benchmarks when making performance claims
-- Benchmarks should be reproducible
-- Benchmarks should document how to run them
-- Benchmarks should be representative of production-like workloads where possible
+- Measure relevant functions end-to-end where feasible
+- Use representative production-like workloads where possible
 
 ### Avoid Premature Micro-Optimization
 
@@ -163,7 +149,7 @@ Before optimizing, identify bottlenecks with real measurements:
 
 ### Remove Dead Artifacts
 
-After each pass, delete unused tests, obsolete fixtures, scratch scripts, unused benchmark files, and redundant helpers.
+After each pass, delete unused tests, obsolete fixtures, scratch scripts, and redundant helpers.
 
 Confirm removal does not reduce needed coverage or tooling.
 
@@ -175,10 +161,17 @@ Confirm removal does not reduce needed coverage or tooling.
 
 ### Packaging And Release Hygiene
 
-- Source clones and source tarballs may include contributor files such as tests, benchmarks, docs, and repository metadata
+- Source clones and source tarballs may include contributor files such as tests, docs, and repository metadata
 - Runtime packages should stay lean through the gemspec allowlist
 - Do not broaden `spec.files` casually; include only runtime files and user-facing documentation needed by installed packages
-- If Homebrew packaging behavior changes from source-tarball builds to curated release artifacts, verify that the formula and gemspec still agree on the runtime/install boundary
+- The versioned Nix flake is the only maintained package-manager release target; git clones and source tarballs remain supported installation methods
+- Additional package-manager pipelines must be contributor-owned, complete, and accepted through review before becoming supported
+- Keep `Gemfile.nix.lock` on the generic `ruby` platform and version-aligned with `Gemfile.lock`
+- Regenerate `gemset.nix` whenever `Gemfile.nix.lock` changes and review every source hash
+- Run `nix flake check` natively before release and evaluate all declared systems with `nix flake check --all-systems --no-build`
+- Never place credentials, API keys, mutable configuration, or private scan data in a Nix derivation or flake input
+- Never add GitHub Actions or other files under `.github/workflows/`
+- Submit nixpkgs packaging only after the corresponding immutable release tag exists
 
 ### Bundler Cooldown Hygiene
 
@@ -207,7 +200,7 @@ Follow this cycle for each task.
 Write a short, concrete plan in task notes or output that includes:
 - files to touch
 - tests to add or update
-- how success will be measured, including tests and benchmark/profiling if performance work
+- how success will be measured, including tests and profiling data if performance work
 - any security considerations with justification
 
 ### Execute
@@ -220,13 +213,13 @@ Write a short, concrete plan in task notes or output that includes:
 Run, at minimum:
 - full test suite
 - linting/formatting if present
-- benchmarks if performance-related
+- performance measurements if performance-related
 
 ### Post-Flight Cleanup
 
 - Remove unused artifacts introduced during exploration
 - Ensure there are no temporary files, debug prints, or disabled tests
-- Update docs/bench notes if behavior or performance claims changed
+- Update docs if behavior or performance claims changed
 
 ---
 
@@ -235,7 +228,6 @@ Run, at minimum:
 If the repository does not already define these, prefer:
 - stdlib hand-written tests tailored to the situation, or RSpec at most if a dedicated test dependency is needed
 - RuboCop for linting/formatting
-- a documented `bench/` directory for benchmark scripts
 
 ### RuboCop Governance Baseline
 
@@ -255,16 +247,6 @@ Do not add new tooling unless it is justified, lightweight, and consistent with 
 When delivering changes, include:
 - summary of what changed and why
 - tests added or updated, and what they cover
-- benchmark/profiling results if performance-related, before/after on the same machine/settings
+- profiling or performance results if relevant, before/after on the same machine/settings
 - any security-relevant changes with justification
 - any cleanup performed, such as deleted files or removed dead code
-
----
-
-## Final Note
-
-This codebase is already functional. The goal is to continue making it:
-- more robust, with edge cases and tests
-- more maintainable, with clean and idiomatic Ruby
-- faster, with measured improvements
-- realistically secure, with OWASP-aligned and justified mitigations

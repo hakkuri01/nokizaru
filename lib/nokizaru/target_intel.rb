@@ -2,13 +2,13 @@
 
 require 'uri'
 require 'public_suffix'
+require 'ipaddr'
 require_relative 'http_client'
 require_relative 'target_intel/url_helpers'
 require_relative 'target_intel/http_helpers'
 require_relative 'target_intel/profile_helpers'
 
 module Nokizaru
-  # Nokizaru::TargetIntel implementation
   module TargetIntel
     module_function
 
@@ -68,16 +68,34 @@ module Nokizaru
       [resolved_location, URI.parse(resolved_location)]
     end
 
-    # Decide whether modules should re-anchor to a canonical URL
     def reanchor_decision(target, profile)
       profile = {} unless profile.is_a?(Hash)
       effective = profile['effective_url'].to_s
       mode = profile['mode'].to_s
       confidence = profile['confidence'].to_s
       reason_code = reason_code_for(profile)
-      reanchor = mode == 'http_to_https' && confidence == 'high' && !effective.empty?
+      reanchor = (mode == 'http_to_https' && confidence == 'high' && !effective.empty?) ||
+                 canonical_same_scope_reanchor?(target, effective, mode, confidence)
       effective_target = reanchor ? effective : target
       decision_payload(reanchor, effective_target, reason_code, profile['reason'])
+    end
+
+    def canonical_same_scope_reanchor?(target, effective, mode, confidence)
+      return false unless mode == 'same_scope_redirect' && confidence == 'medium'
+
+      source = URI.parse(target)
+      destination = URI.parse(effective)
+      source.scheme == destination.scheme &&
+        canonical_redirect_path?(source, destination) &&
+        !source.host.to_s.casecmp?(destination.host.to_s) &&
+        same_scope_host?(source.host, destination.host)
+    rescue StandardError
+      false
+    end
+
+    def canonical_redirect_path?(source, destination)
+      destination_path = normalize_path(destination.path)
+      destination_path == '/' || destination_path == normalize_path(source.path)
     end
 
     def reason_code_for(profile)
@@ -92,27 +110,11 @@ module Nokizaru
       'no-redirect'
     end
 
-    # Detect HTTP->HTTPS upgrade redirects that preserve host/scope
     def http_to_https_upgrade?(source_uri, target_uri)
       return false unless source_uri.scheme == 'http'
       return false unless target_uri.scheme == 'https'
 
       same_scope_host?(source_uri.host, target_uri.host)
-    end
-
-    # Match path-preserving HTTP->HTTPS redirects used by canonical upgrade rules
-    def path_preserving_https_redirect?(request_url, location_header, profile)
-      return false unless profile.is_a?(Hash)
-      return false unless profile['mode'].to_s == 'http_to_https'
-
-      request_uri = URI.parse(request_url)
-      location_uri = URI.parse(resolve_location(request_url, location_header))
-      return false unless location_uri.scheme == 'https'
-      return false unless same_scope_host?(request_uri.host, location_uri.host)
-
-      normalize_path(request_uri.path) == normalize_path(location_uri.path)
-    rescue StandardError
-      false
     end
   end
 end

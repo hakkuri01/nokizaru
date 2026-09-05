@@ -3,31 +3,23 @@
 module Nokizaru
   module Modules
     module SSLInfo
-      # Rendering helpers for SSL certificate output
       module Presenter
         module_function
 
-        def process_cert(info, result)
+        def process_cert(info)
           scalar_pairs = info.filter_map { |key, value| [key, value] unless tree_value?(value) }
           scalar_width = scalar_pairs.map { |(key, _)| key.to_s.length }.max.to_i
 
           info.each do |key, value|
-            render_cert_field(key, value, result, scalar_width)
+            render_cert_field(key, value, scalar_width)
           end
         end
 
-        def render_cert_field(key, value, result, scalar_width)
-          return render_scalar_field(key, value, result, scalar_width) unless tree_value?(value)
+        def render_cert_field(key, value, scalar_width)
+          return UI.row(:info, key, value, label_width: scalar_width) unless tree_value?(value)
 
-          entries = tree_entries(value)
           UI.tree_header(key)
-          UI.tree_rows(entries)
-          entries.each { |sub_key, sub_val| result["#{key}-#{sub_key}"] = sub_val }
-        end
-
-        def render_scalar_field(key, value, result, scalar_width)
-          UI.row(:info, key, value, label_width: scalar_width)
-          result[key] = value
+          UI.tree_rows(tree_entries(value))
         end
 
         def tree_value?(value)

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module Nokizaru
-  # Nokizaru::UI implementation
   module UI
     module_function
 
@@ -235,11 +234,11 @@ module Nokizaru
       @active_progress_rail
     end
 
-    def with_terminal_output(io = $stdout, &block)
+    def with_terminal_output(io = $stdout, &)
       rail = active_progress_rail
-      return block.call unless rail&.active? && io.equal?($stdout)
+      return yield unless rail&.active? && io.equal?($stdout)
 
-      rail.with_output(&block)
+      rail.with_output(&)
     end
 
     def prefix(type)

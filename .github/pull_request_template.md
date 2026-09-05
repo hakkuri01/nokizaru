@@ -8,6 +8,8 @@
   - 
 - Key outputs (redacted):
   - 
+- [ ] I ran `nix flake check --all-systems --no-build` if packaging or release files changed.
+- [ ] I included reproducible aggregate results without private artifacts if this PR makes performance claims.
 
 ## Docs and UX
 
@@ -23,7 +25,3 @@
 
 - [ ] This PR is focused on one logical change.
 - [ ] I removed temporary test/dev scaffolding from the final branch, keeping `main` clean.
-
-## Maintainer Merge Policy
-
-This project uses **squash merges only** into `main` for a clean linear history.

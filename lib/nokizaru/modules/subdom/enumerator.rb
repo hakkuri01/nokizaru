@@ -2,7 +2,6 @@
 
 module Nokizaru
   module Modules
-    # Concurrency helpers for passive subdomain enumeration
     module Subdomains
       module_function
 
@@ -52,13 +51,13 @@ module Nokizaru
         'Chaos' => 8.0
       }.freeze
 
-      def enumerate(hostname, timeout, conf_path, progress: nil)
+      def enumerate(hostname, timeout, progress: nil)
         found = ResultSet.new(hostname, VALID)
         overall_budget = timeout.to_f.clamp(5.0, 30.0)
         vendor_default = [overall_budget, 12.0].min
         vendor_timeouts = build_vendor_timeouts(vendor_default)
         base_http = build_subdomain_http(vendor_default)
-        jobs = subdomain_jobs(hostname, conf_path, found)
+        jobs = subdomain_jobs(hostname, found)
         run_subdomain_jobs(jobs, base_http, vendor_timeouts, overall_budget, progress: progress, found: found)
         finalize_subdomains(found, hostname)
       end

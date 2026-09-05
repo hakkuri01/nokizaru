@@ -3,7 +3,6 @@
 module Nokizaru
   class CLI
     class Runner
-      # Auxiliary parsing helpers
       module ParsingSupport
         private
 

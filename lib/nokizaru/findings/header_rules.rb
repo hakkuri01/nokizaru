@@ -2,7 +2,6 @@
 
 module Nokizaru
   module Findings
-    # Header-focused findings rules
     module HeaderRules
       module_function
 
@@ -28,7 +27,7 @@ module Nokizaru
       end
 
       def normalized_headers(headers_result)
-        source = headers_result['headers'] || headers_result
+        source = headers_result.fetch('headers', {})
         source.transform_keys { |key| key.to_s.downcase }
       end
 
@@ -59,7 +58,7 @@ module Nokizaru
         return [] if set_cookie.nil?
 
         raw = set_cookie.is_a?(Array) ? set_cookie : set_cookie.to_s.split(/\n|,(?=\s*\w+=)/)
-        raw.map(&:to_s).map(&:strip).reject(&:empty?)
+        raw.map { |value| value.to_s.strip }.reject(&:empty?)
       end
 
       def cookie_flag_finding(cookie)

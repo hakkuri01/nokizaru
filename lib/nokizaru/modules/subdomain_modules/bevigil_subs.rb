@@ -6,13 +6,11 @@ require_relative 'base'
 module Nokizaru
   module Modules
     module SubdomainModules
-      # Nokizaru::Modules::SubdomainModules::BeVigil implementation
       module BeVigil
         module_function
 
-        # Run this module and store normalized results in the run context
-        def call(hostname, conf_path, http, found)
-          key = Base.ensure_key('bevigil', conf_path, 'NK_BEVIGIL_KEY')
+        def call(hostname, http, found)
+          key = Base.ensure_key('bevigil', 'NK_BEVIGIL_KEY')
           return missing_bevigil_key unless key
 
           Base.requesting('BeVigil')

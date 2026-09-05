@@ -5,11 +5,10 @@ require 'digest'
 require 'monitor'
 require_relative 'version'
 
-# Load HTTPX plugins
 %w[follow_redirects persistent retries].each do |plugin|
   require "httpx/plugins/#{plugin}"
 rescue LoadError
-  # Optional plugin
+  # HTTPX plugins are optional across supported installations
 end
 
 begin
@@ -19,7 +18,6 @@ rescue StandardError
 end
 
 module Nokizaru
-  # Helper methods for building HTTPX clients in ConnectionPool
   module ConnectionPoolBuilder
     private
 
@@ -64,7 +62,6 @@ module Nokizaru
     end
   end
 
-  # Nokizaru::ConnectionPool implementation
   class ConnectionPool
     include MonitorMixin
     include ConnectionPoolBuilder
@@ -81,8 +78,7 @@ module Nokizaru
     DEFAULT_HEADERS = {
       'User-Agent' => "Nokizaru/#{Nokizaru::VERSION} (+https://github.com/hakkuri01)",
       'Accept-Encoding' => 'gzip, deflate',
-      'Accept' => '*/*',
-      'Connection' => 'keep-alive'
+      'Accept' => '*/*'
     }.freeze
 
     class << self
@@ -90,30 +86,14 @@ module Nokizaru
       def instance
         @instance ||= new
       end
-
-      # Reset the shared pool instance for tests and controlled reinitialization
-      def reset!
-        @instance&.shutdown
-        @instance = nil
-      end
     end
 
-    # Capture constructor arguments and initialize internal state
     def initialize
       super
       @pools = {}
       @config = DEFAULT_CONFIG.dup
     end
 
-    # Build pool settings with safe defaults for scanner workloads
-    def configure(**options)
-      synchronize do
-        @config.merge!(options)
-        @pools.clear
-      end
-    end
-
-    # Get a persistent client for the given origin
     def for_host(origin, headers: {}, verify_ssl: true, follow_redirects: true)
       uri = URI.parse(origin)
       port = uri.port || (uri.scheme == 'https' ? 443 : 80)
@@ -133,7 +113,6 @@ module Nokizaru
       end
     end
 
-    # Get a fresh client (not cached)
     def client(headers: {}, verify_ssl: true, follow_redirects: true, persistent: true, timeout_s: nil)
       build_client(
         headers: headers,
@@ -144,7 +123,6 @@ module Nokizaru
       )
     end
 
-    # Close pooled clients cleanly so scans exit without leaked resources
     def shutdown
       synchronize do
         @pools.each_value do |c|
@@ -156,14 +134,8 @@ module Nokizaru
       end
     end
 
-    # Return lightweight pool metrics for diagnostics and troubleshooting
-    def stats
-      synchronize { { pool_count: @pools.size, pools: @pools.keys } }
-    end
-
     private
 
-    # Build an HTTP client with pooling and safe defaults for scanner modules
     def build_client(headers: {}, verify_ssl: true, follow_redirects: true, persistent: true, timeout_s: nil)
       http = apply_plugins(HTTPX, persistent: persistent, follow_redirects: follow_redirects)
       op_timeout = timeout_s || @config[:operation_timeout]

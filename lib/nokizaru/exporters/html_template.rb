@@ -2,9 +2,8 @@
 
 module Nokizaru
   module Exporters
-    # HTML template payload used by Html exporter
     module HtmlTemplate
-      TEMPLATE = <<~'HTML'
+      TEMPLATE = <<~HTML
         <!doctype html>
         <html lang="en">
         <head>
@@ -55,22 +54,6 @@ module Nokizaru
                   <% end %>
                 </tbody>
               </table>
-            </div>
-          <% end %>
-
-          <% if diff && diff.any? %>
-            <div class="card">
-              <h2 style="margin-top:0">Diff</h2>
-              <% diff.each do |k, v| %>
-                <details>
-                  <summary><%= h(k) %> (+<%= (v['added']||[]).length %> / -<%= (v['removed']||[]).length %>)</summary>
-                  <pre>ADDED
-        <%= h(Array(v['added']).join("\n")) %>
-
-        REMOVED
-        <%= h(Array(v['removed']).join("\n")) %></pre>
-                </details>
-              <% end %>
             </div>
           <% end %>
 

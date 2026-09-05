@@ -1,12 +1,10 @@
 # frozen_string_literal: true
 
 require 'uri'
-require 'public_suffix'
 
 module Nokizaru
   module Modules
     module Crawler
-      # JavaScript source crawling and URL extraction helpers
       module JavaScript
         private
 
@@ -19,7 +17,7 @@ module Nokizaru
 
           urls = []
           mutex = Mutex.new
-          each_in_threads(targets) do |js|
+          each_concurrently(targets) do |js|
             next if crawl_budget_exhausted?(result)
 
             extracted = extract_urls_from_javascript(js, page_url, request_headers)
@@ -72,42 +70,16 @@ module Nokizaru
 
         def same_scope_url?(url, target_host)
           uri = URI.parse(url)
-          return false unless uri.host
+          return false unless uri.is_a?(URI::HTTP) && uri.host
 
-          registrable_domain(uri.host) == registrable_domain(target_host)
+          Nokizaru::TargetIntel.same_scope_host?(uri.host, target_host)
         rescue StandardError
           false
         end
 
-        def registrable_domain(host)
-          normalized_host = host.to_s.downcase
-          value = PublicSuffix.domain(normalized_host)
-          labels = normalized_host.split('.').reject(&:empty?)
-          unless value.to_s.strip.empty?
-            normalized = value.to_s.downcase
-            return labels.last(2).join('.') if normalized == normalized_host && labels.length > 2
-
-            return normalized
-          end
-
-          return host.to_s.downcase if labels.length < 2
-
-          labels.last(2).join('.')
-        rescue StandardError
-          labels = host.to_s.downcase.split('.').reject(&:empty?)
-          return host.to_s.downcase if labels.length < 2
-
-          labels.last(2).join('.')
-        end
-
         def scoped_js_targets(result, js_links, page_url)
           base = URI.parse(page_url)
-          links = Array(js_links).compact.uniq.select do |url|
-            js_uri = URI.parse(url)
-            registrable_domain(js_uri.host) == registrable_domain(base.host)
-          rescue StandardError
-            false
-          end
+          links = Array(js_links).compact.uniq.select { |url| same_scope_url?(url, base.host) }
           links.first(adaptive_limit(result, :max_js_targets))
         end
       end

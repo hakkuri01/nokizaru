@@ -6,7 +6,6 @@ require 'public_suffix'
 module Nokizaru
   module Modules
     module Wayback
-      # URL normalization and filtering helpers
       module Normalize
         module_function
 
@@ -90,21 +89,6 @@ module Nokizaru
           scored.sort_by { |(url, score)| [-score, url.length] }.first(limit.to_i).map(&:first)
         end
 
-        def sanitize_url(url)
-          cleaned = url.to_s.strip.sub(/["'`,;\])]+\z/, '')
-          return '' if cleaned.empty?
-          return '' if cleaned.include?(' ')
-          return '' if cleaned.match?(/%[0-9A-Fa-f]?\z/)
-
-          uri = URI.parse(cleaned)
-          return '' unless uri.is_a?(URI::HTTP) && uri.host
-          return '' if noisy_encoded_path?(uri.path)
-
-          cleaned
-        rescue StandardError
-          ''
-        end
-
         def sanitized_url_record(url)
           cleaned = url.to_s.strip.sub(/["'`,;\])]+\z/, '')
           return nil if cleaned.empty?
@@ -141,17 +125,6 @@ module Nokizaru
           nil
         end
 
-        def in_scope?(url, scope)
-          return true if scope.nil?
-
-          host = URI.parse(url).host.to_s.downcase
-          return false if host.empty?
-
-          registrable_domain(host) == scope
-        rescue StandardError
-          false
-        end
-
         def in_scope_record?(record, scope, domain_cache)
           return true if scope.nil?
 
@@ -184,25 +157,11 @@ module Nokizaru
           labels.last(2).join('.')
         end
 
-        def low_signal_asset?(url)
-          path = URI.parse(url).path.to_s.downcase
-          low_signal_path?(path)
-        rescue StandardError
-          false
-        end
-
         def low_signal_path?(path)
           value = path.to_s.downcase
           return false if value.empty?
 
           LOW_SIGNAL_EXTENSIONS.any? { |ext| value.end_with?(ext) }
-        end
-
-        def score_url(url)
-          uri = URI.parse(url)
-          score_uri(uri)
-        rescue StandardError
-          0
         end
 
         def score_uri(uri)

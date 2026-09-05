@@ -3,7 +3,6 @@
 module Nokizaru
   class CLI
     class Runner
-      # Findings and terminal reporting helpers
       module Findings
         private
 
@@ -36,18 +35,6 @@ module Nokizaru
                   else UI::G
                   end
           "#{UI::W}⟦ #{color}#{severity.to_s.upcase}#{UI::W} ⟧"
-        end
-
-        def print_db_diff(diff_db, label:)
-          diff_db = {} unless diff_db.is_a?(Hash)
-          return if diff_db.empty?
-
-          UI.line(:info, "#{label}:")
-          diff_db.each do |kind, change|
-            added = Array(change['added']).length
-            removed = Array(change['removed']).length
-            UI.row(:info, kind.to_s, "+#{added} / -#{removed}")
-          end
         end
       end
     end

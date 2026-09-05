@@ -9,13 +9,13 @@ class DirectoryEnumStatusCodeShapeTest < Minitest::Test
     responses = Array.new(318) { |idx| ["https://example.com/redirect#{idx}", 302] } +
                 Array.new(2) { |idx| ["https://example.com/root#{idx}", 301] }
 
-    shape = DirectoryEnum.status_code_shape_summary(responses)
+    shape = DirectoryEnum.__send__(:status_code_shape_summary, responses)
 
     assert_equal '302=318/320 (99.4%), 301=2/320 (0.6%)', shape
   end
 
   def test_status_code_shape_summary_returns_empty_without_statuses
-    assert_equal '', DirectoryEnum.status_code_shape_summary([])
+    assert_equal '', DirectoryEnum.__send__(:status_code_shape_summary, [])
   end
 
   def test_status_code_shape_summary_ignores_invalid_statuses_and_sorts_ties
@@ -29,7 +29,7 @@ class DirectoryEnumStatusCodeShapeTest < Minitest::Test
       ['https://example.com/g', 0]
     ]
 
-    shape = DirectoryEnum.status_code_shape_summary(responses)
+    shape = DirectoryEnum.__send__(:status_code_shape_summary, responses)
 
     assert_equal '404=2/4 (50.0%), 500=2/4 (50.0%)', shape
   end
@@ -44,12 +44,12 @@ class DirectoryEnumStatusCodeShapeTest < Minitest::Test
       stop_status_code_shape: nil
     }
 
-    DirectoryEnum.capture_stop_status_code_shape!(runtime)
+    DirectoryEnum.__send__(:capture_stop_status_code_shape!, runtime)
 
     assert_equal '404=2/3 (66.7%), 403=1/3 (33.3%)', runtime[:stop_status_code_shape]
 
     runtime[:responses] << ['https://example.com/d', 500]
-    DirectoryEnum.capture_stop_status_code_shape!(runtime)
+    DirectoryEnum.__send__(:capture_stop_status_code_shape!, runtime)
 
     assert_equal '404=2/3 (66.7%), 403=1/3 (33.3%)', runtime[:stop_status_code_shape]
   end
@@ -66,9 +66,10 @@ class DirectoryEnumStatusCodeShapeTest < Minitest::Test
       stop_status_code_shape: nil
     }
 
-    DirectoryEnum.apply_marginal_value_stop!(runtime)
+    DirectoryEnum.__send__(:apply_marginal_value_stop!, runtime)
 
     assert runtime[:stop_state][:stop]
+    assert_match(/marginal directory value collapsed/, runtime[:stop_state][:reason])
     assert_equal '404=20/20 (100.0%)', runtime[:stop_status_code_shape]
   end
 
@@ -83,7 +84,7 @@ class DirectoryEnumStatusCodeShapeTest < Minitest::Test
     }
     stop_state = { stop: false, reason: nil, budgets: { max_requests: 3 } }
 
-    DirectoryEnum.stop!(stop_state, 3, Time.now, nil, runtime: runtime)
+    DirectoryEnum.__send__(:stop!, stop_state, 3, Time.now, nil, runtime: runtime)
 
     assert stop_state[:stop]
     assert_equal '302=2/3 (66.7%), 301=1/3 (33.3%)', runtime[:stop_status_code_shape]

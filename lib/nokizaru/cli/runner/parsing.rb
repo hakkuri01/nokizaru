@@ -3,7 +3,6 @@
 module Nokizaru
   class CLI
     class Runner
-      # Target and option parsing helpers for runner lifecycle
       module Parsing
         private
 
@@ -67,8 +66,7 @@ module Nokizaru
           {
             protocol: protocol,
             hostname: hostname,
-            netloc: resolve_netloc(uri, protocol, hostname),
-            conf_path: "#{Paths.config_dir}/"
+            netloc: resolve_netloc(uri, protocol, hostname)
           }
         end
 
@@ -115,7 +113,7 @@ module Nokizaru
         end
 
         def wordlist_option
-          { wordlist: (@opts[:w] || Settings.dir_enum_wordlist).to_s }
+          { wordlist: @opts[:w] ? Settings.wordlist(@opts[:w]) : Settings.dir_enum_wordlist }
         end
 
         def request_header_option

@@ -3,10 +3,6 @@ description: Request a new provider integration or changes to an existing provid
 title: "[Provider]: "
 labels: [enhancement, provider]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Maintainer policy note: accepted changes are merged into `main` using squash merges only.
   - type: input
     id: provider
     attributes:
@@ -21,6 +17,7 @@ body:
       options:
         - Subdomain Enumeration
         - Architecture Fingerprinting
+        - Archive URL Enumeration
         - Other
     validations:
       required: true

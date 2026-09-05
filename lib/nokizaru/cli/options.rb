@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module Nokizaru
-  # Thor option definitions for scan command
   module CLIOptions
     OPTION_DEFS = {
       target: { type: :string, desc: 'Target (http[s]://host[:port])' },
@@ -17,17 +16,13 @@ module Nokizaru
       ps: { type: :boolean, default: false, desc: 'Fast Port Scan' },
       full: { type: :boolean, default: false, desc: 'Full Recon' },
       export: { type: :boolean, default: false, desc: 'Export results to files (txt,json,html)' },
-      project: { type: :string, default: nil, desc: 'Enable a persistent workspace (profiles, caching, diffing)' },
-      cache: { type: :boolean, default: nil, desc: 'Enable caching even without a project' },
-      no_cache: { type: :boolean, default: false, desc: 'Disable caching (even in a project)' },
-      diff: { type: :string, default: nil, desc: 'Diff this run against another run id in the workspace (or "last")' },
       nb: { type: :boolean, default: false, desc: 'Hide Banner' },
-      dt: { type: :numeric, default: nil, desc: 'Number of threads for directory enum [ Default : 30 ]' },
+      dt: { type: :numeric, default: nil, desc: 'Number of threads for directory enum [ Default : 50 ]' },
       pt: { type: :numeric, default: nil, desc: 'Port scan concurrency [ Default : 50 ]' },
       p: { type: :string, default: nil, aliases: '-p', desc: 'Port scan ports [ Example : 80,443,1000-65535 ]' },
-      T: { type: :numeric, default: nil, aliases: '-T', desc: 'Request Timeout [ Default : 30.0 ]' },
+      T: { type: :numeric, default: nil, aliases: '-T', desc: 'Base timeout / module budget [ Default : 30.0 ]' },
       w: { type: :string, default: nil, aliases: '-w',
-           desc: 'Path to Wordlist [ Default : wordlists/raft_med-dir_5k.txt ]' },
+           desc: 'Wordlist size (small, medium, large) or custom path [ Default : medium ]' },
       header: { type: :string, default: nil, aliases: '-H',
                 desc: 'Add custom request header (repeatable) [ Example : Cookie: PHPSESSID=abc ]' },
       r: { type: :boolean, default: nil, aliases: '-r',
@@ -35,12 +30,13 @@ module Nokizaru
       s: { type: :boolean, default: nil, aliases: '-s',
            desc: 'Enable SSL verification for directory enum [ Default : False ]' },
       sp: { type: :numeric, default: nil, desc: 'Specify SSL Port [ Default : 443 ]' },
-      d: { type: :string, default: nil, aliases: '-d', desc: 'Custom DNS Servers [ Default : 1.1.1.1 ]' },
+      d: { type: :string, default: nil, aliases: '-d',
+           desc: 'Custom DNS Servers [ Default : 8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1 ]' },
       e: { type: :string, default: nil, aliases: '-e', desc: 'File Extensions [ Example : txt, xml, php ]' },
       o: { type: :string, default: nil, aliases: '-o',
            desc: 'Export Formats (comma-separated) [ Default : txt,json,html ]' },
       cd: { type: :string, default: nil,
-            desc: 'Export directory for this run [ Default : ~/.local/share/nokizaru/dumps/nk_<domain> ]' },
+            desc: 'Export directory for this run [ Default : XDG data dir/nokizaru/dumps/nk_<hostname> ]' },
       of: { type: :string, default: nil, desc: 'Export filename base for this run [ Default : YYYY-MM-DD_HH-MM-SS ]' },
       k: { type: :string, default: nil, aliases: '-k', desc: 'Add API key [ Example : shodan@key ]' }
     }.freeze

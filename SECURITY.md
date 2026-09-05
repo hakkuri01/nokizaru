@@ -1,5 +1,9 @@
 # Security Policy
 
+## Supported Versions
+
+The latest tagged release and current `main` branch receive security fixes. Versioned Nix flake tags are the official packaged artifacts; git clones and source tarballs remain supported installation methods.
+
 ## Reporting a Vulnerability
 
 Please report suspected vulnerabilities through GitHub's private advisory workflow:

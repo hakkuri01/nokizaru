@@ -47,4 +47,20 @@ class HTTPClientHelpersTest < Minitest::Test
     refute Nokizaru::HTTPClient.timeout_override?(nil)
     refute Nokizaru::HTTPClient.timeout_override?(0)
   end
+
+  def test_bulk_requests_do_not_inject_http1_connection_header
+    client = Object.new
+    client.define_singleton_method(:with) { |**| self }
+    observed_headers = nil
+    fetch = lambda do |_target, headers:, **|
+      observed_headers = headers
+      client
+    end
+
+    Nokizaru::HTTPClient.stub(:for_host, fetch) do
+      Nokizaru::HTTPClient.for_bulk_requests('https://example.com')
+    end
+
+    refute_includes observed_headers.keys.map(&:downcase), 'connection'
+  end
 end

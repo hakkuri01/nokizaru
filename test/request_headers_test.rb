@@ -19,9 +19,11 @@ class RequestHeadersTest < Minitest::Test
 
   def test_parse_header_rejects_empty_malformed_or_injection_values
     assert_raises(ArgumentError) { RequestHeaders.parse_header('') }
-    assert_raises(ArgumentError) { RequestHeaders.parse_header('MissingSeparator') }
+    error = assert_raises(ArgumentError) { RequestHeaders.parse_header('Authorization Bearer secret') }
     assert_raises(ArgumentError) { RequestHeaders.parse_header("X-Test: ok\r\nInjected: yes") }
-    assert_raises(ArgumentError) { RequestHeaders.parse_header('Bad Header: value') }
+    name_error = assert_raises(ArgumentError) { RequestHeaders.parse_header('Bad secret Header: value') }
+    refute_includes error.message, 'secret'
+    refute_includes name_error.message, 'secret'
   end
 
   def test_cli_values_rejects_missing_flag_value
@@ -33,14 +35,5 @@ class RequestHeadersTest < Minitest::Test
     assert RequestHeaders.none?(nil)
     assert_equal '1 supplied', RequestHeaders.summary('X-Test' => 'one')
     assert_equal 'none', RequestHeaders.summary([])
-  end
-
-  def test_apply_to_request_assigns_headers_and_returns_request
-    request = {}
-
-    result = RequestHeaders.apply_to_request(request, 'X-Test' => 'one')
-
-    assert_same request, result
-    assert_equal 'one', request['X-Test']
   end
 end

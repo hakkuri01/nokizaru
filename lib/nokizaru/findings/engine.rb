@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
-require_relative 'rules'
+require_relative 'header_rules'
+require_relative 'tls_rules'
+require_relative 'dns_rules'
+require_relative 'port_rules'
+require_relative 'directory_rules'
 
 module Nokizaru
   module Findings
-    # Nokizaru::Findings::Engine implementation
     class Engine
-      # Coordinate the end to end scan workflow from setup to final output
       def run(run)
         modules = run.fetch('modules', {})
         findings = collect_findings(modules)
@@ -17,11 +19,11 @@ module Nokizaru
 
       def collect_findings(modules)
         [
-          Rules.headers_findings(modules['headers']),
-          Rules.tls_findings(modules['sslinfo']),
-          Rules.dns_findings(modules['dns']),
-          Rules.port_findings(modules['portscan']),
-          Rules.dir_findings(modules['directory_enum'])
+          HeaderRules.call(modules['headers']),
+          TLSRules.call(modules['sslinfo']),
+          DNSRules.call(modules['dns']),
+          PortRules.call(modules['portscan']),
+          DirectoryRules.call(modules['directory_enum'])
         ].flatten.compact
       end
 

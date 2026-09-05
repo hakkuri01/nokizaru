@@ -1,11 +1,10 @@
 # frozen_string_literal: true
 
 module Nokizaru
-  # Class-level CLI help and boot behavior
   module CLIClassInterface
     HELP_USAGE = <<~USAGE
       usage: nokizaru [-h] [-v] [--target TARGET] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--ps]
-                      [--full] [--no-MODULE] [--export] [--project NAME] [--cache] [--no-cache] [--diff last or ID] [-nb] [-dt DT] [-pt PT] [-p PORTS] [-T T] [-w W] [-H HEADER] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
+                      [--full] [--no-MODULE] [--export] [-nb] [-dt DT] [-pt PT] [-p PORTS] [-T T] [-w W] [-H HEADER] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
     USAGE
 
     HELP_ARGUMENT_ROWS = [
@@ -16,27 +15,24 @@ module Nokizaru
       ['--dir', 'Directory Search'], ['--wayback', 'Wayback URLs'],
       ['--ps', 'Fast Port Scan'], ['--full', 'Full Recon'],
       ['--no-[MODULE]', 'Skip specified modules above during full scan (eg. --no-dir)'],
-      ['--export', 'Write results to export directory [ Default : False ]'],
-      ['--project [NAME]', 'Enable a persistent workspace (profiles, caching, diffing)'],
-      ['--cache', 'Enable caching even without a project'],
-      ['--no-cache', 'Disable caching (even in a project)'],
-      ['--diff last / [ID]', 'Diff this run against the last (or another run ID in the workspace)']
+      ['--export', 'Write results to export directory [ Default : False ]']
     ].freeze
 
     HELP_EXTRA_ROWS = [
-      ['-nb', 'Hide Banner'], ['-dt DT', 'Number of threads for directory enum [ Default : 30 ]'],
+      ['-nb', 'Hide Banner'], ['-dt DT', 'Number of threads for directory enum [ Default : 50 ]'],
       ['-pt PT', 'Port scan concurrency [ Default : 50 ]'],
       ['-p PORTS', 'Port scan ports [ Example : 80,443,1000-65535 ]'],
-      ['-T T', 'Request Timeout [ Default : 30.0 ]'],
-      ['-w W', 'Path to Wordlist [ Default : wordlists/raft_med-dir_5k.txt ]'],
-      ['-H HEADER', 'Add custom request header (repeatable)'],
+      ['-T T', 'Base timeout / module budget [ Default : 30.0 ]'],
+      ['-w W', 'Wordlist size (small, medium, large) or custom path [ Default : medium ]'],
+      ['-H, --header HEADER', 'Add custom request header (repeatable)'],
       ['-r', 'Follow redirects during directory enum [ Default : False ]'],
       ['-s', 'Enable SSL verification for directory enum [ Default : False ]'],
-      ['-sp SP', 'Specify SSL Port [ Default : 443 ]'], ['-d D', 'Custom DNS Servers [ Default : 1.1.1.1 ]'],
+      ['-sp SP', 'Specify SSL Port [ Default : 443 ]'],
+      ['-d D', 'Custom DNS Servers [ Default : 8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1 ]'],
       ['-e E', 'File Extensions [ Example : txt, xml, php, etc. ]'],
       ['-o O', 'Export Formats (comma-separated) [ Default : txt,json,html ]'],
       ['-cd CD', 'Export directory for this run (requires --export) ' \
-                 '[ Default : ~/.local/share/nokizaru/dumps/nk_<domain> ]'],
+                 '[ Default : XDG data dir/nokizaru/dumps/nk_<hostname> ]'],
       ['-of OF', 'Export filename base for this run (requires --export) [ Default : YYYY-MM-DD_HH-MM-SS ]'],
       ['-k K', 'Add API key [ Example : shodan@key ]']
     ].freeze

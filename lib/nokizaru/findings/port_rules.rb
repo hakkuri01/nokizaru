@@ -2,7 +2,6 @@
 
 module Nokizaru
   module Findings
-    # Port exposure findings rules
     module PortRules
       module_function
 
@@ -17,15 +16,8 @@ module Nokizaru
         [sensitive_ports_finding(risky_ports)]
       end
 
-      def open_ports(portscan_result)
-        Array(portscan_result['open_ports']).map(&:to_s)
-      end
-
       def risky_open_ports(portscan_result)
-        structured = structured_risky_ports(portscan_result)
-        return structured unless structured.empty?
-
-        open_ports(portscan_result).select { |port| risky_port?(port) }
+        structured_risky_ports(portscan_result)
       end
 
       def structured_risky_ports(portscan_result)
@@ -37,7 +29,8 @@ module Nokizaru
       end
 
       def structured_risky_port?(record)
-        record.is_a?(Hash) && (record['exposure'] == 'sensitive' || risky_port?(record['port'].to_s))
+        record.is_a?(Hash) && record['confidence'].to_s != 'low' &&
+          (record['exposure'] == 'sensitive' || risky_port?(record['port'].to_s))
       end
 
       def structured_port_label(record)

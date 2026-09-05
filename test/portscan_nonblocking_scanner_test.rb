@@ -4,14 +4,15 @@ require_relative 'test_helper'
 
 class PortscanNonblockingScannerTest < Minitest::Test
   Scanner = Nokizaru::Modules::PortScan::NonblockingScanner
+  SocketOption = Struct.new(:int)
 
   def test_next_select_timeout_returns_zero_for_empty_or_expired_active_set
-    assert_equal 0.0, Scanner.next_select_timeout({})
+    assert_in_delta(0.0, Scanner.next_select_timeout({}))
 
     socket = FakeSocket.new
     active = { socket => { deadline_at: Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1.0 } }
 
-    assert_equal 0.0, Scanner.next_select_timeout(active)
+    assert_in_delta(0.0, Scanner.next_select_timeout(active))
   end
 
   def test_reap_expired_closes_sockets_and_calls_complete
@@ -22,7 +23,7 @@ class PortscanNonblockingScannerTest < Minitest::Test
     Scanner.reap_expired(active, proc { completed += 1 })
 
     assert_empty active
-    assert socket.closed?
+    assert_predicate socket, :closed?
     assert_equal 1, completed
   end
 
@@ -33,8 +34,8 @@ class PortscanNonblockingScannerTest < Minitest::Test
     Scanner.close_active(open_socket => {}, closed_socket => {})
     Scanner.close_socket(nil)
 
-    assert open_socket.closed?
-    assert closed_socket.closed?
+    assert_predicate open_socket, :closed?
+    assert_predicate closed_socket, :closed?
   end
 
   def test_connect_success_handles_socket_error_values_and_exceptions
@@ -72,16 +73,6 @@ class PortscanNonblockingScannerTest < Minitest::Test
       raise 'getsockopt failed' if @error_code == :raise
 
       SocketOption.new(@error_code)
-    end
-  end
-
-  class SocketOption
-    def initialize(value)
-      @value = value
-    end
-
-    def int
-      @value
     end
   end
 end

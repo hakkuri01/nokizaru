@@ -1,8 +1,10 @@
+plugins:
+  - rubocop-minitest
+  - rubocop-performance
+
 AllCops:
   NewCops: enable
   TargetRubyVersion: 4.0
-  Exclude:
-    - 'Formula/**/*.rb'
 
 Layout/LineLength:
   Max: 120
@@ -11,14 +13,6 @@ Layout/LineLength:
 
 Style/Documentation:
   Enabled: false
-
-Style/StringLiterals:
-  Exclude:
-    - 'Formula/**/*.rb'
-
-Style/StringLiteralsInInterpolation:
-  Exclude:
-    - 'Formula/**/*.rb'
 
 Metrics/MethodLength:
   Max: 20
@@ -53,10 +47,11 @@ Metrics/BlockLength:
     - method_call
 
 Metrics/ClassLength:
-  Max: 220
+  Max: 120
   CountComments: false
   Exclude:
     - 'bench/**/*.rb'
+    - 'test/**/*_test.rb'
 
 Metrics/ModuleLength:
   Max: 320
@@ -74,6 +69,17 @@ Lint/UselessMethodDefinition:
 Security/Eval:
   Enabled: true
 
-Style/OneClassPerFile:
-  Exclude:
-    - 'lib/nokizaru/modules/dirrec.rb'
+# Cohesive scanner scenarios need multiple related assertions
+Minitest/MultipleAssertions:
+  Enabled: false
+
+# Preserve exact true/false checks instead of accepting any truthy/falsy value
+Minitest/AssertTruthy:
+  Enabled: false
+
+Minitest/RefuteFalse:
+  Enabled: false
+
+# filter_map drops false values while map.compact preserves them
+Performance/MapCompact:
+  Enabled: false
