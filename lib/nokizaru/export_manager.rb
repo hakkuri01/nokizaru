@@ -55,7 +55,7 @@ module Nokizaru
     def resolve_export_directory(domain, custom_directory)
       return custom_directory if custom_directory && !custom_directory.to_s.strip.empty?
 
-      Paths.target_dump_dir(domain)
+      Paths.target_export_dir(domain)
     end
 
     def resolve_basename(timestamp, custom_basename)

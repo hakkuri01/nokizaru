@@ -31,11 +31,22 @@ class CLISettingsPathsTest < Minitest::Test
     assert_equal ['scan', '--nb', '--cd=/tmp/out', '--of', 'json'], argv
   end
 
-  def test_paths_sanitize_domains_for_safe_dump_directories
+  def test_paths_build_safe_target_export_directories
     assert_equal 'unknown', Nokizaru::Paths.send(:sanitize_domain_for_path, nil)
     assert_equal 'example.com', Nokizaru::Paths.send(:sanitize_domain_for_path, '..Example.COM..')
     assert_equal 'bad_path_name', Nokizaru::Paths.send(:sanitize_domain_for_path, 'bad/path:name')
     assert_equal 128, Nokizaru::Paths.send(:sanitize_domain_for_path, 'a' * 200).length
+
+    Dir.mktmpdir do |dir|
+      original_exports_dir = Nokizaru::Paths.instance_variable_get(:@exports_dir)
+      Nokizaru::Paths.instance_variable_set(:@exports_dir, nil)
+
+      Nokizaru::Paths.stub(:user_data_dir, dir) do
+        assert_equal File.join(dir, 'exports', 'example.com'), Nokizaru::Paths.target_export_dir('Example.COM')
+      end
+    ensure
+      Nokizaru::Paths.instance_variable_set(:@exports_dir, original_exports_dir)
+    end
   end
 
   def test_keys_file_permissions_are_owner_only

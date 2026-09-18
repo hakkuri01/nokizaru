@@ -36,7 +36,7 @@ module Nokizaru
       o: { type: :string, default: nil, aliases: '-o',
            desc: 'Export Formats (comma-separated) [ Default : txt,json,html ]' },
       cd: { type: :string, default: nil,
-            desc: 'Export directory for this run [ Default : XDG data dir/nokizaru/dumps/nk_<hostname> ]' },
+            desc: 'Export directory for this run [ Default : XDG data dir/nokizaru/exports/<hostname> ]' },
       of: { type: :string, default: nil, desc: 'Export filename base for this run [ Default : YYYY-MM-DD_HH-MM-SS ]' },
       k: { type: :string, default: nil, aliases: '-k', desc: 'Add API key [ Example : shodan@key ]' }
     }.freeze

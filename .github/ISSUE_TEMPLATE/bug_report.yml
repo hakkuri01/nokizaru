@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: Nokizaru version
-      placeholder: e.g. 2.4.11
+      placeholder: e.g. 2.4.12
     validations:
       required: true
   - type: input

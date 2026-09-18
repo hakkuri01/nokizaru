@@ -32,7 +32,7 @@ module Nokizaru
       ['-e E', 'File Extensions [ Example : txt, xml, php, etc. ]'],
       ['-o O', 'Export Formats (comma-separated) [ Default : txt,json,html ]'],
       ['-cd CD', 'Export directory for this run (requires --export) ' \
-                 '[ Default : XDG data dir/nokizaru/dumps/nk_<hostname> ]'],
+                 '[ Default : XDG data dir/nokizaru/exports/<hostname> ]'],
       ['-of OF', 'Export filename base for this run (requires --export) [ Default : YYYY-MM-DD_HH-MM-SS ]'],
       ['-k K', 'Add API key [ Example : shodan@key ]']
     ].freeze

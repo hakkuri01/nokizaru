@@ -79,7 +79,7 @@ OPTION	MEANING	DEFAULT / NOTES
 -d D	Custom DNS servers	8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1
 -e E	File extension(s) (comma separated)	Example: txt,xml,php
 -o O	Export Format(s) (comma-separated)	txt,json,html
--cd CD	Export directory for this run (requires --export)	XDG data dir/nokizaru/dumps/nk_<hostname>
+-cd CD	Export directory for this run (requires --export)	XDG data dir/nokizaru/exports/<hostname>
 -of OF	Export filename base for this run (requires --export)	YYYY-MM-DD_HH-MM-SS
 -k K	Add API key (NAME@KEY)	shodan@key
 .TE
@@ -120,7 +120,7 @@ l l.
 PATH	PURPOSE
 $HOME/.config/nokizaru/config.json	Main configuration file
 $HOME/.local/share/nokizaru/keys.json	API keys file (optional)
-$HOME/.local/share/nokizaru/dumps/	Export directory for run outputs
+$HOME/.local/share/nokizaru/exports/	Export directory for run outputs
 $HOME/.local/share/nokizaru/nokizaru.log	Runtime log file
 .TE
 .SH EXAMPLES

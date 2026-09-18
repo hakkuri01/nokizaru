@@ -22,12 +22,12 @@ module Nokizaru
       @config_dir ||= ensure_dir(xdg_dir('XDG_CONFIG_HOME', '.config'))
     end
 
-    def self.dumps_dir
-      @dumps_dir ||= ensure_dir(File.join(user_data_dir, 'dumps'))
+    def self.exports_dir
+      @exports_dir ||= ensure_dir(File.join(user_data_dir, 'exports'))
     end
 
-    def self.target_dump_dir(domain)
-      ensure_dir(File.join(dumps_dir, "nk_#{sanitize_domain_for_path(domain)}"))
+    def self.target_export_dir(domain)
+      ensure_dir(File.join(exports_dir, sanitize_domain_for_path(domain)))
     end
 
     def self.export_timestamp(time = Time.now)

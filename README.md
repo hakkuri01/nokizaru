@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v2.4.11-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v2.4.12-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -202,7 +202,7 @@ Extra Options:
   -d D        Custom DNS Servers [ Default : 8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1 ]
   -e E        File Extension(s) (comma separated) [ Example : txt,xml,php,etc. ]
   -o O        Export Format(s) (comma-separated) [ Default : txt,json,html ]
-  -cd CD      Export directory for this run (requires --export) [ Default : XDG data dir/nokizaru/dumps/nk_<hostname> ]
+  -cd CD      Export directory for this run (requires --export) [ Default : XDG data dir/nokizaru/exports/<hostname> ]
   -of OF      Export filename base for this run (requires --export) [ Default : YYYY-MM-DD_HH-MM-SS ]
   -k K        Add API key [ Example : shodan@key ]
 ```
@@ -245,17 +245,15 @@ Directory enumeration ships curated `small` (2K), `medium` (5K), and `large` (10
 
 ## Output / Exports
 
-Scan results are not persisted by default, although Nokizaru maintains its configuration, key store, and runtime log. If you specify `--export`, it writes **TXT**, **JSON**, and **HTML** reports unless you narrow formats with `-o`.
-
-JSON reports contain the top-level keys `meta`, `modules`, `artifacts`, and `findings`. In v2.4.11, directory result field `raw_found` was removed in favor of `found`, and `actionable_found` was renamed to `prioritized_found`.
+Scan results are not persistent by default, although Nokizaru maintains its configuration, key store, and runtime log. If you specify `--export`, it writes **TXT**, **JSON**, and **HTML** reports unless you narrow formats with `-o`.
 
 By default, exports are written to:
 
 ```bash
-${XDG_DATA_HOME:-$HOME/.local/share}/nokizaru/dumps/nk_<hostname>/
+${XDG_DATA_HOME:-$HOME/.local/share}/nokizaru/exports/<hostname>/
 ├── YYYY-MM-DD_HH-MM-SS.txt
 ├── YYYY-MM-DD_HH-MM-SS.json
 └── YYYY-MM-DD_HH-MM-SS.html
 ```
 
-Each target gets its own directory, and each run is timestamped for easy organization and sorting. You can override the directory with `-cd` or the basename with `-of`.
+By default, exports are grouped by hostname and use timestamped filenames. You can override the directory with `-cd` or the filename base with `-of`.
