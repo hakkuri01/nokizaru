@@ -10,8 +10,6 @@
 
 Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface. Its goal is to provide a sufficiently expansive, high-signal overview of a target quickly, subverting the need to reach for heavier OSINT suites. Instead of running several tools in sequence, Nokizaru aims to produce comparable recon results with a single full-scan command. The ideal use case is collecting relevant information on a web target during the recon phase of a bug bounty/web app pentest engagement. As such, the primary audience is security researchers (not CTI analysts who may still prefer larger, more comprehensive OSINT suites).
 
-The supported interface is the CLI and JSON export schema. Internal Ruby modules are unstable and are not a supported user API.
-
 > [!IMPORTANT]
 > 
 > *Nokizaru is intended for authorized security testing and research. Always ensure you have explicit permission to scan targets you do not own.*
