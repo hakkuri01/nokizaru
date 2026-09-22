@@ -241,14 +241,16 @@ module Nokizaru
 
           decision = confidence_decision_for_success(scan, url, decision_input)
           runtime[:mutex].synchronize do
-            track_confidence_finding(scan, runtime, url, decision_input[:status], decision)
+            track_confidence_finding(scan, runtime, url, decision, decision_input)
           end
         end
 
         def process_synchronized_success(scan, runtime, url, http_result, sample)
           increment_count!(runtime[:stats], runtime)
+          reconcile_runtime_for_adaptation!(scan, runtime)
           handle_runtime_adaptation!(scan, runtime)
           decision_input = handle_success_status(scan, runtime, url, http_result, sample)
+          decision_input&.merge!(observed_count: runtime[:count].to_i, observed_at: Time.now)
           print_progress(runtime, scan) if (runtime[:count] % PROGRESS_EVERY).zero?
           decision_input
         end

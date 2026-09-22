@@ -59,7 +59,7 @@ module Nokizaru
         def response_sample_body_fields(context)
           {
             title: extract_title(context[:body]),
-            fingerprint: body_fingerprint(context[:body])
+            fingerprint: body_fingerprint(context[:body], request_url: context[:request_url])
           }
         end
 
@@ -67,6 +67,7 @@ module Nokizaru
           {
             content_type: normalize_content_type(http_result.headers['content-type']),
             body: http_result.body.to_s,
+            request_url: request_url,
             location: normalized_location_from_request(request_url, http_result.headers['location']),
             pattern: redirect_pattern(request_url, http_result.headers['location'])
           }

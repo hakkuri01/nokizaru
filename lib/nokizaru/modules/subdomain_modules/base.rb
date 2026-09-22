@@ -20,6 +20,8 @@ module Nokizaru
         }.freeze
 
         OUTPUT_GROUP_ORDER = %i[requesting status_info skipping status_error exception found].freeze
+        TERMINAL_EVENT_KINDS = %i[found skipping status_error exception].freeze
+        FAILURE_EVENT_KINDS = %i[status_error exception].freeze
 
         def requesting(name)
           emit_or_print(:requesting, name, nil)
@@ -75,6 +77,16 @@ module Nokizaru
           end
         end
 
+        def provider_health(provider_names, elapsed_by_provider = {})
+          events = synchronize_events { Array(@subdomain_events).dup }
+          providers = Array(provider_names).map do |name|
+            provider_events = events.select { |event| event[:name].casecmp?(name.to_s) }
+            provider_health_entry(name, provider_events, elapsed_by_provider[name])
+          end
+          counts = providers.each_with_object(Hash.new(0)) { |provider, out| out[provider['status']] += 1 }
+          { 'providers' => providers, 'counts' => { 'total' => providers.length }.merge(counts) }
+        end
+
         def output_capture_enabled?
           synchronize_events { !!@capture_enabled }
         end
@@ -89,6 +101,43 @@ module Nokizaru
             @subdomain_event_seq += 1
             @subdomain_events << { kind: kind, name: normalized_name, payload: payload, seq: @subdomain_event_seq }
           end
+        end
+
+        def provider_health_entry(name, events, elapsed)
+          terminal = events.rfind { |event| FAILURE_EVENT_KINDS.include?(event[:kind]) } ||
+                     events.rfind { |event| TERMINAL_EVENT_KINDS.include?(event[:kind]) }
+          entry = { 'name' => display_provider_name(name), 'status' => provider_health_status(terminal) }
+          reason = provider_health_reason(terminal)
+          entry['reason'] = reason unless reason.empty?
+          entry['elapsed_s'] = elapsed.to_f.round(4) if elapsed
+          found = events.rfind { |event| event[:kind] == :found }
+          entry['result_count'] = found[:payload].to_i if found
+          entry
+        end
+
+        def provider_health_status(event)
+          return 'unknown' unless event
+          return 'healthy' if event[:kind] == :found
+          return 'skipped' if event[:kind] == :skipping
+          return 'error' if event[:kind] == :exception
+
+          status = event.dig(:payload, :status).to_s.downcase
+          reason = event.dig(:payload, :reason).to_s.downcase
+          return 'rate_limited' if %w[429 rate_limited].include?(status)
+          return 'timeout' if status.include?('timeout') || reason.include?('deadline') || reason.include?('timeout')
+
+          'error'
+        end
+
+        def provider_health_reason(event)
+          return '' unless event
+
+          payload = event[:payload]
+          return payload.to_s if event[:kind] == :skipping
+          return payload.class.name if event[:kind] == :exception
+          return payload[:reason].to_s if payload.is_a?(Hash) && !payload[:reason].to_s.empty?
+
+          payload.is_a?(Hash) ? payload[:status].to_s : ''
         end
 
         def print_event(event)
@@ -206,6 +255,7 @@ module Nokizaru
 
         def failure_reason(resp)
           return '' unless resp
+          return rate_limit_reason(resp) if safe_status(resp).to_i == 429
           return resp.error? ? resp.error_message : '' if resp.is_a?(HttpResult)
           return error_reason(resp.error) if resp.respond_to?(:error) && resp.error
           return resp.exception.to_s.strip if resp.respond_to?(:exception) && resp.exception
@@ -234,7 +284,17 @@ module Nokizaru
 
         def status_label(resp)
           status = safe_status(resp)
+          return 'rate_limited' if status.to_i == 429
+
           status ? status.to_s : 'ERR'
+        end
+
+        def rate_limit_reason(resp)
+          delay = Nokizaru::HTTPClient.retry_after(resp, max: 30.0)
+          return "Retry-After: #{delay.round(3)}s" if delay
+
+          snippet = body_snippet(resp)
+          snippet.empty? ? 'HTTP 429' : snippet
         end
 
         def ensure_key(name, env)

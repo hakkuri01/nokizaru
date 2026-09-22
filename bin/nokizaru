@@ -13,14 +13,14 @@ Signal.trap('INT') do
     exit!(1)
   else
     Nokizaru::InterruptState.interrupt!
-    puts "\n\e[33m⟦✘⟧ Scan interrupted by user\e[0m"
-    puts "\e[2m    Press Ctrl+C again to force quit\e[0m"
+    puts "\n\e[31m⟦✘⟧ Scan interrupted by user\e[0m"
+    puts "\e[33m⟦!⟧\e[0m \e[2mPress Ctrl+C again to force quit\e[0m"
 
     Thread.list.each do |thread|
       thread.exit unless thread == Thread.main
     end
 
-    puts "\e[2mCleaning up...\e[0m"
+    puts "\e[33m⟦!⟧\e[0m \e[2mCleaning up...\e[0m"
     exit(130)
   end
 end

@@ -93,6 +93,7 @@ data directory.
 box, allbox;
 l l.
 ENV VAR	PROVIDER
+NK_ALIENVAULT_KEY	AlienVault OTX
 NK_BEVIGIL_KEY	BeVigil
 NK_BINEDGE_KEY	BinaryEdge
 NK_CENSYS_API_ID	Censys API ID
@@ -112,6 +113,15 @@ To add a key from the CLI:
 .nf
 nokizaru -k shodan@YOURKEY
 .fi
+.SH PROVIDER AVAILABILITY
+crt.sh is quarantined from default scans due to its documented backend/database
+rebuild and expected degraded service until the upstream rebuild stabilizes.
+Nokizaru retains the adapter, tracks it for recovery, and will re-enable it only
+after a reliability and unique-value canary passes.
+.PP
+ThreatMiner is quarantined after a chronic API outage with no successor
+endpoint. Its deletion deadline is December 21, 2026, or the next minor release
+if the recovery gate fails.
 .SH FILES
 Paths honor XDG_CONFIG_HOME and XDG_DATA_HOME. The defaults are shown below.
 .TS

@@ -7,7 +7,7 @@ module Nokizaru
         private
 
         # Build a stable body fingerprint for generic wildcard pages with minor dynamic values
-        def body_fingerprint(body)
+        def body_fingerprint(body, request_url: nil)
           raw = body.to_s
           return nil if raw.empty?
 
@@ -17,10 +17,37 @@ module Nokizaru
                     "#{raw.byteslice(0, 1024)}#{raw.byteslice(-1024, 1024)}"
                   end
 
-          normalized = slice.downcase.gsub(/[a-f0-9]{8,}/i, '#').gsub(/\d+/, '#').gsub(/\s+/, ' ').strip
+          normalized = normalize_request_reflections(slice.downcase, request_url)
+                       .gsub(/[a-f0-9]{8,}/i, '#').gsub(/\d+/, '#').gsub(/\s+/, ' ').strip
           return nil if normalized.empty?
 
           Zlib.crc32(normalized).to_s(16)
+        end
+
+        def normalize_request_reflections(body, request_url)
+          reflected_request_values(request_url).reduce(body) do |value, reflection|
+            value.gsub(reflection.downcase, '{request}')
+          end
+        end
+
+        def reflected_request_values(request_url)
+          value = request_url.to_s.strip
+          return [] if value.empty?
+
+          uri = URI.parse(value)
+          parts = [value, uri.request_uri, uri.path, *uri.path.to_s.split('/'),
+                   *URI.decode_www_form(uri.query.to_s).map(&:last)]
+          parts.flat_map { |part| reflection_variants(URI::DEFAULT_PARSER.unescape(part.to_s)) }
+               .uniq.sort_by { |part| -part.length }
+        rescue URI::InvalidURIError, ArgumentError
+          [value, CGI.escapeHTML(value)].uniq.sort_by { |part| -part.length }
+        end
+
+        def reflection_variants(part)
+          return [] if part.length < 3 || part == '/'
+
+          encoded = [URI::DEFAULT_PARSER.escape(part), CGI.escape(part)]
+          [part, *encoded, CGI.escapeHTML(part), *encoded.map { |item| CGI.escapeHTML(item) }]
         end
 
         # Normalize content type so comparisons ignore charset variations
@@ -141,10 +168,32 @@ module Nokizaru
           scheme_host = "#{loc.scheme}:#{loc.host.to_s.downcase}"
           return "same_path:#{scheme_host}" if req_path == loc_path
           return "same_path_slash:#{scheme_host}" if same_path_slash?(req_path, loc_path)
+
+          reflected = reflected_redirect_path(req_path, loc_path)
+          return "reflected_path:#{scheme_host}:#{reflected}" if reflected
           return "root:#{scheme_host}" if loc_path == '/'
           return "auth_entry:#{scheme_host}" if loc_path.start_with?('/login', '/signin', '/auth')
 
           "path_specific:#{scheme_host}:#{loc_path}"
+        end
+
+        def reflected_redirect_path(request_path, location_path)
+          return nil if request_path == '/'
+          return nil if location_path.start_with?("#{request_path}/")
+
+          values = [request_path, URI::DEFAULT_PARSER.escape(request_path), CGI.escape(request_path)]
+                   .uniq.sort_by { |value| -value.length }
+          reflected = values.find { |value| reflected_path_segment?(location_path, value) }
+          location_path.sub(reflected, '{request}') if reflected
+        end
+
+        def reflected_path_segment?(location_path, value)
+          start = location_path.index(value)
+          return false unless start
+
+          left_boundary = value.start_with?('/') || start.zero? || location_path[start - 1] == '/'
+          right_index = start + value.length
+          left_boundary && (right_index == location_path.length || location_path[right_index] == '/')
         end
 
         def same_path_slash?(req_path, loc_path)
@@ -162,7 +211,7 @@ module Nokizaru
 
         # Generic redirect patterns are likely anti-enumeration normalizers unless they diverge from baseline
         def generic_redirect_pattern?(pattern)
-          pattern.start_with?('same_path:', 'same_path_slash:', 'root:', 'auth_entry:')
+          pattern.start_with?('same_path:', 'same_path_slash:', 'reflected_path:', 'root:', 'auth_entry:')
         end
 
         def redirect_status?(status)

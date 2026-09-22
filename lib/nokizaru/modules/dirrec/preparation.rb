@@ -142,11 +142,13 @@ module Nokizaru
         end
 
         def build_scan_plan(config)
-          seed_urls = build_seed_urls(config[:target], config[:ctx])
+          crawler_paths = seed_paths_from_crawler(config[:ctx], config[:target])
+          seed_urls = build_seed_urls(config[:target], crawler_paths)
           words = prioritized_words(config[:words], seed_urls)
           extensions = file_extensions(config[:filext])
           {
             seed_urls: seed_urls,
+            crawler_paths: crawler_paths,
             words: words,
             extensions: extensions,
             estimated_total: estimated_url_total(seed_urls, words, extensions)
@@ -158,9 +160,9 @@ module Nokizaru
         end
 
         # Build seed URLs using crawler artifacts + high-signal endpoints
-        def build_seed_urls(target, ctx)
+        def build_seed_urls(target, crawler_paths)
           base = normalize_target_base(target)
-          paths = (HIGH_SIGNAL_PATHS + seed_paths_from_crawler(ctx, base)).uniq
+          paths = (HIGH_SIGNAL_PATHS + crawler_paths).uniq
           paths.map { |path| join_url(base, path) }.uniq
         end
 

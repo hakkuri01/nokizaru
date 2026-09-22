@@ -7,10 +7,8 @@ module Nokizaru
 
       JOBS = [
         ['AnubisDB', ->(host, http, out) { SubdomainModules::AnubisDB.call(host, http, out) }],
-        ['ThreatMiner', ->(host, http, out) { SubdomainModules::ThreatMiner.call(host, http, out) }],
         ['CertSpotter', ->(host, http, out) { SubdomainModules::CertSpotter.call(host, http, out) }],
         ['HackerTarget', ->(host, http, out) { SubdomainModules::HackerTarget.call(host, http, out) }],
-        ['crt.sh', ->(host, http, out) { SubdomainModules::CrtSh.call(host, http, out) }],
         ['UrlScan', ->(host, http, out) { SubdomainModules::UrlScan.call(host, http, out) }],
         ['AlienVault', ->(host, http, out) { SubdomainModules::AlienVault.call(host, http, out) }],
         ['BeVigil', ->(host, http, out) { SubdomainModules::BeVigil.call(host, http, out) }],

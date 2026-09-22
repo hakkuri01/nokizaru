@@ -113,6 +113,7 @@
             packages = [
               development.wrappedRuby
               pkgs.bundix
+              pkgs.file
             ];
           };
         }
@@ -166,7 +167,7 @@
                 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
 
                 nokizaru --version > "$TMPDIR/version" 2> "$TMPDIR/version.err"
-                grep -F "2.4.12" "$TMPDIR/version"
+                grep -F "2.5.12" "$TMPDIR/version"
                 test ! -s "$TMPDIR/version.err"
                 nokizaru --help | grep -F "Nokizaru - Recon Refined"
                 test -f ${package}/share/man/man1/nokizaru.1

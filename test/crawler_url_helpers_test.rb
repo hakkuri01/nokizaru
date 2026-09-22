@@ -19,7 +19,7 @@ class CrawlerURLHelpersTest < Minitest::Test
   end
 
   def test_internal_link_allows_same_registrable_domain_and_rejects_external_hosts
-    host = Crawler.send(:target_public_suffix_domain, 'https://www.example.com/app')
+    host = Crawler.send(:target_host, 'https://www.example.com/app')
 
     assert_equal 'https://api.example.com/admin',
                  Crawler.send(:internal_link, 'https://www.example.com/app', host, 'https://api.example.com/admin')
@@ -27,11 +27,182 @@ class CrawlerURLHelpersTest < Minitest::Test
   end
 
   def test_external_link_allows_only_different_http_hosts
-    host = Crawler.send(:target_public_suffix_domain, 'https://www.example.com/app')
+    host = Crawler.send(:target_host, 'https://www.example.com/app')
 
     assert_equal 'https://evil.test/admin', Crawler.send(:external_link, host, 'https://evil.test/admin')
     assert_nil Crawler.send(:external_link, host, 'https://api.example.com/admin')
     assert_nil Crawler.send(:external_link, host, '/relative')
+  end
+
+  def test_link_scope_fails_closed_when_public_suffix_has_no_domain
+    PublicSuffix.stub(:domain, nil) do
+      host = Crawler.send(:target_host, 'https://unknown/app')
+
+      assert_equal 'https://unknown/admin', Crawler.send(:internal_link, 'https://unknown/app', host, '/admin')
+      assert_nil Crawler.send(:internal_link, 'https://unknown/app', host, 'https://other/admin')
+      assert_nil Crawler.send(:external_link, host, 'https://unknown/admin')
+      assert_equal 'https://other/admin', Crawler.send(:external_link, host, 'https://other/admin')
+    end
+  end
+
+  def test_main_http_status_failure_preserves_error_and_removes_control_state
+    result = Crawler.send(:initialize_result)
+    ctx = Struct.new(:run).new({ 'modules' => {} })
+    failure = Crawler.send(:failure_status, 'HTTP status 503', 'http_status', http_status: 503)
+    logs = []
+
+    output, = capture_io do
+      Nokizaru::Log.stub(:write, ->(message) { logs << message }) do
+        Crawler.send(:fail_crawl, result, ctx, failure)
+      end
+    end
+
+    payload = ctx.run.dig('modules', 'crawler')
+
+    assert_equal 'HTTP status 503', payload['error']
+    assert_equal 'failed', payload['status']
+    assert_equal 'http_status', payload['failure_reason']
+    assert_equal 503, payload['http_status']
+    refute payload.key?('__control__')
+    assert_includes output, 'HTTP status 503 (http_status)'
+    assert_includes logs, '[crawler] HTTP status 503 (http_status)'
+  end
+
+  def test_main_fetch_failures_distinguish_transport_and_request_errors
+    transport = Crawler.send(:main_fetch_error, response: nil, error: IOError.new('closed'), transport: true)
+    request = Crawler.send(:main_fetch_error, response: nil, error: ArgumentError.new('bad'), transport: false)
+
+    assert_equal %w[transport_error IOError], transport.values_at(:failure_reason, :error_class)
+    assert_equal 'Failed to fetch target: closed', transport[:message]
+    assert_equal %w[request_error ArgumentError], request.values_at(:failure_reason, :error_class)
+  end
+
+  def test_fallback_user_agent_follows_redirect_and_records_fetch_state
+    responses = [response(403), response(301, '/welcome'), response(200, nil, '<html>ok</html>')]
+    requests = []
+    fetch = lambda do |url, request_headers:, user_agent:|
+      requests << [url, request_headers, user_agent]
+      { response: responses.shift, error: nil, transport: false }
+    end
+
+    status = Crawler.stub(:main_http_get, fetch) do
+      Crawler.send(:fetch_page_status, 'https://example.com', request_headers: { 'Authorization' => 'secret' })
+    end
+
+    assert status[:ok]
+    assert_equal 'degraded', status[:outcome]
+    assert_equal Crawler::FALLBACK_USER_AGENT, status[:active_user_agent]
+    assert_equal [Crawler::USER_AGENT, Crawler::FALLBACK_USER_AGENT, Crawler::FALLBACK_USER_AGENT],
+                 requests.map(&:last)
+    assert_equal({ status: 403, location: nil, hops: 0, effective_url: 'https://example.com/' },
+                 status.dig(:fetch, :primary))
+    assert_equal 1, status.dig(:fetch, :fallback, :hops)
+    assert_equal '/welcome', status.dig(:fetch, :fallback, :location)
+    assert_equal 'https://example.com/welcome', status.dig(:fetch, :fallback, :effective_url)
+  end
+
+  def test_fallback_refusal_is_degraded
+    responses = [response(403), response(403)]
+    fetch = ->(*) { { response: responses.shift, error: nil, transport: false } }
+
+    status = Crawler.stub(:main_http_get, fetch) do
+      Crawler.send(:fetch_page_status, 'https://example.com')
+    end
+
+    assert status[:fail]
+    assert_equal 'degraded', status[:outcome]
+    assert_equal 'refused', status[:failure_reason]
+    assert_equal 403, status.dig(:fetch, :fallback, :status)
+  end
+
+  def test_redirect_loop_is_reported_before_budget
+    responses = [response(301, '/next'), response(301, '/')]
+    calls = 0
+    fetch = lambda do |*|
+      calls += 1
+      { response: responses.shift, error: nil, transport: false }
+    end
+
+    status = Crawler.stub(:main_http_get, fetch) do
+      Crawler.send(:fetch_page_status, 'https://example.com')
+    end
+
+    assert_equal 2, calls
+    assert_equal 'redirect_loop', status[:failure_reason]
+    assert_equal 'degraded', status[:outcome]
+  end
+
+  def test_acyclic_redirect_chain_uses_full_budget
+    responses = [response(301, '/one'), response(302, '/two'), response(200)]
+    fetch = ->(*) { { response: responses.shift, error: nil, transport: false } }
+
+    status = Crawler.stub(:main_http_get, fetch) do
+      Crawler.send(:fetch_page_status, 'https://example.com')
+    end
+
+    assert status[:ok]
+    assert_equal 2, status.dig(:fetch, :primary, :hops)
+    assert_equal 'https://example.com/two', status[:effective_url]
+  end
+
+  def test_cross_scope_redirect_exposes_handoff_without_fetching_destination
+    calls = 0
+    fetch = lambda do |*|
+      calls += 1
+      { response: response(301, 'https://other.test/login'), error: nil, transport: false }
+    end
+
+    status = Crawler.stub(:main_http_get, fetch) do
+      Crawler.send(:fetch_page_status, 'https://example.com')
+    end
+
+    assert_equal 1, calls
+    assert_equal 'degraded', status[:outcome]
+    assert_equal 'https://other.test/login', status[:canonical_handoff]
+    assert_equal 'redirect_canonical_handoff', status[:failure_reason]
+  end
+
+  def test_https_downgrade_is_failed_without_fetching_destination
+    calls = 0
+    fetch = lambda do |*|
+      calls += 1
+      { response: response(301, 'http://example.com/login'), error: nil, transport: false }
+    end
+
+    status = Crawler.stub(:main_http_get, fetch) do
+      Crawler.send(:fetch_page_status, 'https://example.com')
+    end
+
+    assert_equal 1, calls
+    assert_equal 'failed', status[:outcome]
+    assert_equal 'redirect_unsafe_redirect', status[:failure_reason]
+  end
+
+  def test_custom_headers_are_stripped_on_origin_change
+    responses = [response(301, 'https://api.example.com/data'), response(200)]
+    headers = []
+    fetch = lambda do |_url, request_headers:, **|
+      headers << request_headers
+      { response: responses.shift, error: nil, transport: false }
+    end
+
+    Crawler.stub(:main_http_get, fetch) do
+      Crawler.send(:fetch_page_status, 'https://www.example.com', request_headers: { 'X-Token' => 'secret' })
+    end
+
+    assert_equal [{ 'X-Token' => 'secret' }, {}], headers
+  end
+
+  def test_transport_failure_is_failed
+    failure = { response: nil, error: IOError.new('connection reset'), transport: true }
+
+    status = Crawler.stub(:main_http_get, failure) do
+      Crawler.send(:fetch_page_status, 'https://example.com')
+    end
+
+    assert_equal 'failed', status[:outcome]
+    assert_equal 'transport_error', status[:failure_reason]
+    assert_equal 'IOError', status[:error_class]
   end
 
   def test_parse_robots_body_extracts_allow_disallow_and_sitemaps
@@ -84,7 +255,6 @@ class CrawlerURLHelpersTest < Minitest::Test
     refute Crawler.send(:sitemap_candidate?, 'ftp://example.com/sitemap.xml')
     refute Crawler.send(:same_scope_url?, 'http://10.0.0.1/sitemap.xml', '127.0.0.1')
     assert Crawler.send(:same_scope_url?, 'http://127.0.0.1/sitemap.xml', '127.0.0.1')
-    refute Crawler.send(:same_scope_redirect?, 'https://example.com', 'ftp://example.com/file')
   end
 
   def test_sitemap_body_only_decodes_actual_gzip_bytes
@@ -176,5 +346,12 @@ class CrawlerURLHelpersTest < Minitest::Test
 
     assert_equal ['https://example.com/admin/settings?tab=users', 'https://example.com/api/v1/users'], high_signal
     assert_equal 0, Crawler.send(:score_url, 'not a url')
+  end
+
+  private
+
+  def response(status, location = nil, body = '')
+    headers = location ? { 'location' => location } : {}
+    Struct.new(:status, :headers, :body).new(status, headers, body)
   end
 end

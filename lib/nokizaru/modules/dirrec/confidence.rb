@@ -35,7 +35,7 @@ module Nokizaru
         def title_and_length_match?(sample, baseline)
           length_delta = (sample[:body_length] - baseline[:body_length]).abs
           return false if length_delta > baseline[:tolerance]
-          return true unless baseline[:title]
+          return sample[:title].to_s.empty? unless baseline[:title]
 
           sample[:title] == baseline[:title]
         end
@@ -57,7 +57,8 @@ module Nokizaru
 
         def redirect_confidence(url, sample, normalized_target)
           path = response_path(url)
-          return confidence_decision(:confirmed, :high_signal_path) if high_signal_path?(path)
+          relative_path = relative_response_path(url, normalized_target)
+          return confidence_decision(:confirmed, :high_signal_path) if high_signal_path?(relative_path)
 
           if sample.to_h[:redirect_pattern].to_s.start_with?('auth_entry:')
             return confidence_decision(:confirmed,
@@ -74,13 +75,14 @@ module Nokizaru
 
         def sensitive_status_confidence(url, sample, baseline, normalized_target, status)
           path = response_path(url)
-          return confidence_decision(:confirmed, :high_signal_path) if high_signal_path?(path)
+          relative_path = relative_response_path(url, normalized_target)
+          return confidence_decision(:confirmed, :high_signal_path) if high_signal_path?(relative_path)
           if same_path_as_target?(path, normalized_target)
             return confidence_decision(:low, :target_root_sensitive_status)
           end
           return confidence_decision(:low, :baseline_like_response) if baseline_like_length?(sample, baseline)
           return confidence_decision(:likely, :meaningful_sensitive_status) if meaningful_body?(sample)
-          if weak_sensitive_status_sample?(path, sample, status)
+          if weak_sensitive_status_sample?(relative_path, sample, status)
             return confidence_decision(:low, :weak_sensitive_status)
           end
 
@@ -89,15 +91,16 @@ module Nokizaru
 
         def content_confidence(url, sample, baseline, normalized_target)
           path = response_path(url)
+          relative_path = relative_response_path(url, normalized_target)
           return confidence_decision(:low, :baseline_like_response) if baseline_like_length?(sample, baseline)
           return confidence_decision(:low, :not_found_title) if likely_not_found_title?(sample)
 
-          if high_signal_path?(path) && meaningful_body?(sample)
+          if high_signal_path?(relative_path) && meaningful_body?(sample)
             return confidence_decision(:confirmed,
                                        :high_signal_content)
           end
           return confidence_decision(:likely, :meaningful_content) if meaningful_body?(sample)
-          if high_signal_path?(path) && !same_path_as_target?(path, normalized_target)
+          if high_signal_path?(relative_path) && !same_path_as_target?(path, normalized_target)
             return confidence_decision(:likely, :high_signal_path)
           end
 
@@ -329,6 +332,18 @@ module Nokizaru
           URI.parse(url.to_s).path.to_s.downcase
         rescue StandardError
           ''
+        end
+
+        def relative_response_path(url, normalized_target)
+          path = response_path(url)
+          target_path = URI.parse(normalized_target.to_s).path.to_s.downcase.chomp('/')
+          return path if target_path.empty? || target_path == '/'
+          return '/' if path == target_path
+          return path unless path.start_with?("#{target_path}/")
+
+          path.delete_prefix(target_path)
+        rescue StandardError
+          path
         end
 
         def same_path_as_target?(path, normalized_target)

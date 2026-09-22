@@ -5,14 +5,14 @@ module Nokizaru
     class Runner
       module Keys
         VALID_KEYS = %w[
-          bevigil binedge facebook netlas shodan virustotal zoomeye hunter chaos censys_api_id censys_api_secret
-          wappalyzer
+          alienvault bevigil binedge facebook netlas shodan virustotal zoomeye hunter chaos censys_api_id
+          censys_api_secret wappalyzer
         ].freeze
 
         private
 
         def banner
-          puts("#{CLI::G}#{banner_art}#{CLI::W}\n")
+          puts("#{UI::R}#{banner_art}#{UI::W}\n")
           UI.rows(:plus, [%w[AUTHOR hakkuri], ['VERSION', Nokizaru::VERSION]])
           UI.row(:plus, 'GIT', 'https://github.com/hakkuri01', label_width: 7)
           puts

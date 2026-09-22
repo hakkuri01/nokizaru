@@ -13,6 +13,7 @@ module Nokizaru
             output_lock: Mutex.new,
             responses: [],
             signal_responses: [],
+            candidate_observations: [],
             found: [],
             stdout_found: [],
             confirmed_found: [],
@@ -277,7 +278,6 @@ module Nokizaru
 
         def finalize_scan(scan, runtime)
           runtime[:stats][:elapsed] = Time.now - runtime[:start_time]
-          print_progress(runtime, scan, force: true)
           dir_output(runtime: runtime, scan: scan)
           Log.write('[dirrec] Completed')
         end

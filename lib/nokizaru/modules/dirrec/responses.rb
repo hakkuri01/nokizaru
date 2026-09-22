@@ -44,12 +44,16 @@ module Nokizaru
           runtime[:soft_404_baseline]
         end
 
-        def track_confidence_finding(scan, runtime, url, status, decision)
+        def track_confidence_finding(scan, runtime, url, decision, input)
           confidence = decision[:level].to_sym
           reason = decision[:reason].to_s
-          update_confidence_stats!(runtime[:stats], confidence, reason, status)
+          runtime[:candidate_observations] << {
+            url: url, status: input[:status], sample: input[:sample],
+            observed_count: input[:observed_count], observed_at: input[:observed_at]
+          }
+          update_confidence_stats!(runtime[:stats], confidence, reason, input[:status])
           assign_confidence_bucket(runtime, url, confidence)
-          print_finding(scan, runtime, url, status) unless confidence == :low
+          print_finding(scan, runtime, url, input[:status]) unless confidence == :low
         end
 
         def update_confidence_stats!(stats, confidence, reason, status)
@@ -95,6 +99,7 @@ module Nokizaru
             record_worker_error!(runtime, http_result, error_kind)
             maybe_stop!(runtime)
             adapt_timeout_if_needed!(scan, runtime)
+            reconcile_runtime_for_adaptation!(scan, runtime)
             handle_runtime_adaptation!(scan, runtime)
             print_progress(runtime, scan) if (runtime[:count] % PROGRESS_EVERY).zero?
           end

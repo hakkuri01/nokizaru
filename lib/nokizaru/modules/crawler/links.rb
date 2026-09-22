@@ -137,7 +137,7 @@ module Nokizaru
         end
 
         def internal_links(target, soup)
-          host = target_public_suffix_domain(target)
+          host = target_host(target)
           links = cap_links(
             soup.css('a[href]').filter_map { |tag| internal_link(target, host, tag['href']) },
             Crawler::MAX_INTERNAL_LINKS
@@ -147,7 +147,7 @@ module Nokizaru
         end
 
         def external_links(target, soup)
-          host = target_public_suffix_domain(target)
+          host = target_host(target)
           links = cap_links(
             soup.css('a[href]').filter_map { |tag| external_link(host, tag['href']) },
             Crawler::MAX_EXTERNAL_LINKS

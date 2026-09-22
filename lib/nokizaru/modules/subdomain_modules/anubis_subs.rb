@@ -18,7 +18,7 @@ module Nokizaru
         end
 
         def process_anubis_response(hostname, http, found)
-          resp = http.get("https://jldc.me/anubis/subdomains/#{hostname}")
+          resp = http.get("https://anubisdb.com/anubis/subdomains/#{hostname}")
           status = Base.safe_status(resp)
           return append_anubis_subdomains(resp, found) if status == 200
           return handle_anubis_empty(status) if [204, 404, 300].include?(status)

@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v2.4.12-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v2.5.12-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -89,6 +89,11 @@ nokizaru --help
 
 ## Configuration
 
+### Provider Availability
+
+- **crt.sh:** Quarantined from default scans due to its documented backend/database rebuild and expected degraded service until the upstream rebuild stabilizes. Nokizaru retains the adapter, tracks recovery, and will re-enable it only after a reliability and unique-value canary passes.
+- **ThreatMiner:** Quarantined after a chronic API outage with no successor endpoint. Its deletion deadline is December 21, 2026, or the next minor release if the recovery gate fails.
+
 ### API Keys
 
 Some providers use optional API keys. Missing credentials skip only that provider; architecture fingerprinting is skipped entirely without a Wappalyzer key.
@@ -98,7 +103,7 @@ Some providers use optional API keys. Missing credentials skip only that provide
 Keys are read from environment variables if they are set; otherwise they are loaded from `${XDG_DATA_HOME:-$HOME/.local/share}/nokizaru/keys.json`.
 
 ```bash
-NK_BEVIGIL_KEY, NK_BINEDGE_KEY, NK_CENSYS_API_ID, NK_CENSYS_API_SECRET,
+NK_ALIENVAULT_KEY, NK_BEVIGIL_KEY, NK_BINEDGE_KEY, NK_CENSYS_API_ID, NK_CENSYS_API_SECRET,
 NK_CHAOS_KEY, NK_FB_KEY, NK_HUNTER_KEY, NK_NETLAS_KEY,
 NK_SHODAN_KEY, NK_VT_KEY, NK_WAPPALYZER_KEY, NK_ZOOMEYE_KEY
 
@@ -114,7 +119,7 @@ You can use **`-k`** to add keys which will be saved automatically in the user d
 # Usage
 nokizaru -k '<API NAME>@<API KEY>'
 
-Valid Keys : 'bevigil', 'binedge', 'censys_api_id', 'censys_api_secret', 'chaos', 'facebook', 'hunter', 'netlas', 'shodan', 'virustotal', 'wappalyzer', 'zoomeye'
+Valid Keys : 'alienvault', 'bevigil', 'binedge', 'censys_api_id', 'censys_api_secret', 'chaos', 'facebook', 'hunter', 'netlas', 'shodan', 'virustotal', 'wappalyzer', 'zoomeye'
 
 # Example :
 nokizaru -k 'shodan@kl32lcdqwcdfv'
@@ -124,6 +129,7 @@ nokizaru -k 'shodan@kl32lcdqwcdfv'
 
 | Source     | Module          | Link                                                                                                                                   |
 | ---------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| AlienVault OTX | Sub Domain Enum | [https://otx.alienvault.com/api](https://otx.alienvault.com/api)                                                                    |
 | Facebook   | Sub Domain Enum | [https://developers.facebook.com/docs/facebook-login/access-tokens](https://developers.facebook.com/docs/facebook-login/access-tokens) |
 | VirusTotal | Sub Domain Enum / Wayback URLs | [https://www.virustotal.com/gui/my-apikey](https://www.virustotal.com/gui/my-apikey)                                      |
 | Shodan     | Sub Domain Enum | [https://developer.shodan.io/api/requirements](https://developer.shodan.io/api/requirements)                                           |

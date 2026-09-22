@@ -18,6 +18,38 @@ class DirectoryEnumStatusCodeShapeTest < Minitest::Test
     assert_equal '', DirectoryEnum.__send__(:status_code_shape_summary, [])
   end
 
+  def test_status_code_shape_colors_only_formatting_commas
+    raw = '429=8/10 (80.0%), 200=2/10 (20.0%)'
+
+    colored = DirectoryEnum.__send__(:colored_status_shape, raw)
+
+    assert_equal "429=8/10 (80.0%)#{Nokizaru::UI::W},#{Nokizaru::UI::C} 200=2/10 (20.0%)", colored
+    refute_match(/\e\[/, raw)
+  end
+
+  def test_redirect_examples_color_formatting_delimiters
+    example = { status: 302, request: 'https://example.com/dashboard', location: 'https://example.com/login' }
+
+    text = DirectoryEnum.__send__(:redirect_signal_example_text, example)
+
+    assert_equal "302 #{Nokizaru::UI::W}|#{Nokizaru::UI::C} https://example.com/dashboard " \
+                 "#{Nokizaru::UI::W}->#{Nokizaru::UI::C} https://example.com/login", text
+  end
+
+  def test_directory_finding_preserves_status_color_and_colors_url_as_data
+    runtime = { stdout_found: [], output_lock: nil, found: [], count: 1,
+                start_time: Time.now, stats: { success: 1, errors: 0 } }
+    scan = { scan_target: 'https://example.com', total_urls: 1,
+             options: { ctx: Struct.new(:progress).new(nil) } }
+
+    output, = capture_io do
+      DirectoryEnum.__send__(:print_finding, scan, runtime, 'https://example.com/graphql', 200)
+    end
+
+    assert_includes output, "#{Nokizaru::UI::G}200#{Nokizaru::UI::W} #{Nokizaru::UI::W}//" \
+                            "#{Nokizaru::UI::C} https://example.com/graphql"
+  end
+
   def test_status_code_shape_summary_ignores_invalid_statuses_and_sorts_ties
     responses = [
       ['https://example.com/a', 500],

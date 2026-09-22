@@ -40,9 +40,9 @@ module Nokizaru
 
       with_terminal_output(io) do
         io.puts
-        io.puts("#{C}#{bar}#{W}")
-        io.puts("#{prefix(type)} #{C}#{text}#{W}")
-        io.puts("#{C}#{bar}#{W}")
+        io.puts("#{R}#{bar}#{W}")
+        io.puts("#{prefix(type)} #{R}#{text}#{W}")
+        io.puts("#{R}#{bar}#{W}")
       end
     end
 
@@ -105,15 +105,53 @@ module Nokizaru
       " #{branch} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value_text}#{W} ⟧"
     end
 
-    def run_status_line(snapshot, frame_index:, tty: $stdout.tty?)
-      body = [bracketed_pulse_rail(frame_index, tty: tty), run_status_text(snapshot, tty: tty)].join(' ')
+    def run_status_line(snapshot, frame_index:, tty: $stdout.tty?, width: nil)
+      rail = bracketed_pulse_rail(frame_index, tty: tty)
+      body = [rail, run_status_text(snapshot, tty: tty)].join(' ')
+      body = constrained_status_line(snapshot, rail, width) if tty && width && visible_length(body) >= width
       tty ? body : body.gsub(/\e\[[0-9;]*m/, '')
     end
 
     def bracketed_pulse_rail(frame_index, tty: $stdout.tty?)
       return "⟦#{pulse_rail(frame_index, tty: tty)}⟧" unless tty
 
-      "#{C}⟦#{W}#{pulse_rail(frame_index, tty: tty)}#{C}⟧#{W}"
+      "#{R}⟦#{W}#{pulse_rail(frame_index, tty: tty)}#{R}⟧#{W}"
+    end
+
+    def constrained_status_line(snapshot, rail, width)
+      available_width = width.to_i - 1
+      rail_width = visible_length(rail)
+      return '' if available_width < rail_width
+
+      suffix_width = available_width - rail_width - 1
+      return rail if suffix_width <= 0
+
+      suffix = truncate_terminal_text(run_status_text(snapshot, tty: true), suffix_width)
+      "#{rail} #{suffix}"
+    end
+
+    def truncate_terminal_text(text, width)
+      return text if visible_length(text) <= width
+
+      ellipsis = width < 4 ? '' : '...'
+      content_width = width - ellipsis.length
+      visible = 0
+      output = +''
+      text.scan(/\e\[[0-9;]*m|./m).each do |token|
+        if token.start_with?("\e[")
+          output << token
+          next
+        end
+        break if visible >= content_width
+
+        output << token
+        visible += 1
+      end
+      "#{output}#{ellipsis}#{W}"
+    end
+
+    def visible_length(text)
+      text.to_s.gsub(/\e\[[0-9;]*m/, '').length
     end
 
     def pulse_rail(frame_index, tty: $stdout.tty?)
@@ -164,7 +202,7 @@ module Nokizaru
     end
 
     def status_divider(tty)
-      tty ? "#{C}┃#{W}" : '┃'
+      tty ? "#{R}//#{W}" : '//'
     end
 
     def module_label(key, state)

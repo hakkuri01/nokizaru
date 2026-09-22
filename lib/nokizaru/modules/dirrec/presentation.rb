@@ -12,7 +12,7 @@ module Nokizaru
 
           runtime[:stdout_found] << url
           with_output_lock(runtime) do
-            UI.line(:info, "#{colorize_status(status)} | #{url}")
+            UI.line(:info, "#{colorize_status(status)} #{UI::W}//#{UI::C} #{url}")
           end
           print_progress(runtime, scan, force: true)
         end
@@ -113,7 +113,9 @@ module Nokizaru
           UI.row(:info, 'Low confidence', counts[:low], label_width: label_width) if counts[:low].positive?
           print_redirect_signals(redirect_signals, count_rows, label_width)
           UI.row(:info, 'Stop Reason', stop_reason, label_width: label_width) unless stop_reason.to_s.strip.empty?
-          UI.row(:info, 'Status Code Shape', status_shape, label_width: label_width) unless status_shape.empty?
+          unless status_shape.empty?
+            UI.row(:info, 'Status Code Shape', colored_status_shape(status_shape), label_width: label_width)
+          end
           UI.blank_line
         end
 
@@ -167,7 +169,11 @@ module Nokizaru
         end
 
         def redirect_signal_example_text(example)
-          "#{example[:status]} | #{example[:request]} -> #{example[:location]}"
+          "#{example[:status]} #{UI::W}|#{UI::C} #{example[:request]} #{UI::W}->#{UI::C} #{example[:location]}"
+        end
+
+        def colored_status_shape(status_shape)
+          status_shape.to_s.gsub(', ', "#{UI::W},#{UI::C} ")
         end
 
         def redirect_signal_label(signal_type)
@@ -193,7 +199,6 @@ module Nokizaru
           ctx = scan[:options][:ctx]
           ctx.run['modules']['directory_enum'] = result
           artifact_paths = Array(result['prioritized_found'])
-          artifact_paths = Array(result['found']) if artifact_paths.empty?
           ctx.add_artifact('paths', artifact_paths)
           ctx.add_artifact('prioritized_paths', result['prioritized_found']) if Array(result['prioritized_found']).any?
           ctx.add_artifact('high_signal_paths', result['high_signal_found']) if Array(result['high_signal_found']).any?

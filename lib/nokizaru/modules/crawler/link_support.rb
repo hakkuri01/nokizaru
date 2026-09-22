@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'public_suffix'
 require 'uri'
 
 module Nokizaru
@@ -16,7 +15,7 @@ module Nokizaru
 
           uri = URI(normalized)
           return nil unless uri.host
-          return nil if host && PublicSuffix.domain(uri.host) != host
+          return nil unless Nokizaru::TargetIntel.same_scope_host?(host, uri.host)
 
           normalized
         rescue StandardError
@@ -28,15 +27,15 @@ module Nokizaru
 
           uri = URI(href)
           return nil unless uri.host
-          return nil if host && PublicSuffix.domain(uri.host) == host
+          return nil if Nokizaru::TargetIntel.same_scope_host?(host, uri.host)
 
           href
         rescue StandardError
           nil
         end
 
-        def target_public_suffix_domain(target)
-          PublicSuffix.domain(URI(target).host)
+        def target_host(target)
+          URI(target).host
         rescue StandardError
           nil
         end

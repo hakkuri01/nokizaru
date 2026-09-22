@@ -37,7 +37,6 @@ module Nokizaru
 
     require_relative 'cli/runner'
 
-    G = "\e[32m"
     C = "\e[36m"
     W = "\e[0m"
 

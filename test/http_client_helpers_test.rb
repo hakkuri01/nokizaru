@@ -26,6 +26,16 @@ class HTTPClientHelpersTest < Minitest::Test
     assert_equal 'one', Nokizaru::HTTPClient.header_value(response, 'X-Test')
   end
 
+  def test_retry_after_parses_delta_and_http_date_with_a_bound
+    delta = Response.new(headers: { 'Retry-After' => '120' })
+    date = Response.new(headers: { 'Retry-After' => 'Wed, 21 Oct 2015 07:28:10 GMT' })
+    now = Time.utc(2015, 10, 21, 7, 28, 0)
+
+    assert_in_delta 30.0, Nokizaru::HTTPClient.retry_after(delta, max: 30)
+    assert_in_delta 10.0, Nokizaru::HTTPClient.retry_after(date, now: now)
+    assert_nil Nokizaru::HTTPClient.retry_after(Response.new(headers: { 'Retry-After' => 'invalid' }))
+  end
+
   def test_each_response_header_downcases_and_joins_values
     response = Response.new(headers: { 'X-Test' => %w[one two] })
     yielded = []

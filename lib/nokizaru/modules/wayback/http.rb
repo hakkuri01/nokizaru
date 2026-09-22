@@ -11,8 +11,12 @@ module Nokizaru
 
         MIN_RETRY_BUDGET = 0.25
 
-        def get(uri, timeout_s: nil, deadline_at: nil, headers: nil)
+        def get(uri, timeout_s: nil, deadline_at: nil, headers: nil, on_timeout: nil)
           with_retries(uri, timeout_s: timeout_s, deadline_at: deadline_at, headers: headers)
+        rescue Timeout::Error => e
+          on_timeout&.call
+          Log.write("[wayback] Timeout/network error: #{e.message}")
+          nil
         rescue Errno::ECONNRESET, Errno::EHOSTUNREACH, Errno::ECONNREFUSED, SocketError => e
           Log.write("[wayback] Timeout/network error: #{e.message}")
           nil

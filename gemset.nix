@@ -249,7 +249,7 @@
       path = ./.;
       type = "path";
     };
-    version = "2.4.12";
+    version = "2.5.12";
   };
   nokogiri = {
     dependencies = [

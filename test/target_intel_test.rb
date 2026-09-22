@@ -39,6 +39,17 @@ class TargetIntelTest < Minitest::Test
     assert_equal 'https://example.com/app', decision[:effective_target]
   end
 
+  def test_redirect_target_normalizes_and_rejects_userinfo
+    decision = Nokizaru::TargetIntel.redirect_target(
+      'https://EXAMPLE.com/start#old',
+      'https://example.com:443/next#fragment'
+    )
+    unsafe = Nokizaru::TargetIntel.redirect_target('https://example.com', 'https://user@example.com/')
+
+    assert_equal 'https://example.com/next', decision[:next_url]
+    assert_equal :invalid_redirect, unsafe[:stop_reason]
+  end
+
   private
 
   def redirect_decision(target, location)

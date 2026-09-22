@@ -11,6 +11,46 @@ module Nokizaru
         location.to_s
       end
 
+      def normalize_http_url(url)
+        uri = URI.parse(url.to_s)
+        return nil unless uri.is_a?(URI::HTTP) && uri.host && !uri.userinfo
+
+        uri.scheme = uri.scheme.downcase
+        uri.host = uri.host.downcase
+        uri.fragment = nil
+        uri.path = '/' if uri.path.empty?
+        uri.port = nil if uri.port == uri.default_port
+        uri.normalize.to_s
+      rescue StandardError
+        nil
+      end
+
+      def redirect_target(request_url, location, scope_url: request_url)
+        target = normalize_http_url(resolve_location(request_url, location))
+        return { stop_reason: :invalid_redirect } unless target
+
+        source = URI.parse(normalize_http_url(request_url))
+        destination = URI.parse(target)
+        return { stop_reason: :unsafe_redirect } if source.scheme == 'https' && destination.scheme == 'http'
+
+        scope = URI.parse(normalize_http_url(scope_url))
+        unless same_scope_host?(scope.host, destination.host)
+          return { stop_reason: :canonical_handoff, canonical_handoff: target }
+        end
+
+        { next_url: target }
+      rescue StandardError
+        { stop_reason: :invalid_redirect }
+      end
+
+      def same_origin?(left_url, right_url)
+        left = URI.parse(normalize_http_url(left_url))
+        right = URI.parse(normalize_http_url(right_url))
+        left.scheme == right.scheme && left.host == right.host && left.port == right.port
+      rescue StandardError
+        false
+      end
+
       def same_scope_host?(left_host, right_host)
         return false if left_host.to_s.strip.empty? || right_host.to_s.strip.empty?
 
@@ -19,8 +59,8 @@ module Nokizaru
         return true if left == right
         return false if ip_address?(left) || ip_address?(right)
 
-        left_reg = registrable_domain(left)
-        right_reg = registrable_domain(right)
+        left_reg = registrable_domain(left).to_s
+        right_reg = registrable_domain(right).to_s
         !left_reg.empty? && left_reg == right_reg
       end
 

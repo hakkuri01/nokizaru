@@ -3,6 +3,7 @@
 require_relative 'version'
 require_relative 'connection_pool'
 require_relative 'http_result_helpers'
+require 'time'
 
 module Nokizaru
   module HTTPClient
@@ -104,6 +105,18 @@ module Nokizaru
       headers = response_headers(response)
       value = headers[key.to_s] || headers[key.to_s.downcase] || headers[key.to_s.capitalize]
       Array(value).join(', ')
+    end
+
+    def retry_after(response, max: nil, now: Time.now)
+      value = header_value(response, 'Retry-After').strip
+      return nil if value.empty?
+
+      delay = Integer(value, exception: false)
+      delay ||= Time.httpdate(value) - now
+      delay = [delay.to_f, 0.0].max
+      max ? [delay, max.to_f].min : delay
+    rescue ArgumentError
+      nil
     end
 
     def response_headers(response)

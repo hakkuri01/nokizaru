@@ -22,6 +22,18 @@ module Nokizaru
       URLHelpers.resolve_location(request_url, location)
     end
 
+    def normalize_http_url(url)
+      URLHelpers.normalize_http_url(url)
+    end
+
+    def redirect_target(request_url, location, scope_url: request_url)
+      URLHelpers.redirect_target(request_url, location, scope_url: scope_url)
+    end
+
+    def same_origin?(left_url, right_url)
+      URLHelpers.same_origin?(left_url, right_url)
+    end
+
     def same_scope_host?(left_host, right_host)
       URLHelpers.same_scope_host?(left_host, right_host)
     end

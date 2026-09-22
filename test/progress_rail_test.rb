@@ -4,7 +4,15 @@ require_relative 'test_helper'
 
 class ProgressRailTest < Minitest::Test
   class TTYStringIO < StringIO
+    attr_accessor :columns
+
+    def initialize(columns: 120)
+      super()
+      @columns = columns
+    end
+
     def tty? = true
+    def winsize = [24, columns]
   end
 
   def test_run_status_line_formats_directory_snapshot
@@ -24,7 +32,7 @@ class ProgressRailTest < Minitest::Test
 
     assert_match(/\A⟦[·■]{7}⟧ /, line)
     assert_includes line, 'Module 2/2'
-    assert_includes line, '┃ Directory Enum ┃'
+    assert_includes line, '// Directory Enum //'
     assert_includes line, 'Directory Enum'
     assert_includes line, '25/100'
     assert_includes line, 'avg 12.5r/s'
@@ -38,7 +46,7 @@ class ProgressRailTest < Minitest::Test
     second = Nokizaru::UI.run_status_line(snapshot, frame_index: 3, tty: false)
 
     refute_equal first, second
-    assert_includes second, 'headers ┃ running'
+    assert_includes second, 'headers // running'
   end
 
   def test_with_output_clears_and_redraws_transient_line
@@ -91,10 +99,10 @@ class ProgressRailTest < Minitest::Test
 
     line = Nokizaru::UI.run_status_line(snapshot, frame_index: 0, tty: true)
 
-    assert_includes line, "#{Nokizaru::UI::C}⟦#{Nokizaru::UI::W}"
-    assert_includes line, "#{Nokizaru::UI::C}⟧#{Nokizaru::UI::W}"
+    assert_includes line, "#{Nokizaru::UI::R}⟦#{Nokizaru::UI::W}"
+    assert_includes line, "#{Nokizaru::UI::R}⟧#{Nokizaru::UI::W}"
     assert_includes line, "Module #{Nokizaru::UI::Y}2#{Nokizaru::UI::W}/2"
-    assert_includes line, "#{Nokizaru::UI::C}┃#{Nokizaru::UI::W}"
+    assert_includes line, "#{Nokizaru::UI::R}//#{Nokizaru::UI::W}"
     assert_includes line, "#{Nokizaru::UI::Y}25#{Nokizaru::UI::W}/100"
     assert_includes line, "found #{Nokizaru::UI::Y}3#{Nokizaru::UI::W}"
     refute_includes line, '⟦!⟧'
@@ -110,7 +118,7 @@ class ProgressRailTest < Minitest::Test
     line = Nokizaru::UI.run_status_line(snapshot, frame_index: 2, tty: false)
 
     assert_includes line, 'Module 1/1'
-    assert_includes line, '┃ Port Scan ┃'
+    assert_includes line, '// Port Scan //'
     assert_includes line, '80/100'
     assert_includes line, 'open 3'
   end
@@ -125,8 +133,33 @@ class ProgressRailTest < Minitest::Test
     line = Nokizaru::UI.run_status_line(snapshot, frame_index: 2, tty: false)
 
     assert_includes line, 'Module 1/1'
-    assert_includes line, '┃ Headers ┃'
+    assert_includes line, '// Headers //'
     assert_includes line, 'complete 14 headers'
     refute_includes line, 'running complete'
+  end
+
+  def test_narrow_terminal_progress_stays_on_one_physical_row
+    io = TTYStringIO.new(columns: 64)
+    rail = Nokizaru::ProgressRail.new(enabled_modules: [:dir], io: io)
+    rail.module_started(:dir, label: 'Directory Enum')
+    rail.update(:dir, current: 1211, total: 5268, elapsed_s: 65.0, success: 822, errors: 389, found: 208)
+
+    rail.send(:render_locked)
+
+    assert_includes io.string, "#{Nokizaru::UI::R}//#{Nokizaru::UI::W}"
+    assert_includes io.string, "Module #{Nokizaru::UI::Y}1#{Nokizaru::UI::W}/1"
+    assert_includes io.string, "#{Nokizaru::UI::Y}1211#{Nokizaru::UI::W}/5268"
+    rendered = io.string.split("\e[K").last.gsub(/\e\[[0-9;]*m/, '')
+
+    assert_operator rendered.length, :<, io.columns
+  end
+
+  def test_tiny_terminal_suppresses_progress_rail
+    io = TTYStringIO.new(columns: 8)
+    rail = Nokizaru::ProgressRail.new(enabled_modules: [:sub], io: io)
+
+    rail.send(:render_locked)
+
+    assert_empty io.string
   end
 end

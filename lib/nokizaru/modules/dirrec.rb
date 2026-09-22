@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'cgi'
 require 'securerandom'
 require 'timeout'
 require 'uri'
@@ -86,6 +87,8 @@ module Nokizaru
       WAF_SENSITIVE_UNIQUENESS_LOW = 0.2
       SENSITIVE_NOISE_MIN_SAMPLES = 40
       SENSITIVE_NOISE_REDIRECT_DOMINANCE = 0.95
+      HOMOGENEOUS_GUESS_MIN_SAMPLES = 40
+      HOMOGENEOUS_GUESS_DOMINANCE = 0.9
 
       MODE_FULL = 'full'
       MODE_SEEDED = 'seeded'

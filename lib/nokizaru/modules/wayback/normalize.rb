@@ -9,49 +9,54 @@ module Nokizaru
       module Normalize
         module_function
 
-        LOW_SIGNAL_EXTENSIONS = %w[
+        MAX_URL_LENGTH = 8192
+        CATEGORY_LIMIT = 250
+        NOISE_EXTENSIONS = %w[
           .png .jpg .jpeg .gif .webp .svg .ico .bmp .tif .tiff .avif
-          .css .less .scss .sass .js .mjs .map .ts
-          .woff .woff2 .ttf .otf .eot
-          .pdf .zip .gz .bz2 .xz .7z .rar .tar .tgz
+          .css .less .scss .sass .woff .woff2 .ttf .otf .eot
           .mp3 .wav .ogg .m4a .mp4 .webm .mov .avi .mkv
         ].freeze
-        HIGH_SIGNAL_TOKENS = %w[
-          admin login signin auth account dashboard api graphql oauth token
-          config backup db database env passwd secrets private internal
-          wp-admin wp-login xmlrpc wp-json server-status server-info
+        JAVASCRIPT_EXTENSIONS = %w[.js .mjs .cjs .jsx .ts .tsx .map].freeze
+        API_SEGMENTS = %w[api graphql rest rpc swagger openapi].freeze
+        INTERESTING_PATH_SEGMENTS = %w[
+          admin login signin sign-in auth account dashboard oauth token config backup database
+          private internal wp-admin wp-login xmlrpc wp-json server-status server-info
         ].freeze
-
+        INTERESTING_PARAMETERS = %w[
+          admin api_key apikey callback cmd continue debug file id key next path redirect return return_to
+          token url user username
+        ].freeze
+        SENSITIVE_FILENAMES = %w[
+          .env .gitignore .htaccess .htpasswd docker-compose.yml docker-compose.yaml id_rsa id_dsa
+          package-lock.json composer.lock web.config wp-config.php
+        ].freeze
+        SENSITIVE_SUFFIXES = %w[
+          .bak .backup .conf .config .db .dump .ini .key .log .old .pem .properties .secret .sql .sqlite
+          .swp .tar .tgz .zip .gz .bz2 .xz .7z .rar
+        ].freeze
         def fallback_urls_from_availability(avail_data)
           return [] unless avail_data.is_a?(Hash)
 
           closest = avail_data['closest']
           return [] unless closest.is_a?(Hash)
 
-          url = closest['url'].to_s.strip
-          return [] if url.empty?
+          original = original_url_from_archive_snapshot(closest['url'].to_s.strip)
+          return [] unless sanitized_url_record(original)
 
-          original = original_url_from_archive_snapshot(url)
-          fallback = original.empty? ? url : original
-          meaningful_archive_fallback?(fallback) ? [fallback] : []
+          meaningful_archive_fallback?(original) ? [original] : []
         end
 
         def meaningful_archive_fallback?(url)
-          uri = URI.parse(url.to_s)
-          path = uri.path.to_s
-          !(path.empty? || path == '/') || !uri.query.to_s.empty?
-        rescue StandardError
-          false
+          uri = sanitized_url_record(url)&.fetch(:uri, nil)
+          uri && (!(uri.path.to_s.empty? || uri.path == '/') || !uri.query.to_s.empty?)
         end
 
         def original_url_from_archive_snapshot(url)
-          uri = URI.parse(url)
-          return '' unless uri.host.to_s.include?('web.archive.org')
+          archive = URI.parse(url.to_s)
+          return '' unless archive.is_a?(URI::HTTP) && archive.host == 'web.archive.org' && archive.userinfo.nil?
 
-          match = uri.path.to_s.match(%r{/web/\d+(?:[a-z_]*)/(https?://.+)\z}i)
-          return '' unless match
-
-          URI.decode_www_form_component(match[1].to_s)
+          match = url.to_s.match(%r{\Ahttps?://web\.archive\.org/web/\d+(?:[a-z_]*)/(https?://.+)\z}i)
+          match ? match[1] : ''
         rescue StandardError
           ''
         end
@@ -62,65 +67,72 @@ module Nokizaru
           seen = {}
           Array(urls).each_with_object([]) do |url, filtered|
             record = sanitized_url_record(url)
-            next unless record
-            next unless in_scope_record?(record, scope, domain_cache)
-            next if low_signal_path?(record[:uri].path)
-            next if seen[record[:url]]
+            next unless record && in_scope_record?(record, scope, domain_cache)
+            next if noise_path?(record[:uri].path) || seen[record[:url]]
 
             seen[record[:url]] = true
             filtered << record[:url]
+            break if filtered.length >= Wayback::MAX_URLS
           end
         end
 
-        def rank_high_signal_urls(urls, limit: 250)
-          scored = []
-          seen = {}
-          Array(urls).each do |url|
-            next if seen[url]
+        def triage(urls, limit: CATEGORY_LIMIT)
+          categories = {
+            'javascript_urls' => [], 'api_urls' => [], 'interesting_path_urls' => [],
+            'interesting_parameter_urls' => [], 'sensitive_file_urls' => []
+          }
+          parameter_counts = Hash.new(0)
+          order = {}
 
-            seen[url] = true
+          Array(urls).each_with_index do |url, index|
             record = sanitized_url_record(url)
             next unless record
 
-            score = score_uri(record[:uri])
-            scored << [record[:url], score] if score.positive?
+            order[url] ||= index
+            parameters = classify_url(categories, url, record[:uri], limit)
+            parameters.uniq.each { |name| parameter_counts[name] += 1 }
           end
 
-          scored.sort_by { |(url, score)| [-score, url.length] }.first(limit.to_i).map(&:first)
+          labels = categories.values.flatten.tally
+          review = labels.keys.sort_by { |url| [-labels[url], order.fetch(url)] }.first(limit)
+          categories.merge('review_urls' => review, 'parameter_counts' => parameter_counts.sort.to_h)
+        end
+
+        def rank_high_signal_urls(urls, limit: CATEGORY_LIMIT)
+          triage(urls, limit: limit)['review_urls']
         end
 
         def sanitized_url_record(url)
-          cleaned = url.to_s.strip.sub(/["'`,;\])]+\z/, '')
-          return nil if cleaned.empty?
-          return nil if cleaned.include?(' ')
-          return nil if cleaned.match?(/%[0-9A-Fa-f]?\z/)
+          cleaned = url.to_s.strip
+          return nil unless valid_raw_url?(cleaned)
 
           uri = URI.parse(cleaned)
-          return nil unless uri.is_a?(URI::HTTP) && uri.host
-          return nil if noisy_encoded_path?(uri.path)
+          return nil unless uri.is_a?(URI::HTTP) && uri.host && uri.userinfo.nil?
+          return nil if decoded_control_character?(uri)
 
           { url: cleaned, uri: uri }
         rescue StandardError
           nil
         end
 
-        def noisy_encoded_path?(path)
-          decoded = URI.decode_www_form_component(path.to_s)
-          return true if decoded.match?(/[[:cntrl:]]/)
+        def valid_raw_url?(url)
+          !url.empty? && url.bytesize <= MAX_URL_LENGTH && !url.match?(/[[:cntrl:] ]/) &&
+            !url.match?(/%[0-9A-Fa-f]?\z/)
+        end
 
-          segment = decoded.delete_prefix('/')
-          !segment.empty? && segment.strip.empty?
-        rescue StandardError
-          false
+        def decoded_control_character?(uri)
+          [uri.path, uri.query].compact.any? do |part|
+            URI::DEFAULT_PARSER.unescape(part).match?(/[[:cntrl:]]/)
+          end
+        rescue ArgumentError
+          true
         end
 
         def target_scope(target)
           return nil if target.to_s.strip.empty?
 
           host = URI.parse(target).host.to_s.downcase
-          return nil if host.empty?
-
-          registrable_domain(host)
+          host.empty? ? nil : registrable_domain(host)
         rescue StandardError
           nil
         end
@@ -141,37 +153,70 @@ module Nokizaru
           value = PublicSuffix.domain(host)
           labels = host.to_s.split('.').reject(&:empty?)
           normalized = value.to_s.downcase
-          unless normalized.empty?
-            return labels.last(2).join('.') if normalized == host.to_s.downcase && labels.length > 2
+          return labels.last(2).join('.') if normalized == host.to_s.downcase && labels.length > 2
+          return normalized unless normalized.empty?
 
-            return normalized
-          end
-
-          return host if labels.length < 2
-
-          labels.last(2).join('.')
+          labels.length < 2 ? host : labels.last(2).join('.')
         rescue StandardError
           labels = host.to_s.split('.').reject(&:empty?)
-          return host if labels.length < 2
-
-          labels.last(2).join('.')
+          labels.length < 2 ? host : labels.last(2).join('.')
         end
 
-        def low_signal_path?(path)
+        def noise_path?(path)
           value = path.to_s.downcase
-          return false if value.empty?
-
-          LOW_SIGNAL_EXTENSIONS.any? { |ext| value.end_with?(ext) }
+          NOISE_EXTENSIONS.any? { |ext| value.end_with?(ext) }
         end
 
-        def score_uri(uri)
-          path = uri.path.to_s.downcase
-          score = 0
-          score += 4 if HIGH_SIGNAL_TOKENS.any? { |token| path.include?(token) }
-          score += 2 if path.count('/') >= 2
-          score += 1 unless uri.query.to_s.empty?
-          score -= 3 if low_signal_path?(path)
-          score
+        def decoded_segments(path)
+          path.to_s.split('/').filter_map do |segment|
+            decoded = URI.decode_www_form_component(segment).downcase
+            decoded unless decoded.empty?
+          rescue ArgumentError
+            nil
+          end
+        end
+
+        def javascript_path?(path)
+          value = path.to_s.downcase
+          JAVASCRIPT_EXTENSIONS.any? { |ext| value.end_with?(ext) }
+        end
+
+        def api_path?(segments)
+          segments.any? { |segment| API_SEGMENTS.include?(segment) || segment.match?(/\Av\d+\z/) }
+        end
+
+        def interesting_path?(segments)
+          segments.any? { |segment| INTERESTING_PATH_SEGMENTS.include?(segment) }
+        end
+
+        def relevant_parameters(query)
+          URI.decode_www_form(query.to_s).filter_map do |name, _value|
+            normalized = name.to_s.downcase
+            normalized if INTERESTING_PARAMETERS.include?(normalized)
+          end
+        rescue ArgumentError
+          []
+        end
+
+        def sensitive_file?(filename)
+          value = filename.to_s.downcase
+          SENSITIVE_FILENAMES.include?(value) || SENSITIVE_SUFFIXES.any? { |suffix| value.end_with?(suffix) } ||
+            value.match?(/\A(?:config|credentials|secrets?|settings)\.(?:json|ya?ml|xml)\z/)
+        end
+
+        def classify_url(categories, url, uri, limit)
+          segments = decoded_segments(uri.path)
+          add_category(categories, 'javascript_urls', url, javascript_path?(uri.path), limit)
+          add_category(categories, 'api_urls', url, api_path?(segments), limit)
+          add_category(categories, 'interesting_path_urls', url, interesting_path?(segments), limit)
+          parameters = relevant_parameters(uri.query)
+          add_category(categories, 'interesting_parameter_urls', url, parameters.any?, limit)
+          add_category(categories, 'sensitive_file_urls', url, sensitive_file?(segments.last), limit)
+          parameters
+        end
+
+        def add_category(categories, category, url, matched, limit)
+          categories[category] << url if matched && categories[category].length < limit.to_i
         end
       end
     end

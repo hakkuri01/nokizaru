@@ -12,13 +12,22 @@ module Nokizaru
 
         # Run this module and store normalized results in the run context
         def call(hostname, http, found)
+          key = Base.ensure_key('alienvault', 'NK_ALIENVAULT_KEY')
+          return missing_alienvault_key unless key
+
           Base.requesting('AlienVault')
-          process_alienvault_response(hostname, http, found)
+          process_alienvault_response(hostname, key, http, found)
           Log.write('[alienvault_subs] Completed')
         end
 
-        def process_alienvault_response(hostname, http, found)
-          resp = http.get("https://otx.alienvault.com/api/v1/indicators/domain/#{hostname}/passive_dns")
+        def missing_alienvault_key
+          Base.skipping('AlienVault', 'API key not found!')
+          Log.write('[alienvault_subs] API key not found')
+        end
+
+        def process_alienvault_response(hostname, key, http, found)
+          url = "https://otx.alienvault.com/api/v1/indicators/domain/#{hostname}/passive_dns"
+          resp = http.get(url, headers: { 'X-OTX-API-KEY' => key })
           status = Base.safe_status(resp)
           return handle_alienvault_error(resp, status) unless status == 200
 

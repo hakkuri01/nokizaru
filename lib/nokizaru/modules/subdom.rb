@@ -40,14 +40,15 @@ module Nokizaru
 
         SubdomainModules::Base.start_output_capture(subdomain_provider_names)
         ctx.progress&.update(:sub, stage: 'providers', current: 0, total: subdomain_provider_names.length, found: 0)
-        found = enumerate(hostname, timeout, progress: ctx.progress)
+        health = {}
+        found = enumerate(hostname, timeout, progress: ctx.progress, health: health)
         SubdomainModules::Base.flush_output_capture
         found = Array(found).sort
         ctx.progress&.update(:sub, stage: 'complete', detail: "#{found.length} subdomains")
 
         print_results(found)
 
-        ctx.run['modules']['subdomains'] = { 'subdomains' => found }
+        ctx.run['modules']['subdomains'] = { 'subdomains' => found, 'provider_health' => health }
         ctx.add_artifact('subdomains', found)
 
         Log.write('[subdom] Completed')

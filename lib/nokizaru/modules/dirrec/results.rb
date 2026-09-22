@@ -11,9 +11,14 @@ module Nokizaru
           elapsed = stats[:elapsed] || 1
           rps = ((stats[:success] + stats[:errors]) / elapsed).round(1)
           stop_meta = dir_stop_meta(runtime[:stop_state])
+          reconciled = reconcile_candidate_findings(scan, runtime)
+          apply_reconciled_confidence_stats!(stats, reconciled[:entries])
+          apply_reconciled_first_actionable!(runtime, reconciled[:entries])
+          apply_reconciled_runtime_buckets!(runtime, reconciled)
           decorate_dir_output_stats!(runtime, stats)
-          result = dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
+          result = dir_result(scan, runtime, stats, stop_meta, { elapsed: elapsed, rps: rps }, reconciled)
 
+          print_progress(runtime, scan, force: true)
           print_dir_summary(rps, runtime, stop_meta[:display_reason], runtime[:redirect_signals])
           store_dir_result(scan, result)
         end
@@ -54,11 +59,14 @@ module Nokizaru
           first - runtime[:start_time]
         end
 
-        def dir_result(scan, runtime, stats, stop_meta, elapsed, rps)
-          high_signal_found = rank_high_signal_paths(runtime[:signal_responses], scan[:normalized_target])
+        def dir_result(scan, runtime, stats, stop_meta, timing,
+                       reconciled = reconcile_candidate_findings(scan, runtime))
           found = runtime[:all_found].uniq
-          prioritized_found = runtime[:found].uniq
-          low_confidence_found = runtime[:low_confidence_found].uniq
+          prioritized_found = reconciled[:prioritized]
+          low_confidence_found = reconciled[:low]
+          high_signal_found = rank_high_signal_paths(
+            runtime[:signal_responses], scan[:normalized_target], prioritized_found.to_set
+          )
           {
             'target' => {
               'original' => scan[:options][:target],
@@ -68,19 +76,145 @@ module Nokizaru
             },
             'found' => found,
             'prioritized_found' => prioritized_found,
-            'stdout_found' => runtime[:stdout_found].uniq,
-            'confirmed_found' => runtime[:confirmed_found].uniq,
+            'stdout_found' => Array(runtime[:stdout_found]).uniq,
+            'confirmed_found' => reconciled[:confirmed],
             'low_confidence_found' => low_confidence_found,
             'high_signal_found' => high_signal_found,
             'by_status' => grouped_response_statuses(runtime[:responses]),
-            'stats' => dir_stats(stats, stop_meta, elapsed, rps)
+            'stats' => dir_stats(stats, stop_meta, timing[:elapsed], timing[:rps])
           }
         end
 
-        def rank_high_signal_paths(responses, normalized_target)
+        def reconcile_candidate_findings(scan, runtime)
+          observations = Array(runtime[:candidate_observations])
+          return existing_confidence_findings(runtime) if observations.empty?
+
+          context = confidence_context_snapshot(runtime)
+          crawler_paths = normalized_crawler_paths(scan)
+          entries = observations.map do |observation|
+            reconciled_candidate(scan, runtime, observation, context, crawler_paths)
+          end
+          demote_homogeneous_guesses!(entries, runtime)
+          {
+            entries: entries,
+            prioritized: entries.filter_map { |entry| entry[:url] unless entry[:decision][:level] == :low }.uniq,
+            confirmed: entries.filter_map { |entry| entry[:url] if entry[:decision][:level] == :confirmed }.uniq,
+            low: entries.filter_map { |entry| entry[:url] if entry[:decision][:level] == :low }.uniq
+          }
+        end
+
+        def existing_confidence_findings(runtime)
+          {
+            entries: [],
+            prioritized: Array(runtime[:found]).uniq,
+            confirmed: Array(runtime[:confirmed_found]).uniq,
+            low: Array(runtime[:low_confidence_found]).uniq
+          }
+        end
+
+        def reconciled_candidate(scan, runtime, observation, context, crawler_paths)
+          decision = finding_confidence(
+            observation[:url], observation[:status], observation[:sample], runtime[:soft_404_baseline],
+            scan[:normalized_target]
+          )
+          {
+            url: observation[:url],
+            status: observation[:status].to_i,
+            sample: observation[:sample],
+            observed_count: observation[:observed_count],
+            observed_at: observation[:observed_at],
+            crawler: crawler_corroborated?(scan, observation[:url], crawler_paths),
+            decision: apply_waf_confidence_adjustment(decision, observation[:url], context)
+          }
+        end
+
+        def normalized_crawler_paths(scan)
+          Array(scan.dig(:url_plan, :crawler_paths)).to_set do |path|
+            normalize_pattern_path(canonical_corroboration_path(path))
+          end
+        end
+
+        def crawler_corroborated?(scan, url, crawler_paths)
+          path = canonical_corroboration_path(url)
+          target_path = canonical_corroboration_path(scan[:normalized_target]).chomp('/')
+          relative = path
+          relative = '/' if !target_path.empty? && path == target_path
+          relative = path.delete_prefix(target_path) if !target_path.empty? && path.start_with?("#{target_path}/")
+          crawler_paths.include?(normalize_pattern_path(relative))
+        end
+
+        def canonical_corroboration_path(value)
+          URI.parse(value.to_s).path.to_s.gsub(/%[0-9a-f]{2}/i, &:upcase)
+        rescue StandardError
+          value.to_s
+        end
+
+        def demote_homogeneous_guesses!(entries, runtime)
+          dominant = homogeneous_guess_cluster(entries, runtime)
+          return unless dominant
+
+          entries.each do |entry|
+            next if entry[:crawler] || candidate_observation_signature(entry) != dominant
+            next unless entry[:decision][:level] == :likely
+
+            entry[:decision] = confidence_decision(:low, :homogeneous_guessed_result)
+          end
+        end
+
+        def homogeneous_guess_cluster(entries, runtime)
+          return if entries.length < HOMOGENEOUS_GUESS_MIN_SAMPLES
+
+          successful = runtime.dig(:stats, :success).to_i
+          return if successful <= 0 || entries.length.to_f / successful < HOMOGENEOUS_GUESS_DOMINANCE
+
+          signatures = entries.map { |entry| candidate_observation_signature(entry) }
+          dominant, count = signatures.tally.max_by { |_signature, total| total }
+          return unless count.to_f / entries.length >= HOMOGENEOUS_GUESS_DOMINANCE
+
+          dominant
+        end
+
+        def candidate_observation_signature(entry)
+          sample = entry[:sample].to_h
+          status = entry[:status]
+          [status, sample[:content_type], sample[:title].to_s, sample[:fingerprint], sample[:body_length].to_i]
+        end
+
+        def apply_reconciled_runtime_buckets!(runtime, reconciled)
+          runtime[:found] = reconciled[:prioritized]
+          runtime[:confirmed_found] = reconciled[:confirmed]
+          runtime[:low_confidence_found] = reconciled[:low]
+          runtime[:stdout_found] = reconciled[:prioritized]
+        end
+
+        def reconcile_runtime_for_adaptation!(scan, runtime)
+          return unless (runtime[:count].to_i % PRESSURE_WINDOW_REQUESTS).zero?
+          return if Array(runtime[:candidate_observations]).empty?
+
+          apply_reconciled_runtime_buckets!(runtime, reconcile_candidate_findings(scan, runtime))
+        end
+
+        def apply_reconciled_first_actionable!(runtime, entries)
+          first = entries.reject { |entry| entry[:decision][:level] == :low }
+                         .min_by { |entry| entry[:observed_count].to_i }
+          runtime[:first_actionable_at] = first && first[:observed_at]
+          runtime[:first_actionable_count] = first ? first[:observed_count].to_i : 0
+        end
+
+        def apply_reconciled_confidence_stats!(stats, entries)
+          return if entries.empty?
+
+          stats[:confidence_levels] = entries.map { |entry| entry[:decision][:level].to_s }.tally
+          stats[:confidence_reasons] = entries.map { |entry| entry[:decision][:reason].to_s }.reject(&:empty?).tally
+          stats[:waf_sensitive_promotion_count] = entries.count do |entry|
+            entry[:decision][:level] != :low && sensitive_status_reason?(entry[:decision][:reason])
+          end
+        end
+
+        def rank_high_signal_paths(responses, normalized_target, prioritized)
           Array(responses)
             .map { |url, status| [url.to_s, score_path_signal(url, status, normalized_target)] }
-            .select { |(_, score)| score.positive? }
+            .select { |(url, score)| score.positive? && prioritized.include?(url) }
             .sort_by { |(url, score)| [-score, url.length] }
             .first(200)
             .map(&:first)
@@ -88,9 +222,8 @@ module Nokizaru
         end
 
         def score_path_signal(url, status, normalized_target)
-          path = URI.parse(url).path.to_s.downcase
-          target_path = URI.parse(normalized_target).path.to_s.downcase
-          return 0 if path.empty? || path == '/' || path == target_path
+          path = relative_response_path(url, normalized_target)
+          return 0 if path.empty? || path == '/'
 
           status_signal_score(status.to_i) + path_signal_score(path)
         rescue StandardError

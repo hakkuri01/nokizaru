@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'io/console'
+
 module Nokizaru
   # Shared transient status line for scan progress across modules
   class ProgressRail
@@ -111,9 +113,21 @@ module Nokizaru
     end
 
     def render_locked
-      @io.print("\r\e[K#{UI.run_status_line(@snapshot, frame_index: @frame_index, tty: true)}")
+      line = UI.run_status_line(
+        @snapshot, frame_index: @frame_index, tty: true, width: terminal_columns
+      )
+      return clear_locked if line.empty?
+
+      @io.print("\r\e[K#{line}")
       @io.flush
       @rendered = true
+    end
+
+    def terminal_columns
+      columns = @io.winsize[1].to_i
+      columns if columns.positive?
+    rescue IOError, SystemCallError, NoMethodError
+      nil
     end
 
     def clear_locked

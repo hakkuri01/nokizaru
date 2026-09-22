@@ -43,6 +43,7 @@ module Nokizaru
 
         def finalize_crawl!(ctx, result)
           result.delete('__control__')
+          result['status'] ||= 'ok'
           preview_sections.each { |(label, key)| print_links_preview(label, result[key]) }
           ctx.run['modules']['crawler'] = result
           ctx.add_artifact('urls', result['stats']['total_urls'])
@@ -147,6 +148,7 @@ module Nokizaru
           control = crawler_control(result)
           result['stats']['crawl_mode'] = control[:degraded] ? 'degraded' : 'standard'
           result['stats']['crawl_notes'] = control[:notes].dup
+          result['status'] = 'degraded' if control[:degraded] || control[:notes].include?('wall_clock_budget_exhausted')
         end
 
         def mark_budget_exhausted!(result)
