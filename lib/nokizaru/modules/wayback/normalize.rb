@@ -34,23 +34,6 @@ module Nokizaru
           .bak .backup .conf .config .db .dump .ini .key .log .old .pem .properties .secret .sql .sqlite
           .swp .tar .tgz .zip .gz .bz2 .xz .7z .rar
         ].freeze
-        def fallback_urls_from_availability(avail_data)
-          return [] unless avail_data.is_a?(Hash)
-
-          closest = avail_data['closest']
-          return [] unless closest.is_a?(Hash)
-
-          original = original_url_from_archive_snapshot(closest['url'].to_s.strip)
-          return [] unless sanitized_url_record(original)
-
-          meaningful_archive_fallback?(original) ? [original] : []
-        end
-
-        def meaningful_archive_fallback?(url)
-          uri = sanitized_url_record(url)&.fetch(:uri, nil)
-          uri && (!(uri.path.to_s.empty? || uri.path == '/') || !uri.query.to_s.empty?)
-        end
-
         def original_url_from_archive_snapshot(url)
           archive = URI.parse(url.to_s)
           return '' unless archive.is_a?(URI::HTTP) && archive.host == 'web.archive.org' && archive.userinfo.nil?
@@ -61,19 +44,40 @@ module Nokizaru
           ''
         end
 
-        def filter_urls(urls, target: nil)
+        def filter_urls(urls, target: nil, include_noise: false, exact_host: false)
           scope = target_scope(target)
+          host_scope = target_host(target)
           domain_cache = {}
           seen = {}
           Array(urls).each_with_object([]) do |url, filtered|
             record = sanitized_url_record(url)
-            next unless record && in_scope_record?(record, scope, domain_cache)
-            next if noise_path?(record[:uri].path) || seen[record[:url]]
+            next unless record && in_scope_record?(
+              record, scope, domain_cache, host_scope: exact_host ? host_scope : nil
+            )
+            next if (!include_noise && noise_path?(record[:uri].path)) || seen[record[:url]]
 
             seen[record[:url]] = true
             filtered << record[:url]
-            break if filtered.length >= Wayback::MAX_URLS
           end
+        end
+
+        def signal_labels(url)
+          uri = sanitized_url_record(url)&.fetch(:uri, nil)
+          return [] unless uri
+
+          segments = decoded_segments(uri.path)
+          labels = []
+          labels << 'javascript' if javascript_path?(uri.path)
+          labels << 'api' if api_path?(segments)
+          labels << 'interesting_path' if interesting_path?(segments)
+          labels << 'interesting_parameter' if relevant_parameters(uri.query).any?
+          labels << 'sensitive_file' if sensitive_file?(segments.last)
+          labels
+        end
+
+        def noise_url?(url)
+          uri = sanitized_url_record(url)&.fetch(:uri, nil)
+          !uri || noise_path?(uri.path)
         end
 
         def triage(urls, limit: CATEGORY_LIMIT)
@@ -105,6 +109,7 @@ module Nokizaru
         def sanitized_url_record(url)
           cleaned = url.to_s.strip
           return nil unless valid_raw_url?(cleaned)
+          return nil if cleaned.match?(%r{\Ahttps?://[^/]*@}i)
 
           uri = URI.parse(cleaned)
           return nil unless uri.is_a?(URI::HTTP) && uri.host && uri.userinfo.nil?
@@ -131,13 +136,20 @@ module Nokizaru
         def target_scope(target)
           return nil if target.to_s.strip.empty?
 
-          host = URI.parse(target).host.to_s.downcase
+          host = URI.parse(target).host.to_s.downcase.delete_suffix('.')
           host.empty? ? nil : registrable_domain(host)
         rescue StandardError
           nil
         end
 
-        def in_scope_record?(record, scope, domain_cache)
+        def target_host(target)
+          URI.parse(target.to_s).host.to_s.downcase.delete_suffix('.')
+        rescue StandardError
+          ''
+        end
+
+        def in_scope_record?(record, scope, domain_cache, host_scope: nil)
+          return record[:uri].host.to_s.downcase.delete_suffix('.') == host_scope unless host_scope.to_s.empty?
           return true if scope.nil?
 
           host = record[:uri].host.to_s.downcase

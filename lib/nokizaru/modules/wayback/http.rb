@@ -11,8 +11,8 @@ module Nokizaru
 
         MIN_RETRY_BUDGET = 0.25
 
-        def get(uri, timeout_s: nil, deadline_at: nil, headers: nil, on_timeout: nil)
-          with_retries(uri, timeout_s: timeout_s, deadline_at: deadline_at, headers: headers)
+        def get(uri, timeout_s: nil, deadline_at: nil, on_timeout: nil)
+          with_retries(uri, timeout_s: timeout_s, deadline_at: deadline_at)
         rescue Timeout::Error => e
           on_timeout&.call
           Log.write("[wayback] Timeout/network error: #{e.message}")
@@ -25,17 +25,17 @@ module Nokizaru
           nil
         end
 
-        def with_retries(uri, timeout_s: nil, deadline_at: nil, headers: nil)
+        def with_retries(uri, timeout_s: nil, deadline_at: nil)
           attempts = 0
           while attempts <= Wayback::RETRIES
             attempts += 1
             budget = request_budget(timeout_s, deadline_at)
             return nil unless budget.positive?
 
-            response = request(uri, timeout_s: budget, headers: headers)
+            response = request(uri, timeout_s: budget)
             return response unless retryable?(response, attempts, deadline_at, timeout_s)
 
-            sleep(retry_delay(attempts, deadline_at))
+            sleep(retry_delay(response, attempts, deadline_at))
           end
           nil
         end
@@ -46,15 +46,14 @@ module Nokizaru
             retry_budget?(deadline_at, timeout_s)
         end
 
-        def request(uri, timeout_s: nil, headers: nil)
+        def request(uri, timeout_s: nil)
           budget = timeout_s.to_f.positive? ? timeout_s.to_f : Wayback::READ_TIMEOUT
           client = Nokizaru::HTTPClient.for_host(
             uri.to_s,
             timeout_s: budget,
             follow_redirects: false
           )
-          request_headers = Nokizaru::HTTPClient.request_headers(user_agent: 'Nokizaru').merge(headers || {})
-          response = client.get(uri.to_s, headers: request_headers)
+          response = client.get(uri.to_s)
           Nokizaru::HTTPClient.error_response?(response) ? nil : response
         end
 
@@ -74,8 +73,9 @@ module Nokizaru
           deadline_at.to_f - Process.clock_gettime(Process::CLOCK_MONOTONIC) > MIN_RETRY_BUDGET
         end
 
-        def retry_delay(attempts, deadline_at)
-          delay = 0.2 * attempts
+        def retry_delay(response, attempts, deadline_at)
+          retry_after = Nokizaru::HTTPClient.retry_after(response)
+          delay = retry_after || (0.25 * (2**(attempts - 1)))
           return delay unless deadline_at
 
           remaining = deadline_at.to_f - Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -84,7 +84,7 @@ module Nokizaru
         end
 
         def retryable_status?(status)
-          status == 429
+          status == 429 || (500..599).cover?(status)
         end
       end
     end

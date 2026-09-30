@@ -5,18 +5,6 @@ require_relative 'test_helper'
 class WaybackNormalizeTest < Minitest::Test
   Normalize = Nokizaru::Modules::Wayback::Normalize
 
-  def test_availability_fallback_ignores_root_only_snapshot
-    snapshots = { 'closest' => { 'url' => 'https://web.archive.org/web/20240101000000/https://www.google.com/' } }
-
-    assert_empty Normalize.fallback_urls_from_availability(snapshots)
-  end
-
-  def test_availability_fallback_keeps_meaningful_snapshot_path
-    snapshots = { 'closest' => { 'url' => 'https://web.archive.org/web/20240101000000/https://example.com/admin' } }
-
-    assert_equal ['https://example.com/admin'], Normalize.fallback_urls_from_availability(snapshots)
-  end
-
   def test_archive_snapshot_extracts_original_url_and_rejects_non_archive_urls
     snapshot = 'https://web.archive.org/web/20240101000000/https://example.com/admin?x=1'
 
@@ -24,12 +12,6 @@ class WaybackNormalizeTest < Minitest::Test
     assert_equal 'https://example.com/admin?x=1',
                  Normalize.original_url_from_archive_snapshot(snapshot.sub('https://web.', 'http://web.'))
     assert_equal '', Normalize.original_url_from_archive_snapshot('https://example.com/web/20240101/https://evil.test')
-  end
-
-  def test_meaningful_archive_fallback_accepts_query_only_urls
-    assert Normalize.meaningful_archive_fallback?('https://example.com/?q=admin')
-    refute Normalize.meaningful_archive_fallback?('https://example.com/')
-    refute Normalize.meaningful_archive_fallback?('not a url')
   end
 
   def test_filter_urls_keeps_scope_dedupes_and_removes_low_signal_assets
@@ -119,5 +101,13 @@ class WaybackNormalizeTest < Minitest::Test
     scope = Normalize.target_scope('https://www.example.com/app')
 
     assert_equal 'example.com', scope
+  end
+
+  def test_exact_host_scope_normalizes_trailing_dot
+    urls = ['https://example.com/admin']
+
+    assert_equal urls, Normalize.filter_urls(
+      urls, target: 'https://example.com./', include_noise: true, exact_host: true
+    )
   end
 end

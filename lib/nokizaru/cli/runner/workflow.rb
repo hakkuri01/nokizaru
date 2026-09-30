@@ -158,17 +158,13 @@ module Nokizaru
           return unless enabled[:wayback]
 
           timeout = module_timeout_s(info, :wayback)
-          safe_run_module(:wayback, true, ctx, timeout_s: timeout) do
+          safe_run_module(:wayback, true, ctx, timeout_s: timeout + Nokizaru::Modules::Wayback::OUTER_TIMEOUT_MARGIN) do
             Nokizaru::Modules::Wayback.call(
               target,
               ctx,
-              timeout_s: [timeout, wayback_timeout_cap].min
+              timeout_s: timeout
             )
           end
-        end
-
-        def wayback_timeout_cap
-          24.0
         end
 
         def safe_run_module(key, enabled, ctx, timeout_s: nil, &)

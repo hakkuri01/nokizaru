@@ -28,7 +28,7 @@ Nokizaru \- Recon Refined
 Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface.
 It can collect common recon signals from a target such as HTTP headers,
 SSL/TLS certificate details, WHOIS, DNS records, subdomains, architecture
-fingerprinting, crawler link extraction, directory enumeration, Wayback URLs,
+fingerprinting, crawler link extraction, directory enumeration, Wayback snapshots,
 and also features a fast port scan.
 .SH SCAN TARGET
 The target is required for scans, but not for help, version output, or saving
@@ -53,7 +53,7 @@ OPTION	MODULE
 --sub	Sub-Domain Enumeration
 --arch	Architecture Fingerprinting
 --dir	Directory Search
---wayback	Wayback URLs
+--wayback	Historical and state-change Wayback snapshots
 --ps	Fast Port Scan
 --full	Full Recon
 --no-[MODULE]	Skip specified modules above during full scan (e.g. --no-dir)
@@ -143,7 +143,7 @@ nokizaru --headers --target https://example.com	Header inspection
 nokizaru --arch --target https://example.com	Architecture fingerprinting
 nokizaru --dir --target https://example.com -e php,xml	Directory enum with extensions
 nokizaru --crawl --dir --target https://example.com -H 'Cookie: PHPSESSID=abc; uid=52'	Authenticated in-scope scan
-nokizaru --wayback --target https://example.com	Wayback URLs
+nokizaru --wayback --target https://example.com	Wayback snapshot selection
 nokizaru --ps --target https://example.com -pt 80	Port scan with higher concurrency
 nokizaru --ps --target https://example.com -p all	Port scan all TCP ports
 .TE

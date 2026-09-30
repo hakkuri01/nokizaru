@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 require_relative '../log'
-require_relative 'wayback/archive_sources'
 require_relative 'wayback/http'
 require_relative 'wayback/normalize'
+require_relative 'wayback/cdx'
+require_relative 'wayback/history'
 require_relative 'wayback/presenter'
 require_relative 'wayback/query'
 
@@ -15,18 +16,18 @@ module Nokizaru
 
       AVAIL_URL = 'https://archive.org/wayback/available'
       CDX_URL = 'https://web.archive.org/cdx/search/cdx'
-      TOTAL_TIMEOUT = 10
+      TOTAL_TIMEOUT = 60
+      OUTER_TIMEOUT_MARGIN = 5
       READ_TIMEOUT = 10
-      MAX_URLS = 5000
-      SCHEMA_VERSION = 2
+      SNAPSHOT_LIMIT = 50
+      INTERVAL_LIMIT = 5
+      SCHEMA_VERSION = 4
       RETRIES = 2
-      PREVIEW_LIMIT = 10
       WAYBACK_ROW_LABEL_WIDTH = [
         'Checking availability on Wayback Machine'.length,
         'Fetching URLs from CDX'.length,
-        'Common Crawl source'.length,
-        'VirusTotal source'.length,
-        'Using availability snapshot fallback'.length,
+        'Historical snapshots selected'.length,
+        'State-change snapshots selected'.length,
         'Archive.org service status'.length,
         'Manual Wayback Review'.length
       ].max
@@ -56,23 +57,19 @@ module Nokizaru
       def execute_query(target, timeout_s)
         timeout_value = normalized_timeout(timeout_s)
         deadline_at = Query.deadline_after(timeout_value)
-        availability_timeout_s = Query.availability_timeout(timeout_value)
-        availability = Query.availability_status(target, availability_timeout_s, deadline_at: deadline_at)
-        urls, cdx_status, cdx_reasons, url_records, availability, source_health = Query.fetch_urls_with_status(
-          target,
-          Query.cdx_timeout(timeout_value, availability_timeout_s),
-          availability[:snapshots],
-          deadline_at: deadline_at,
-          availability: availability
-        )
+        urls, cdx_status, cdx_reasons, url_records, availability, source_health,
+          historical_snapshots, changed_snapshots =
+          Query.fetch_urls_with_status(target, timeout_value, deadline_at: deadline_at)
         archive_status = Query.archive_status(availability, cdx_status, cdx_reasons, source_health)
         pivots = Query.manual_pivots(target)
-        Presenter.availability_status(availability[:state], source_health['availability'])
-        Presenter.source_health(source_health)
-        Presenter.archive_status(archive_status)
+        Presenter.availability_status(availability[:state], source_health['availability']) unless
+          source_health.dig('availability', 'reason') == 'not_requested'
+        Presenter.archive_status(archive_status, cdx_status)
         Presenter.cdx_status(cdx_status, urls, source_health['cdx'])
-        Presenter.manual_pivots(pivots, archive_status: archive_status) if urls.empty?
+        Presenter.snapshots(historical_snapshots, changed_snapshots)
+        Presenter.manual_pivots(pivots) if urls.empty?
         {
+          timed_out: cdx_status.to_s.include?('timeout') || cdx_reasons.include?('timeout'),
           availability: availability,
           archive_status: archive_status,
           cdx_status: cdx_status,
@@ -80,6 +77,8 @@ module Nokizaru
           source_health: source_health,
           urls: urls,
           url_records: url_records,
+          historical_snapshots: historical_snapshots,
+          changed_snapshots: changed_snapshots,
           manual_pivots: pivots,
           elapsed_s: timeout_value - [Query.remaining_time(deadline_at), 0.0].max
         }
@@ -94,16 +93,22 @@ module Nokizaru
         urls = Array(result[:urls])
         triage = result[:triage] || Normalize.triage(urls)
         high_signal_urls = triage['review_urls']
-        Presenter.triage(triage)
+        persist_wayback_artifacts(ctx, urls, high_signal_urls, triage, result)
+        ctx.run['modules']['wayback'] = wayback_payload(result, urls, high_signal_urls, triage)
+      end
+
+      def persist_wayback_artifacts(ctx, urls, high_signal_urls, triage, result)
         ctx.add_artifact('urls', urls) if urls.any?
         ctx.add_artifact('wayback_urls', urls) if urls.any?
         ctx.add_artifact('wayback_high_signal_urls', high_signal_urls) if high_signal_urls.any?
+        snapshots = Array(result[:historical_snapshots]) + Array(result[:changed_snapshots])
+        snapshot_urls = snapshots.filter_map { |snapshot| snapshot['snapshot_url'] }
+        ctx.add_artifact('wayback_snapshot_urls', snapshot_urls) if snapshot_urls.any?
         triage.each do |category, values|
           next unless category.end_with?('_urls') && values.any?
 
           ctx.add_artifact("wayback_#{category}", values)
         end
-        ctx.run['modules']['wayback'] = wayback_payload(result, urls, high_signal_urls, triage)
       end
 
       def wayback_payload(result, urls, high_signal_urls, triage)
@@ -118,6 +123,8 @@ module Nokizaru
           'source_health' => result[:source_health] || {},
           'urls' => urls,
           'url_records' => Array(result[:url_records]),
+          'historical_snapshots' => Array(result[:historical_snapshots]),
+          'changed_snapshots' => Array(result[:changed_snapshots]),
           'high_signal_urls' => high_signal_urls,
           'manual_pivots' => result[:manual_pivots],
           'elapsed_s' => result[:elapsed_s].to_f.round(4)
@@ -131,8 +138,7 @@ module Nokizaru
         availability ||= {}
         {
           'availability' => availability[:state].to_s,
-          'availability_reason' => availability[:reason],
-          'availability_variant' => availability[:variant]
+          'availability_reason' => availability[:reason]
         }
       end
 
@@ -140,16 +146,13 @@ module Nokizaru
         reason = timed_out ? 'timeout' : 'exception'
         health = {
           'cdx' => Query.source_health('failed', reason: reason),
-          'availability' => Query.source_health('skipped', reason: reason),
-          'common_crawl' => Query.source_health('skipped', reason: reason),
-          'virustotal' => Query.source_health('skipped', reason: reason)
+          'availability' => Query.source_health('skipped', reason: reason)
         }
         {
           status: 'failed', error: "#{error.class}: #{error.message}", timed_out: timed_out,
           availability: { state: :unknown, reason: reason }, archive_status: 'degraded',
           cdx_status: timed_out ? 'timeout' : 'archive_degraded', cdx_reasons: [reason], source_health: health,
-          urls: [], url_records: [], triage: Normalize.triage([]),
-          manual_pivots: Query.manual_pivots(target), elapsed_s: 0.0
+          manual_pivots: Query.manual_pivots(target)
         }
       end
     end

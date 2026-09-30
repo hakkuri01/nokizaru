@@ -12,7 +12,7 @@ module Nokizaru
       sub: { type: :boolean, default: false, desc: 'Sub-Domain Enumeration' },
       arch: { type: :boolean, default: false, desc: 'Architecture Fingerprinting' },
       dir: { type: :boolean, default: false, desc: 'Directory Search' },
-      wayback: { type: :boolean, default: false, desc: 'Wayback URLs' },
+      wayback: { type: :boolean, default: false, desc: 'Wayback Snapshots' },
       ps: { type: :boolean, default: false, desc: 'Fast Port Scan' },
       full: { type: :boolean, default: false, desc: 'Full Recon' },
       export: { type: :boolean, default: false, desc: 'Export results to files (txt,json,html)' },

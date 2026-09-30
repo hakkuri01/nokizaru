@@ -14,9 +14,7 @@ class WaybackModuleTest < Minitest::Test
       cdx_reasons: ['service_unavailable'],
       source_health: {
         'cdx' => { 'status' => 'failed', 'records' => 0, 'reason' => 'service_unavailable' },
-        'availability' => { 'status' => 'failed', 'records' => 0, 'reason' => 'service_unavailable' },
-        'common_crawl' => { 'status' => 'skipped', 'records' => 0, 'reason' => 'deadline_exhausted', 'limit' => 50 },
-        'virustotal' => { 'status' => 'skipped', 'records' => 0, 'reason' => 'missing_api_key' }
+        'availability' => { 'status' => 'failed', 'records' => 0, 'reason' => 'service_unavailable' }
       },
       urls: [],
       manual_pivots: Wayback::Query.manual_pivots('https://example.com'),
@@ -43,14 +41,38 @@ class WaybackModuleTest < Minitest::Test
     ctx = Nokizaru::Context.new(run: {}, options: {})
     result = {
       availability: { state: :available }, archive_status: 'healthy', cdx_status: 'found', cdx_reasons: [],
-      source_health: {}, urls: ['https://example.com/api/app.js?id=1'], url_records: [], manual_pivots: {}, elapsed_s: 1
+      source_health: {}, urls: ['https://example.com/api/app.js?id=1'], url_records: [], manual_pivots: {},
+      historical_snapshots: [{ 'snapshot_url' => 'https://web.archive.org/web/historical' }],
+      changed_snapshots: [{ 'snapshot_url' => 'https://web.archive.org/web/changed' }], elapsed_s: 1
     }
 
     Wayback.persist_wayback(ctx, result)
 
+    assert_equal 'complete', ctx.run.dig('modules', 'wayback', 'status')
     assert_equal ['https://example.com/api/app.js?id=1'], ctx.run.dig('artifacts', 'wayback_javascript_urls')
     assert_equal ['https://example.com/api/app.js?id=1'], ctx.run.dig('artifacts', 'wayback_api_urls')
+    assert_equal %w[https://web.archive.org/web/historical https://web.archive.org/web/changed],
+                 ctx.run.dig('artifacts', 'wayback_snapshot_urls')
     assert_equal({ 'id' => 1 }, ctx.run.dig('modules', 'wayback', 'parameter_counts'))
+  end
+
+  def test_presenter_separates_historical_and_changed_snapshots
+    headers = []
+    rows = []
+    historical = [{ 'reasons' => ['three_months'], 'snapshot_url' => 'historical' }]
+    changed = [{ 'changes' => %w[content status], 'snapshot_url' => 'changed' }]
+
+    Nokizaru::UI.stub(:row, nil) do
+      Nokizaru::UI.stub(:tree_header, ->(title) { headers << title }) do
+        Nokizaru::UI.stub(:tree_rows, ->(values) { rows.concat(values) }) do
+          Wayback::Presenter.snapshots(historical, changed)
+        end
+      end
+    end
+
+    assert_equal ['Wayback Historical Snapshots', 'Wayback State-Change Snapshots'], headers
+    assert_includes rows, ['Three months', 'historical']
+    assert_includes rows, ['Changed (content, status)', 'changed']
   end
 
   def test_call_persists_complete_failure_schema_and_reraises_timeout
@@ -62,26 +84,12 @@ class WaybackModuleTest < Minitest::Test
 
     payload = ctx.run.dig('modules', 'wayback')
 
-    assert_equal 2, payload['schema_version']
+    assert_equal 4, payload['schema_version']
     assert_equal 'failed', payload['status']
     assert payload['timed_out']
     assert_empty payload['urls']
     assert_equal [], payload['review_urls']
     assert_equal 'timeout', payload.dig('source_health', 'cdx', 'reason')
-  end
-
-  def test_presenter_exposes_source_status_and_reason
-    rows = []
-    row = proc { |_type, label, value, **| rows << [label, value] }
-    health = {
-      'common_crawl' => { 'status' => 'failed', 'reason' => 'http_403' },
-      'virustotal' => { 'status' => 'skipped', 'reason' => 'missing_api_key' }
-    }
-
-    Nokizaru::UI.stub(:row, row) { Wayback::Presenter.source_health(health) }
-
-    assert_includes rows, ['Common Crawl source', 'Failed (HTTP 403)']
-    assert_includes rows, ['VirusTotal source', 'Skipped (Missing API key)']
   end
 
   def test_presenter_exposes_cdx_restriction_with_fallback_records
@@ -94,7 +102,7 @@ class WaybackModuleTest < Minitest::Test
       )
     end
 
-    assert_includes rows, ['Fetching URLs from CDX', '1 fallback (HTTP 403)']
+    assert_includes rows, ['Fetching URLs from CDX', '1']
   end
 
   def test_presenter_labels_known_availability_timeout
@@ -119,31 +127,45 @@ class WaybackModuleTest < Minitest::Test
     workflow = Class.new { include Nokizaru::CLI::Runner::Workflow }.new
 
     assert_in_delta 60.0, workflow.send(:module_timeout_s, { timeout: 30.0 }, :wayback)
-    assert_in_delta 24.0, workflow.send(:wayback_timeout_cap)
-    assert_in_delta 10.0, Wayback::TOTAL_TIMEOUT
+    refute_respond_to workflow, :wayback_timeout_cap
+    assert_in_delta 60.0, Wayback::TOTAL_TIMEOUT
+    assert_equal 5, Wayback::OUTER_TIMEOUT_MARGIN
     assert_equal 2, Wayback::RETRIES
   end
 
-  def test_availability_reserves_half_the_module_budget_for_cdx
+  def test_cdx_receives_full_module_budget_without_availability_preflight
     availability = { state: :not_available, snapshots: nil, reason: nil }
     health = {
       'availability' => Wayback::Query.source_health('empty'),
-      'cdx' => Wayback::Query.source_health('empty'),
-      'common_crawl' => Wayback::Query.source_health('skipped', reason: 'deadline_exhausted'),
-      'virustotal' => Wayback::Query.source_health('skipped', reason: 'missing_api_key')
+      'cdx' => Wayback::Query.source_health('empty')
     }
     observed_budget = nil
     fetch = proc do |_target, timeout_s, _snapshots, **_kwargs|
       observed_budget = timeout_s
-      [[], 'not_found', [], [], availability, health]
+      [[], 'not_found', [], [], availability, health, [], []]
     end
 
-    Wayback::Query.stub(:availability_status, availability) do
-      Wayback::Query.stub(:fetch_urls_with_status, fetch) do
-        Wayback.execute_query('https://example.com', 24.0)
-      end
+    Wayback::Query.stub(:fetch_urls_with_status, fetch) do
+      Wayback.execute_query('https://example.com', 24.0)
     end
 
-    assert_in_delta 12.0, observed_budget
+    assert_in_delta 24.0, observed_budget
+  end
+
+  def test_availability_fallback_retains_cdx_timeout_flag
+    availability = { state: :available, snapshots: {}, reason: nil }
+    health = {
+      'availability' => Wayback::Query.source_health('found', records: 1),
+      'cdx' => Wayback::Query.source_health('timeout', reason: 'timeout')
+    }
+    result = [
+      ['https://example.com/admin'], 'fallback', ['timeout'], [], availability, health, [], []
+    ]
+
+    Wayback::Query.stub(:fetch_urls_with_status, result) do
+      output = Wayback.execute_query('https://example.com', 24.0)
+
+      assert output[:timed_out]
+    end
   end
 end

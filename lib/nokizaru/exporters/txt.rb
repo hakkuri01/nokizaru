@@ -55,6 +55,8 @@ module Nokizaru
         file.puts("Error: #{payload['error']}") if payload['error']
         write_wayback_sources(file, payload.fetch('source_health', {}))
         write_wayback_categories(file, payload)
+        write_wayback_snapshots(file, 'Historical snapshots', Array(payload['historical_snapshots']))
+        write_wayback_snapshots(file, 'State-change snapshots', Array(payload['changed_snapshots']))
         write_wayback_records(file, Array(payload['url_records']))
         write_wayback_urls(file, Array(payload['urls']))
         write_wayback_pivots(file, payload['manual_pivots'])
@@ -82,6 +84,18 @@ module Nokizaru
         sources.sort.each do |name, health|
           details = [health['status'], health['reason'], "records=#{health['records']}"].compact.reject(&:empty?)
           file.puts("  #{name}: #{details.join(' ')}")
+        end
+      end
+
+      def write_wayback_snapshots(file, label, snapshots)
+        return if snapshots.empty?
+
+        file.puts("#{label} (#{snapshots.length})")
+        snapshots.each do |snapshot|
+          reasons = Array(snapshot['reasons']).join(',')
+          changes = Array(snapshot['changes'])
+          reasons += "(#{changes.join(',')})" unless changes.empty?
+          file.puts("  #{snapshot['timestamp']}\t#{reasons}\t#{snapshot['snapshot_url']}")
         end
       end
 

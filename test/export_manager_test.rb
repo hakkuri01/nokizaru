@@ -34,7 +34,15 @@ class ExportManagerTest < Minitest::Test
         'javascript_urls' => ['https://example.com/app.js'], 'parameter_counts' => { 'id' => 2 },
         'urls' => ['https://example.com/admin', 'https://example.com/ordinary'],
         'url_records' => [{ 'url' => 'https://example.com/ordinary', 'source' => 'wayback',
-                            'sources' => %w[wayback commoncrawl] }],
+                            'sources' => ['wayback'] }],
+        'historical_snapshots' => [{
+          'timestamp' => '20250829000000', 'reasons' => ['one_year'],
+          'snapshot_url' => 'https://web.archive.org/web/20250829000000/https://example.com/admin'
+        }],
+        'changed_snapshots' => [{
+          'timestamp' => '20260829000000', 'reasons' => ['changed'], 'changes' => %w[content status],
+          'snapshot_url' => 'https://web.archive.org/web/20260829000000/https://example.com/admin'
+        }],
         'source_health' => { 'cdx' => { 'status' => 'timeout', 'reason' => 'timeout', 'records' => 0 } },
         'truncation' => { 'truncated' => true, 'limit' => 25, 'resume_key' => 'dead-key' }
       }
@@ -47,7 +55,10 @@ class ExportManagerTest < Minitest::Test
       assert_includes output, "Javascript (1)\n  https://example.com/app.js"
       assert_includes output, 'Parameters: id=2'
       assert_includes output, 'Archive Status: degraded'
-      assert_includes output, "wayback,commoncrawl\thttps://example.com/ordinary"
+      assert_includes output, "wayback\thttps://example.com/ordinary"
+      assert_includes output, "Historical snapshots (1)\n  20250829000000\tone_year\thttps://web.archive.org/web/"
+      assert_includes output,
+                      "State-change snapshots (1)\n  20260829000000\tchanged(content,status)\thttps://web.archive.org/web/"
       assert_includes output, "Raw URLs (2)\n  https://example.com/admin\n  https://example.com/ordinary"
       refute_includes output, 'Truncated:'
       refute_includes output, 'dead-key'

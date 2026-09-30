@@ -10,10 +10,16 @@ module Nokizaru
       module Query
         module_function
 
-        MIN_REDUCED_CDX_BUDGET = 1.0
-        UNHEALTHY_SOURCE_STATUSES = %w[failed timeout].freeze
+        MAX_CDX_RECORDS = 50_000
+        MAX_CDX_RECORD_BYTES = 32 * 1024 * 1024
+        ANCHOR_BUDGET_SHARE = 0.10
+        MAX_AVAIL_BODY_BYTES = 1024 * 1024
+        PAGE_DELAY = 0.25
+        POST_PROCESSING_BUDGET = 2.0
+        UNHEALTHY_SOURCE_STATUSES = %w[failed timeout rate_limited].freeze
         DEGRADED_REASONS = %w[
-          timeout request_failed exception service_unavailable rate_limited
+          timeout request_failed exception service_unavailable rate_limited invalid_response response_too_large
+          record_limit byte_limit
         ].freeze
 
         def deadline_after(timeout_s) = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_s.to_f
@@ -30,37 +36,216 @@ module Nokizaru
           [timeout, 0.0].max
         end
 
-        def source_health(status, records: 0, reason: nil, limit: nil)
+        def source_health(status, records: 0, reason: nil)
           health = { 'status' => status.to_s, 'records' => records.to_i }
           health['reason'] = reason.to_s if reason
-          health['limit'] = limit.to_i if limit
           health
+        end
+
+        def fetch_urls_with_status(target, timeout_s, deadline_at: nil)
+          deadline_at ||= deadline_after(timeout_s)
+          now = Time.now.utc
+          anchor_history = fetch_anchor_history(target, timeout_s, deadline_at, now)
+          change_history = fetch_cdx_history(target, timeout_s, deadline_at: deadline_at)
+          history = combine_histories(anchor_history, change_history)
+          availability, wayback_records = fallback_records(target, history, deadline_at)
+
+          urls, records = finalize_records(wayback_records)
+          health = {
+            'availability' => availability_health(availability, history[:fallback_records]),
+            'cdx' => cdx_health(history, history[:records].map { |record| record['url'] }.uniq.length)
+          }
+          status = history[:fallback] ? 'fallback' : history[:status]
+          snapshots = snapshot_selection(change_history[:records], anchor_history[:records], status, now)
+
+          [urls, status, history[:reasons], records, availability, health,
+           snapshots[:historical], snapshots[:changed]]
+        end
+
+        def snapshot_selection(change_records, anchor_records, status, now)
+          return { historical: [], changed: [] } if status == 'fallback'
+
+          History.select(change_records, historical_records: anchor_records, now: now)
+        end
+
+        def fetch_anchor_history(target, timeout_s, deadline_at, now)
+          results = History::ANCHORS.map do |reason, (days, tolerance)|
+            budget = anchor_budget(timeout_s, deadline_at)
+            break history_result([], 'timeout', ['timeout'], nil) unless budget.positive?
+
+            fetch_anchor_window(target, reason, days, tolerance, now, budget)
+          end
+          combine_results(results.compact)
+        end
+
+        def anchor_budget(timeout_s, deadline_at)
+          available = remaining_time(deadline_at) - POST_PROCESSING_BUDGET
+          [timeout_s.to_f * ANCHOR_BUDGET_SHARE, available].min.clamp(0.0, timeout_s.to_f)
+        end
+
+        def fetch_anchor_window(target, reason, days, tolerance, now, timeout_s)
+          anchor = now - (days * 86_400)
+          payload = CDX.build_payload(
+            target,
+            collapse: 'urlkey',
+            from: timestamp_value(anchor - (tolerance * 86_400)),
+            to: timestamp_value(anchor + (tolerance * 86_400))
+          )
+          deadline_at = deadline_after(timeout_s)
+          rows, resume_key, error = CDX.fetch_page(payload, timeout_s, deadline_at: deadline_at)
+          return history_result([], response_failure_status(error), [error], nil) if error
+
+          records = rows.filter_map { |row| history_record(row, target, anchor_reason: reason) }
+          status = resume_key ? 'partial_limit' : 'complete'
+          reasons = resume_key ? ['record_limit'] : []
+          history_result(records, status, reasons, resume_key)
+        end
+
+        def timestamp_value(time) = time.utc.strftime('%Y%m%d%H%M%S')
+
+        def fetch_cdx_history(target, timeout_s, deadline_at: nil)
+          deadline_at ||= deadline_after(timeout_s)
+          page_deadline = deadline_at - deadline_margin(timeout_s)
+          payload = CDX.build_payload(target)
+          records = []
+          record_bytes = 0
+          resume_key = nil
+          seen_keys = {}
+
+          loop do
+            page, next_key, reason = next_history_page(payload, resume_key, page_deadline)
+            return history_result(records, partial_status(reason, records), [reason], resume_key) if reason
+
+            record_bytes, limit_reason = append_history_page(records, record_bytes, page, target)
+            return history_result(records, 'partial_limit', [limit_reason], next_key) if limit_reason
+            return history_result(records, 'complete', [], nil) if next_key.to_s.empty?
+            return history_result(records, 'partial_failure', ['repeated_resume_key'], next_key) if seen_keys[next_key]
+
+            seen_keys[next_key] = true
+            resume_key = next_key
+            wait_for_next_page(page_deadline)
+          end
+        end
+
+        def append_history_page(records, record_bytes, page, target)
+          page.each do |row|
+            record = history_record(row, target)
+            next unless record
+
+            size = record_size(record)
+            return [record_bytes, 'record_limit'] if records.length >= MAX_CDX_RECORDS
+            return [record_bytes, 'byte_limit'] if record_bytes + size > MAX_CDX_RECORD_BYTES
+
+            records << record
+            record_bytes += size
+          end
+          [record_bytes, nil]
+        end
+
+        def record_size(record)
+          record.values.sum { |value| value.to_s.bytesize }
+        end
+
+        def deadline_margin(timeout_s) = [timeout_s.to_f * 0.10, 5.0].min
+
+        def wait_for_next_page(deadline_at)
+          delay = [PAGE_DELAY, remaining_time(deadline_at)].min
+          sleep(delay) if delay.positive?
+        end
+
+        def next_history_page(payload, resume_key, deadline_at)
+          timeout = bounded_timeout(remaining_time(deadline_at), deadline_at: deadline_at)
+          return [[], nil, 'timeout'] unless timeout.positive?
+
+          payload['resumeKey'] = resume_key if resume_key
+          CDX.fetch_page(payload, timeout, deadline_at: deadline_at)
+        end
+
+        def history_record(row, target, anchor_reason: nil)
+          url = row['original']
+          return nil unless Normalize.filter_urls([url], target: target, include_noise: true, exact_host: true).any?
+
+          record = { 'url' => url.to_s, 'source' => 'wayback', 'timestamp' => row['timestamp'].to_s }
+          record.merge!(
+            'mimetype' => row['mimetype'],
+            'statuscode' => row['statuscode'],
+            'digest' => row['digest'],
+            'snapshot_url' => History.replay_url(row['timestamp'], url)
+          )
+          record['anchor_reason'] = anchor_reason if anchor_reason
+          record
+        end
+
+        def combine_histories(anchor_history, change_history)
+          result = combine_results([anchor_history, change_history])
+          result[:fallback_records] = []
+          result
+        end
+
+        def combine_results(results)
+          records = results.flat_map { |result| result[:records] }
+          reasons = results.flat_map { |result| result[:reasons] }.uniq
+          statuses = results.map { |result| result[:status] }
+          status = combined_status(statuses, records)
+          history_result(records, status, reasons, nil)
+        end
+
+        def combined_status(statuses, records)
+          text = statuses.join(' ')
+          return records.empty? ? 'timeout' : 'partial_timeout' if text.include?('timeout')
+          if text.include?('rate_limited')
+            return records.empty? ? 'rate_limited' : 'partial_rate_limited'
+          end
+          return 'partial_limit' if statuses.include?('partial_limit')
+          return 'partial_failure' if text.include?('failure') || statuses.include?('archive_degraded')
+          return 'not_found' if records.empty?
+
+          'complete'
+        end
+
+        def history_result(records, status, reasons, resume_key)
+          { records: records, status: records.empty? && status == 'complete' ? 'not_found' : status,
+            reasons: reasons, resume_key: resume_key }
+        end
+
+        def partial_status(reason, records)
+          return response_failure_status(reason) if records.empty?
+          return 'partial_timeout' if reason == 'timeout'
+          return 'partial_rate_limited' if reason == 'rate_limited'
+
+          'partial_failure'
+        end
+
+        def response_failure_status(reason)
+          return 'timeout' if reason == 'timeout'
+          return 'rate_limited' if reason == 'rate_limited'
+
+          'archive_degraded'
+        end
+
+        def fallback_records(target, history, deadline_at)
+          availability = { state: :unknown, snapshots: nil, reason: 'not_requested' }
+          return [availability, history[:records]] if cdx_finished?(history)
+
+          timeout = (remaining_time(deadline_at) - POST_PROCESSING_BUDGET).clamp(0.0, 3.0)
+          availability = availability_status(target, timeout, deadline_at: deadline_at)
+          records = availability_records(availability, target)
+          if records.any?
+            history[:fallback] = true
+            history[:fallback_records] = records
+          end
+          [availability, records]
+        end
+
+        def cdx_finished?(history)
+          history[:records].any? || %w[complete not_found].include?(history[:status])
         end
 
         def availability_status(target, timeout_s, deadline_at: nil)
           timeout = bounded_timeout(timeout_s, deadline_at: deadline_at)
           return { state: :unknown, snapshots: nil, reason: 'timeout' } unless timeout.positive?
 
-          variants = availability_variants(target)
-          variants.each_with_index do |variant, index|
-            variant_timeout = availability_variant_timeout(timeout, index, deadline_at)
-            next unless variant_timeout.positive?
-
-            result = Timeout.timeout(variant_timeout) do
-              check_availability_status(variant, timeout_s: variant_timeout, deadline_at: deadline_at)
-            end
-            result[:variant] = variant
-            return result if result[:state] == :available || degraded_reason?(result[:reason])
-
-            result[:attempted_variants] = variants.first(index + 1)
-            return result unless remaining_time(deadline_at, timeout).positive?
-          rescue Timeout::Error
-            return { state: :unknown, snapshots: nil, reason: 'timeout', variant: variant }
-          end
-
-          { state: :not_available, snapshots: nil, reason: nil, attempted_variants: variants }
-        rescue Timeout::Error
-          { state: :unknown, snapshots: nil, reason: 'timeout' }
+          check_availability_status(target, timeout_s: timeout, deadline_at: deadline_at)
         end
 
         def check_availability_status(target, timeout_s: nil, deadline_at: nil)
@@ -72,6 +257,9 @@ module Nokizaru
 
           status = Nokizaru::HTTPClient.status_code(response)
           return { state: :unknown, snapshots: nil, reason: response_reason(status) } unless status == 200
+
+          body_size = response.body.respond_to?(:bytesize) ? response.body.bytesize : response.body.to_s.bytesize
+          return { state: :unknown, snapshots: nil, reason: 'response_too_large' } if body_size > MAX_AVAIL_BODY_BYTES
 
           availability_state(JSON.parse(response.body)['archived_snapshots'])
         rescue Timeout::Error
@@ -87,10 +275,26 @@ module Nokizaru
           { state: :available, snapshots: snapshots, reason: nil }
         end
 
-        def availability_health(availability)
+        def availability_records(availability, target)
+          closest = availability.dig(:snapshots, 'closest')
+          url = Normalize.original_url_from_archive_snapshot(closest&.[]('url').to_s)
+          return [] if url.empty?
+          return [] if Normalize.filter_urls([url], target: target, include_noise: true, exact_host: true).empty?
+
+          record = { 'url' => url.to_s, 'source' => 'availability', 'timestamp' => closest['timestamp'].to_s }
+          record['statuscode'] = closest['status'].to_s
+          record['snapshot_url'] = closest['url'].to_s
+          [record]
+        end
+
+        def availability_health(availability, records)
+          return source_health('skipped', reason: 'not_requested') if availability[:reason] == 'not_requested'
+
           case availability[:state]
           when :available
-            source_health('found', records: Normalize.fallback_urls_from_availability(availability[:snapshots]).length)
+            return source_health('found', records: records.length) if records.any?
+
+            source_health('failed', reason: 'invalid_snapshot')
           when :not_available
             source_health('empty')
           else
@@ -99,246 +303,32 @@ module Nokizaru
           end
         end
 
-        def availability_variants(target)
-          uri = URI.parse(target.to_s)
-          host = uri.host.to_s.downcase
-          return [target.to_s] if host.empty?
-
-          path = uri.path.to_s
-          path = '/' if path.empty?
-          hosts = [host, alternate_www_host(host)].compact.uniq
-          ([target.to_s] + hosts.flat_map do |candidate|
-            ["https://#{candidate}#{path}", "http://#{candidate}#{path}"]
-          end).uniq
-        rescue StandardError
-          [target.to_s]
-        end
-
-        def alternate_www_host(host)
-          value = host.to_s.downcase
-          return nil if value.empty?
-          return value.delete_prefix('www.') if value.start_with?('www.')
-
-          "www.#{value}"
-        end
-
-        def availability_variant_timeout(total_timeout, index, deadline_at)
-          remaining = bounded_timeout(total_timeout, deadline_at: deadline_at)
-          return 0.0 unless remaining.positive?
-          return [remaining, 3.0].min if index.zero?
-
-          [remaining, 10.0].min
-        end
-
-        def availability_timeout(total_timeout)
-          timeout = total_timeout.to_f
-          return 3.0 if timeout <= 0
-
-          [timeout * 0.50, 6.0].max.clamp(3.0, 12.0)
-        end
-
-        def cdx_timeout(total_timeout, availability_timeout_s)
-          timeout = total_timeout.to_f - availability_timeout_s.to_f
-          timeout.positive? ? timeout : 2.0
-        end
-
-        def fetch_urls_with_status(target, timeout_s, snapshots, deadline_at: nil, availability: nil)
-          availability ||= availability_state(snapshots)
-          urls, status, reasons = fetch_cdx_with_fallback(target, timeout_s, snapshots, deadline_at: deadline_at)
-          cdx_source = status == 'timeout_with_fallback' ? 'availability' : 'wayback'
-          records = urls.map { |url| archive_record(url, cdx_source) }
-          cdx_record_count = cdx_source == 'wayback' ? records.length : 0
-          source_timeout = bounded_timeout([timeout_s.to_f * 0.35, 2.0].max, deadline_at: deadline_at)
-          external_records, external_health = ArchiveSources.fetch_records(
-            target, source_timeout, deadline_at: deadline_at
-          )
-          records.concat(external_records)
-          health = external_health.merge(
-            'availability' => availability_health(availability),
-            'cdx' => cdx_health(status, reasons, cdx_record_count)
-          )
-
-          filtered_urls, filtered_records = finalize_records(target, records)
-          normalized_status = normalize_cdx_status(filtered_urls, status)
-          [filtered_urls, normalized_status, reasons, filtered_records, availability, health]
-        end
-
-        def cdx_health(status, reasons, records)
-          reason = Array(reasons).last
-          health_status = case status
-                          when 'found', 'found_partial_timeout', 'found_reduced' then 'found'
-                          when 'not_found' then 'empty'
-                          when 'timeout', 'timeout_with_fallback' then reason == 'timeout' ? 'timeout' : 'empty'
-                          else reason == 'timeout' ? 'timeout' : 'failed'
+        def cdx_health(history, records)
+          status = history[:status]
+          health_status = if status == 'complete'
+                            records.positive? ? 'found' : 'empty'
+                          elsif status == 'not_found'
+                            'empty'
+                          elsif status.include?('timeout')
+                            'timeout'
+                          elsif status.include?('rate_limited')
+                            'rate_limited'
+                          else
+                            'failed'
                           end
-          source_health(health_status, records: health_status == 'found' ? records : 0,
-                                       reason: reason || ('request_failed' if health_status == 'failed'))
+          source_health(health_status, records: records, reason: health_reason(status, history[:reasons]))
         end
 
-        def finalize_records(target, records)
-          records = ArchiveSources.dedupe_records(records)
-          urls = Normalize.filter_urls(records.map { |record| record['url'] }, target: target)
-          records = ArchiveSources.filter_records(records, urls).first(Wayback::MAX_URLS)
+        def health_reason(status, reasons)
+          return 'timeout' if status.include?('timeout')
+          return 'rate_limited' if status.include?('rate_limited')
+
+          reasons.last
+        end
+
+        def finalize_records(records)
+          records = Array(records).uniq { |record| record['url'].to_s }
           [records.map { |record| record['url'] }, records]
-        end
-
-        def build_cdx_payload(target, limit:, collapse: false, status_filter: true, pattern: nil)
-          payload = {
-            'url' => pattern || ArchiveSources.cdx_target_pattern(target),
-            'fl' => 'original',
-            'limit' => limit.to_i.to_s
-          }
-          payload['collapse'] = 'urlkey' if collapse
-          payload['filter'] = 'statuscode:200' if status_filter
-          payload
-        end
-
-        def cdx_attempt_plan
-          [
-            { limit: 25, timeout_share: 0.75, collapse: false, status_filter: false, pattern_index: 0 },
-            { limit: 25, timeout_share: 0.25, collapse: false, status_filter: true, pattern_index: 1 }
-          ]
-        end
-
-        def fetch_cdx_with_fallback(target, timeout_s, snapshots, deadline_at: nil)
-          fallback = Normalize.fallback_urls_from_availability(snapshots)
-          urls, timed_out, reasons = fetch_staged_cdx(
-            target, timeout_s, deadline_at: deadline_at, fallback_available: fallback.any?
-          )
-          return [urls, timed_out ? 'found_partial_timeout' : 'found', reasons] unless urls.empty?
-
-          if fallback.any?
-            Presenter.fallback_used(fallback.length)
-            return [fallback, 'timeout_with_fallback', reasons]
-          end
-
-          reduced = if remaining_time(deadline_at, timeout_s) >= MIN_REDUCED_CDX_BUDGET
-                      fetch_reduced_cdx(target, timeout_s, deadline_at: deadline_at)
-                    else
-                      []
-                    end
-          return [reduced, 'found_reduced', reasons] unless reduced.empty?
-
-          Log.write('[wayback] CDX fetch timed out, using availability fallback')
-          [[], cdx_empty_status(reasons, timed_out), reasons]
-        end
-
-        def fetch_staged_cdx(target, timeout_s, deadline_at: nil, fallback_available: false)
-          total_timeout = bounded_timeout(timeout_s, deadline_at: deadline_at)
-          return [[], true, ['timeout']] unless total_timeout.positive?
-
-          aggregated = []
-          seen = {}
-          reasons = []
-          timed_out = false
-          cdx_attempt_plan.each do |attempt|
-            payload = build_cdx_payload(
-              target,
-              limit: attempt[:limit],
-              collapse: attempt[:collapse],
-              status_filter: attempt[:status_filter],
-              pattern: ArchiveSources.cdx_pattern(target, attempt)
-            )
-            attempt_timeout = bounded_timeout(
-              [total_timeout * attempt[:timeout_share].to_f, 1.2].max,
-              deadline_at: deadline_at
-            )
-            break unless attempt_timeout.positive?
-
-            attempt_urls, attempt_timed_out, reason = fetch_urls_with_timeout(
-              payload, attempt_timeout, deadline_at: deadline_at
-            )
-            timed_out ||= attempt_timed_out
-            reasons << reason if reason
-            append_unique_urls(aggregated, seen, attempt_urls)
-            break if aggregated.any? || (attempt_timed_out && fallback_available)
-          end
-
-          [aggregated.first(Wayback::MAX_URLS), timed_out, reasons]
-        end
-
-        def fetch_urls_with_timeout(payload, timeout_s, deadline_at: nil)
-          timeout = bounded_timeout(timeout_s, deadline_at: deadline_at)
-          return [[], true, 'timeout'] unless timeout.positive?
-
-          urls, reason = Timeout.timeout(timeout) do
-            fetch_urls_result(payload, timeout_s: timeout, deadline_at: deadline_at)
-          end
-          [urls, false, reason]
-        rescue Timeout::Error
-          [[], true, 'timeout']
-        end
-
-        def fetch_reduced_cdx(target, timeout_s, deadline_at: nil)
-          payload = build_cdx_payload(target, limit: 50, collapse: false)
-          timeout = bounded_timeout([timeout_s.to_f * 0.45, 2.0].max, deadline_at: deadline_at)
-          return [] unless timeout.positive?
-
-          Timeout.timeout(timeout) { fetch_urls(payload, timeout_s: timeout, deadline_at: deadline_at) }
-        rescue Timeout::Error
-          []
-        end
-
-        def fetch_urls(payload, timeout_s: nil, deadline_at: nil)
-          urls, = fetch_urls_result(payload, timeout_s: timeout_s, deadline_at: deadline_at)
-          urls
-        end
-
-        def fetch_urls_result(payload, timeout_s: nil, deadline_at: nil)
-          uri = URI(Wayback::CDX_URL)
-          uri.query = URI.encode_www_form(payload)
-          timed_out = false
-          response = HTTP.get(uri, timeout_s: timeout_s, deadline_at: deadline_at, on_timeout: -> { timed_out = true })
-          return [[], timed_out ? 'timeout' : 'request_failed'] unless response
-
-          status = Nokizaru::HTTPClient.status_code(response)
-          return [[], response_reason(status)] unless status == 200
-
-          [parse_cdx_lines(response.body), nil]
-        rescue Timeout::Error
-          [[], 'timeout']
-        rescue StandardError => e
-          Log.write("[wayback] CDX fetch exception = #{e}")
-          [[], 'exception']
-        end
-
-        def parse_cdx_lines(body)
-          seen = {}
-          body.to_s.each_line.filter_map do |line|
-            url = line.strip
-            next if url.empty? || seen[url]
-
-            seen[url] = true
-            url
-          end
-        end
-
-        def append_unique_urls(aggregated, seen, urls)
-          Array(urls).each do |url|
-            next if seen[url]
-
-            seen[url] = true
-            aggregated << url
-          end
-        end
-
-        def archive_record(url, source, timestamp = nil)
-          ArchiveSources.archive_record(url, source, timestamp)
-        end
-
-        def normalize_cdx_status(urls, status)
-          return 'found' if urls.any? && status == 'not_found'
-          return 'not_found' if urls.empty? && status == 'found'
-          return 'timeout' if urls.empty? && status == 'timeout_with_fallback'
-
-          status
-        end
-
-        def cdx_empty_status(reasons, timed_out)
-          return 'archive_degraded' if Array(reasons).any? { |reason| degraded_reason?(reason) }
-          return 'timeout' if timed_out
-
-          'not_found'
         end
 
         def response_reason(code)
@@ -353,11 +343,10 @@ module Nokizaru
 
         def archive_status(availability, cdx_status, cdx_reasons, source_health = nil)
           return 'degraded' if unhealthy_sources?(source_health)
-
-          reasons = [availability&.[](:reason), *Array(cdx_reasons)].compact
-          return 'degraded' if cdx_status == 'archive_degraded' || reasons.any? { |reason| degraded_reason?(reason) }
-          return 'healthy' if availability&.[](:state) == :available || cdx_status.to_s.start_with?('found')
-          return 'healthy' if availability&.[](:state) == :not_available && cdx_status == 'not_found'
+          return 'degraded' if cdx_status.to_s.start_with?('partial') || cdx_status == 'archive_degraded'
+          return 'degraded' if Array(cdx_reasons).any? { |reason| degraded_reason?(reason) }
+          return 'healthy' if %w[complete not_found fallback].include?(cdx_status)
+          return 'healthy' if availability&.[](:state) == :available
 
           'unknown'
         end
@@ -370,12 +359,15 @@ module Nokizaru
 
         def manual_pivots(target)
           target_value = target.to_s
-          cdx_payload = build_cdx_payload(target_value, limit: 25, status_filter: false)
+          payload = CDX.build_payload(target_value).merge('limit' => '50')
           {
             'calendar_url' => "https://web.archive.org/web/*/#{URI::DEFAULT_PARSER.escape(target_value)}",
             'availability_query_url' => "#{Wayback::AVAIL_URL}?#{URI.encode_www_form(url: target_value)}",
-            'cdx_query_url' => "#{Wayback::CDX_URL}?#{URI.encode_www_form(cdx_payload)}"
+            'cdx_query_url' => "#{Wayback::CDX_URL}?#{URI.encode_www_form(payload)}",
+            'changes_url' => "https://web.archive.org/web/changes/#{URI::DEFAULT_PARSER.escape(target_value)}"
           }
+        rescue ArgumentError
+          {}
         end
       end
     end

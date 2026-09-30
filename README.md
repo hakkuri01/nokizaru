@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v2.5.12-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v2.6.12-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -28,7 +28,7 @@ Nokizaru runs a full web recon pass with shared target context, bounded or adapt
 - **Crawler -> Dir Enum:** crawler discoveries seed directory checks so high-signal paths are tested before lower-value wordlist noise
 - **Dir Enum Noise Control:** WAF/soft-404-heavy responses are kept inspectable in exports, but stdout favors actionable paths over bulk false positives
 - **Port Scan Context:** port checks are native TCP probes with lightweight service/category/TLS/HTTP/exposure hints
-- **Wayback Fallbacks:** archive lookups use bounded source aggregation and expose manual pivots when upstream archive APIs are degraded
+- **Wayback Snapshots:** host-scoped archive history selects up to five snapshots each near 3 months, 6 months, and 1 year, then fills a 50-result cap with high-signal changes
 
 ---
 
@@ -40,14 +40,12 @@ The Nix flake is the maintained package-manager release target and includes Ruby
 
 ```bash
 nix profile install github:hakkuri01/nokizaru
-nokizaru --help
-man nokizaru
 ```
 
 Run without installing:
 
 ```bash
-nix run github:hakkuri01/nokizaru -- --help
+nix run github:hakkuri01/nokizaru
 ```
 
 NixOS flake configurations can install the package directly from the input:
@@ -131,7 +129,7 @@ nokizaru -k 'shodan@kl32lcdqwcdfv'
 | ---------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | AlienVault OTX | Sub Domain Enum | [https://otx.alienvault.com/api](https://otx.alienvault.com/api)                                                                    |
 | Facebook   | Sub Domain Enum | [https://developers.facebook.com/docs/facebook-login/access-tokens](https://developers.facebook.com/docs/facebook-login/access-tokens) |
-| VirusTotal | Sub Domain Enum / Wayback URLs | [https://www.virustotal.com/gui/my-apikey](https://www.virustotal.com/gui/my-apikey)                                      |
+| VirusTotal | Sub Domain Enum | [https://www.virustotal.com/gui/my-apikey](https://www.virustotal.com/gui/my-apikey)                                                       |
 | Shodan     | Sub Domain Enum | [https://developer.shodan.io/api/requirements](https://developer.shodan.io/api/requirements)                                           |
 | BeVigil    | Sub Domain Enum | [https://bevigil.com/osint-api](https://bevigil.com/osint-api)                                                                         |
 | BinaryEdge | Sub Domain Enum | [https://app.binaryedge.io/](https://app.binaryedge.io/)                                                                               |
@@ -186,29 +184,29 @@ Arguments:
   --sub            Sub-Domain Enumeration
   --arch           Architecture Fingerprinting
   --dir            Directory Search
-  --wayback        Wayback URLs
+  --wayback        Wayback Snapshots
   --ps             Fast Port Scan
   --full           Full Recon
   --no-[MODULE]    Skip specified modules above during full scan (eg. --no-dir)
   --export         Write results to export directory
 
 Extra Options:
-  -nb         Hide Banner
-  -dt DT      Number of threads for directory enum [ Default : 50 ]
-  -pt PT      Port scan concurrency [ Default : 50 ]
-  -p PORTS    Port scan ports [ Example : 80,443,1000-65535 ]
-  -T T        Base timeout / module budget [ Default : 30.0 ]
-  -w W        Wordlist size (small, medium, large) or custom path [ Default : medium ]
+  -nb          Hide Banner
+  -dt DT       Number of threads for directory enum [ Default : 50 ]
+  -pt PT       Port scan concurrency [ Default : 50 ]
+  -p PORTS     Port scan ports [ Example : 80,443,1000-65535 ]
+  -T T         Base timeout / module budget [ Default : 30.0 ]
+  -w W         Wordlist size (small, medium, large) or custom path [ Default : medium ]
   -H, --header HEADER  Add custom request header (repeatable)
-  -r          Follow redirects during directory enum [ Default : False ]
-  -s          Enable SSL verification for directory enum [ Default : False ]
-  -sp SP      Specify SSL Port [ Default : 443 ]
-  -d D        Custom DNS Servers [ Default : 8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1 ]
-  -e E        File Extension(s) (comma separated) [ Example : txt,xml,php,etc. ]
-  -o O        Export Format(s) (comma-separated) [ Default : txt,json,html ]
-  -cd CD      Export directory for this run (requires --export) [ Default : XDG data dir/nokizaru/exports/<hostname> ]
-  -of OF      Export filename base for this run (requires --export) [ Default : YYYY-MM-DD_HH-MM-SS ]
-  -k K        Add API key [ Example : shodan@key ]
+  -r           Follow redirects during directory enum [ Default : False ]
+  -s           Enable SSL verification for directory enum [ Default : False ]
+  -sp SP       Specify SSL Port [ Default : 443 ]
+  -d D         Custom DNS Servers [ Default : 8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1 ]
+  -e E         File Extension(s) (comma separated) [ Example : txt,xml,php,etc. ]
+  -o O         Export Format(s) (comma-separated) [ Default : txt,json,html ]
+  -cd CD       Export directory for this run (requires --export) [ Default : XDG data dir/nokizaru/exports/<hostname> ]
+  -of OF       Export filename base for this run (requires --export) [ Default : YYYY-MM-DD_HH-MM-SS ]
+  -k K         Add API key [ Example : shodan@key ]
 ```
 
 ### Examples

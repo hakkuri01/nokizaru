@@ -12,7 +12,7 @@ module Nokizaru
       ['--target TARGET', 'Target (http[s]://host[:port])'], ['--headers', 'Header Information'],
       ['--sslinfo', 'SSL Certificate Information'], ['--whois', 'Whois Lookup'], ['--crawl', 'Crawl Target'],
       ['--dns', 'DNS Enumeration'], ['--sub', 'Sub-Domain Enumeration'], ['--arch', 'Architecture Fingerprinting'],
-      ['--dir', 'Directory Search'], ['--wayback', 'Wayback URLs'],
+      ['--dir', 'Directory Search'], ['--wayback', 'Wayback Snapshots'],
       ['--ps', 'Fast Port Scan'], ['--full', 'Full Recon'],
       ['--no-[MODULE]', 'Skip specified modules above during full scan (eg. --no-dir)'],
       ['--export', 'Write results to export directory [ Default : False ]']

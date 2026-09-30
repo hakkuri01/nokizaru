@@ -15,45 +15,18 @@ module Nokizaru
           row(state == :available ? :plus : :error, 'Checking availability on Wayback Machine', label)
         end
 
-        def source_health(health)
-          {
-            'common_crawl' => 'Common Crawl source',
-            'virustotal' => 'VirusTotal source'
-          }.each do |source, label|
-            value = health.fetch(source, {})
-            detail = human_status(value['status'])
-            reason = human_status(value['reason'])
-            detail += " (#{reason})" unless reason.empty?
-            row(value['status'] == 'failed' ? :error : :info, label, detail)
-          end
-        end
-
         def cdx_status(cdx_status, urls, health = nil)
           return row(:error, 'Fetching URLs from CDX', empty_cdx_label(cdx_status, health)) if urls.empty?
 
-          if cdx_status == 'archive_degraded'
-            detail = "#{urls.length} fallback"
-            reason = human_status(health&.[]('reason'))
-            detail += " (#{reason})" unless reason.empty?
-            return row(:error, 'Fetching URLs from CDX', detail)
-          end
-
-          if cdx_status == 'timeout_with_fallback'
-            return row(:plus, 'Fetching URLs from CDX', "#{urls.length} (availability fallback)")
-          end
-          return row(:plus, 'Fetching URLs from CDX', "#{urls.length} (reduced query)") if cdx_status == 'found_reduced'
-
-          if cdx_status == 'found_partial_timeout'
-            return row(:plus, 'Fetching URLs from CDX',
-                       "#{urls.length} (partial, timeout)")
-          end
-
-          row(:info, 'Fetching URLs from CDX', urls.length) unless cdx_status == 'timeout_with_fallback'
+          detail = cdx_status.to_s.start_with?('partial') ? "#{urls.length} retained" : urls.length.to_s
+          detail += ' (availability fallback)' if cdx_status == 'fallback'
+          row(cdx_status.to_s.start_with?('partial') ? :error : :info, 'Fetching URLs from CDX', detail)
         end
 
         def empty_cdx_label(status, health)
           label = case status
                   when 'timeout' then 'Timeout'
+                  when 'rate_limited' then 'Rate limited'
                   when 'archive_degraded' then 'Archive degraded'
                   else 'Not Found'
                   end
@@ -61,45 +34,47 @@ module Nokizaru
           reason.empty? || reason == label ? label : "#{label} (#{reason})"
         end
 
-        def fallback_used(count)
-          row(:plus, 'Using availability snapshot fallback', count)
-        end
-
-        def archive_status(status)
+        def archive_status(status, cdx_status = nil)
           type = status == 'degraded' ? :error : :info
-          label = status == 'degraded' ? 'Degraded or rate-limited' : status.to_s.capitalize
+          label = if cdx_status.to_s.start_with?('partial_')
+                    "Partial (#{human_status(cdx_status.delete_prefix('partial_')).downcase})"
+                  elsif status == 'degraded'
+                    'Degraded or rate-limited'
+                  else
+                    status.to_s.capitalize
+                  end
           row(type, 'Archive.org service status', label)
         end
 
-        def manual_pivots(pivots, **)
+        def snapshots(historical, changed)
+          row(:plus, 'Historical snapshots selected', Array(historical).length)
+          row(:plus, 'State-change snapshots selected', Array(changed).length)
+          snapshot_list('Wayback Historical Snapshots', historical) do |snapshot|
+            human_status(Array(snapshot['reasons']).first)
+          end
+          snapshot_list('Wayback State-Change Snapshots', changed) do |snapshot|
+            changes = Array(snapshot['changes']).map { |value| human_status(value).downcase }.join(', ')
+            changes.empty? ? 'Changed' : "Changed (#{changes})"
+          end
+        end
+
+        def snapshot_list(title, snapshots)
+          list = Array(snapshots)
+          return if list.empty?
+
+          UI.tree_header(title)
+          rows = list.map { |snapshot| [yield(snapshot), snapshot['snapshot_url']] }
+          UI.tree_rows(rows)
+        end
+
+        def manual_pivots(pivots)
           UI.tree_header('Wayback Manual Review Links')
           UI.tree_rows([
                          ['Calendar', pivots['calendar_url']],
+                         ['Changes', pivots['changes_url']],
                          ['Availability API', pivots['availability_query_url']],
                          ['CDX API', pivots['cdx_query_url']]
                        ])
-        end
-
-        def triage(categories)
-          counts = %w[
-            review_urls javascript_urls api_urls interesting_path_urls interesting_parameter_urls sensitive_file_urls
-          ].map do |category|
-            [category.delete_suffix('_urls').tr('_', ' ').capitalize, Array(categories[category]).length]
-          end
-          UI.tree_header('Wayback Triage Counts')
-          UI.tree_rows(counts)
-          urls_preview(categories['review_urls'])
-        end
-
-        def urls_preview(urls)
-          list = Array(urls).compact
-          return if list.empty?
-
-          UI.tree_header('Wayback Review Preview')
-          rows = list.first(Wayback::PREVIEW_LIMIT).map { |url| ['URL', url] }
-          UI.tree_rows(rows)
-          remaining = list.length - Wayback::PREVIEW_LIMIT
-          UI.tree_rows([['More', remaining]]) if remaining.positive?
         end
 
         def row(type, label, value)

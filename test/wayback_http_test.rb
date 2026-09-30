@@ -50,13 +50,26 @@ class WaybackHTTPTest < Minitest::Test
     assert_equal 3, attempts
   end
 
-  def test_retry_delay_uses_original_bounded_backoff
-    assert_in_delta 0.2, Wayback::HTTP.retry_delay(1, nil)
-    assert_in_delta 0.4, Wayback::HTTP.retry_delay(2, nil)
+  def test_retry_delay_uses_exponential_backoff_and_deadline
+    response = FakeResponse.new(429, 'retry', {})
+
+    assert_in_delta 0.25, Wayback::HTTP.retry_delay(response, 1, nil)
+    assert_in_delta 0.5, Wayback::HTTP.retry_delay(response, 2, nil)
 
     Process.stub(:clock_gettime, 10.0) do
-      assert_in_delta 0.15, Wayback::HTTP.retry_delay(2, 10.4)
+      assert_in_delta 0.15, Wayback::HTTP.retry_delay(response, 2, 10.4)
     end
+  end
+
+  def test_retry_delay_honors_retry_after_within_deadline
+    response = FakeResponse.new(429, 'retry', { 'Retry-After' => '2' })
+
+    assert_in_delta 2.0, Wayback::HTTP.retry_delay(response, 1, nil)
+  end
+
+  def test_server_errors_are_retryable
+    assert Wayback::HTTP.retryable_status?(503)
+    refute Wayback::HTTP.retryable_status?(403)
   end
 
   def test_retry_requires_request_budget

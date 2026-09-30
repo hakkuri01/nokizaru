@@ -6,261 +6,260 @@ class WaybackQueryTest < Minitest::Test
   Wayback = Nokizaru::Modules::Wayback
   FakeResponse = Struct.new(:status, :body, :headers)
 
-  def test_staged_cdx_uses_bounded_path_specific_plaintext_request
+  def test_history_payload_is_exact_host_and_requests_change_fields
+    payload = Wayback::CDX.build_payload('https://app.example.com/docs', collapse: 'digest')
+
+    assert_equal 'app.example.com/', payload['url']
+    assert_equal 'host', payload['matchType']
+    assert_equal 'timestamp,original,mimetype,statuscode,digest', payload['fl']
+    assert_equal 'digest', payload['collapse']
+    assert_equal 'true', payload['showResumeKey']
+    assert_includes payload['filter'], 'app\\.example\\.com'
+  end
+
+  def test_parse_cdx_page_extracts_rows_and_resume_key
+    body = JSON.generate([
+                           %w[timestamp original mimetype statuscode digest],
+                           %w[20240102030405 https://example.com/admin text/html 200 first],
+                           [], ['resume-token']
+                         ])
+
+    rows, resume_key, reason = Wayback::CDX.parse_page(body)
+
+    assert_nil reason
+    assert_equal 'resume-token', resume_key
+    assert_equal 'https://example.com/admin', rows.first['original']
+    assert_equal 'first', rows.first['digest']
+  end
+
+  def test_fetch_history_follows_resume_keys_and_keeps_exact_host_only
+    pages = [
+      [[cdx_row('https://example.com/admin', '20240102030405', 'one')], 'next', nil],
+      [[cdx_row('https://sub.example.com/admin', '20240202030405', 'two'),
+        cdx_row('https://example.com/api', '20240302030405', 'three')], nil, nil]
+    ]
     payloads = []
-    fetch = proc do |payload, _timeout, **|
-      payloads << payload
-      [['https://example.com/docs/admin'], false, nil]
+    fetch = proc do |payload, *_args, **_kwargs|
+      payloads << payload.dup
+      pages.shift
     end
 
-    Wayback::Query.stub(:fetch_urls_with_timeout, fetch) do
-      urls, timed_out, reasons = Wayback::Query.fetch_staged_cdx('https://example.com/docs', 5.0)
+    Wayback::CDX.stub(:fetch_page, fetch) do
+      Wayback::Query.stub(:sleep, nil) do
+        result = Wayback::Query.fetch_cdx_history('https://example.com', 5.0)
 
-      assert_equal ['https://example.com/docs/admin'], urls
-      refute timed_out
-      assert_empty reasons
+        assert_equal 'complete', result[:status]
+        assert_equal(%w[https://example.com/admin https://example.com/api],
+                     result[:records].map { |row| row['url'] })
+      end
     end
 
-    assert_equal 1, payloads.length
-    assert_equal 'example.com/docs/*', payloads.first['url']
-    assert_equal 'original', payloads.first['fl']
-    assert_equal '25', payloads.first['limit']
+    assert_nil payloads.first['resumeKey']
+    assert_equal 'next', payloads.last['resumeKey']
     refute_includes payloads.first, 'collapse'
-    refute_includes payloads.first, 'filter'
-    refute_includes payloads.first, 'output'
   end
 
-  def test_staged_cdx_uses_path_specific_request_only_after_clean_empty
+  def test_partial_rate_limit_retains_completed_pages
+    pages = [
+      [[cdx_row('https://example.com/admin', '20240102030405', 'one')], 'next', nil],
+      [[], nil, 'rate_limited']
+    ]
+
+    Wayback::CDX.stub(:fetch_page, ->(*) { pages.shift }) do
+      Wayback::Query.stub(:sleep, nil) do
+        result = Wayback::Query.fetch_cdx_history('https://example.com', 5.0)
+
+        assert_equal 'partial_rate_limited', result[:status]
+        assert_equal ['rate_limited'], result[:reasons]
+        assert_equal(['https://example.com/admin'], result[:records].map { |row| row['url'] })
+      end
+    end
+  end
+
+  def test_history_record_limit_retains_a_bounded_partial_result
+    row = { 'url' => 'https://example.com/admin' }
+    page = Array.new(Wayback::Query::MAX_CDX_RECORDS, row)
+
+    Wayback::CDX.stub(:fetch_page, [page, 'next', nil]) do
+      Wayback::Query.stub(:history_record, ->(record, *) { record }) do
+        result = Wayback::Query.fetch_cdx_history('https://example.com', 5.0)
+
+        assert_equal 'partial_limit', result[:status]
+        assert_equal Wayback::Query::MAX_CDX_RECORDS, result[:records].length
+        assert_equal ['record_limit'], result[:reasons]
+      end
+    end
+  end
+
+  def test_history_byte_limit_stops_before_retaining_record
+    records = []
+    page = [{ 'url' => 'https://example.com/admin' }]
+
+    Wayback::Query.stub(:history_record, ->(record, *) { record }) do
+      bytes, reason = Wayback::Query.append_history_page(
+        records, Wayback::Query::MAX_CDX_RECORD_BYTES - 1, page, 'https://example.com'
+      )
+
+      assert_equal Wayback::Query::MAX_CDX_RECORD_BYTES - 1, bytes
+      assert_equal 'byte_limit', reason
+      assert_empty records
+    end
+  end
+
+  def test_anchor_history_uses_three_bounded_urlkey_windows
     payloads = []
-    responses = [[[], false, nil], [['https://example.com/recovered'], false, nil]]
-    fetch = proc do |payload, _timeout, **|
+    fetch = proc do |payload, *_args, **_kwargs|
       payloads << payload
-      responses.shift
+      [[cdx_row('https://example.com/admin', payload['from'], payload['from'])], nil, nil]
     end
 
-    Wayback::Query.stub(:fetch_urls_with_timeout, fetch) do
-      urls, timed_out, = Wayback::Query.fetch_staged_cdx('https://example.com/docs', 5.0)
+    Wayback::CDX.stub(:fetch_page, fetch) do
+      result = Wayback::Query.fetch_anchor_history(
+        'https://example.com', 30.0, Wayback::Query.deadline_after(30.0), Time.utc(2026, 9, 27)
+      )
 
-      assert_equal ['https://example.com/recovered'], urls
-      refute timed_out
+      assert_equal 3, result[:records].length
+      assert_equal(%w[three_months six_months one_year],
+                   result[:records].map { |row| row['anchor_reason'] })
     end
 
-    patterns = payloads.map { |payload| payload['url'] }
-
-    assert_equal ['example.com/docs/*', 'example.com/'], patterns
-    assert_nil payloads.first['filter']
-    assert_equal 'statuscode:200', payloads.last['filter']
+    assert_equal ['urlkey'], payloads.map { |payload| payload['collapse'] }.uniq
+    assert(payloads.all? { |payload| payload['from'] && payload['to'] })
   end
 
-  def test_snapshot_fallback_stops_after_source_timeout
-    snapshots = {
-      'closest' => { 'url' => 'https://web.archive.org/web/20240101000000/https://example.com/login' }
-    }
-    reduced_called = false
+  def test_clean_not_found_does_not_call_availability_fallback
+    history = { records: [], status: 'not_found', reasons: [], resume_key: nil }
+    called = false
 
-    Wayback::Query.stub(:fetch_staged_cdx, [[], true, ['timeout']]) do
-      Wayback::Query.stub(:fetch_reduced_cdx, proc { reduced_called = true }) do
-        urls, status, reasons = Wayback::Query.fetch_cdx_with_fallback('https://example.com', 3.0, snapshots)
-
-        assert_equal ['https://example.com/login'], urls
-        assert_equal 'timeout_with_fallback', status
-        assert_equal ['timeout'], reasons
-        refute reduced_called
+    Wayback::Query.stub(:fetch_cdx_history, history) do
+      Wayback::Query.stub(:fetch_anchor_history, history) do
+        Wayback::Query.stub(:availability_status, ->(*) { called = true }) do
+          Wayback::Query.fetch_urls_with_status('https://example.com', 5.0)
+        end
       end
     end
+
+    refute called
   end
 
-  def test_clean_empty_staged_requests_use_reduced_query
-    Wayback::Query.stub(:fetch_staged_cdx, [[], false, []]) do
-      Wayback::Query.stub(:fetch_reduced_cdx, ['https://example.com/admin']) do
-        urls, status, reasons = Wayback::Query.fetch_cdx_with_fallback('https://example.com', 3.0, nil)
+  def test_cdx_page_has_hard_timeout_when_transport_does_not_return
+    Wayback::HTTP.stub(:get, ->(*) { sleep(0.1) }) do
+      _rows, _resume_key, reason = Wayback::CDX.fetch_page(
+        Wayback::CDX.build_payload('https://example.com', collapse: 'digest'), 0.01
+      )
 
-        assert_equal ['https://example.com/admin'], urls
-        assert_equal 'found_reduced', status
-        assert_empty reasons
-      end
-    end
-  end
-
-  def test_primary_source_timeout_is_classified_without_changing_staged_requests
-    payloads = []
-    request = proc do |uri, **|
-      payloads << URI.decode_www_form(uri.query).to_h
-      raise Timeout::Error, 'source deadline'
-    end
-
-    Wayback::HTTP.stub(:request, request) do
-      urls, timed_out, reasons = Wayback::Query.fetch_staged_cdx('https://example.com/docs', 5.0)
-
-      assert_empty urls
-      refute timed_out
-      assert_equal %w[timeout timeout], reasons
-    end
-
-    patterns = payloads.map { |payload| payload['url'] }
-
-    assert_equal ['example.com/docs/*', 'example.com/'], patterns
-  end
-
-  def test_fetch_urls_with_timeout_classifies_direct_timeout_without_propagating
-    Wayback::HTTP.stub(:get, ->(*) { raise Timeout::Error, 'source deadline' }) do
-      urls, timed_out, reason = Wayback::Query.fetch_urls_with_timeout({ 'url' => 'example.com/*' }, 1.0)
-
-      assert_empty urls
-      refute timed_out
       assert_equal 'timeout', reason
     end
   end
 
-  def test_cdx_success_still_merges_alternate_sources
-    common_crawl = [Wayback::Query.archive_record('https://example.com/admin', 'commoncrawl', '20240101')]
-    external = [common_crawl, {
-      'common_crawl' => Wayback::Query.source_health('found', records: 1),
-      'virustotal' => Wayback::Query.source_health('skipped', reason: 'missing_api_key')
-    }]
-    availability = { state: :not_available, snapshots: nil, reason: nil }
-
-    Wayback::Query.stub(:fetch_cdx_with_fallback, [['https://example.com/login'], 'found', []]) do
-      Wayback::ArchiveSources.stub(:fetch_records, external) do
-        urls, status, _, records, found_availability, health =
-          Wayback::Query.fetch_urls_with_status('https://example.com', 5.0, nil, availability: availability)
-
-        assert_equal ['https://example.com/login', 'https://example.com/admin'], urls
-        assert_equal 'found', status
-        sources = records.map { |record| record['source'] }
-
-        assert_equal %w[wayback commoncrawl], sources
-        assert_equal :not_available, found_availability[:state]
-        assert_equal 'found', health.dig('common_crawl', 'status')
-      end
-    end
-  end
-
-  def test_availability_fallback_retains_provenance_when_other_sources_fail
-    snapshots = {
-      'closest' => { 'url' => 'https://web.archive.org/web/20240101000000/https://example.com/login' }
+  def test_fetch_urls_returns_history_selection_and_source_health
+    history = {
+      records: [Wayback::Query.history_record(
+        cdx_row('https://example.com/admin', '20240102030405', 'one'), 'https://example.com'
+      )],
+      status: 'complete', reasons: [], resume_key: nil
     }
-    external = [[], {
-      'common_crawl' => Wayback::Query.source_health('timeout', reason: 'timeout'),
-      'virustotal' => Wayback::Query.source_health('skipped', reason: 'missing_api_key')
-    }]
+    Wayback::Query.stub(:fetch_cdx_history, history) do
+      Wayback::Query.stub(:fetch_anchor_history, empty_history) do
+        selection = { historical: [{ 'snapshot_url' => 'https://web.archive.org/web/a' }], changed: [] }
+        Wayback::History.stub(:select, selection) do
+          urls, status, _, records, availability, health, historical, changed =
+            Wayback::Query.fetch_urls_with_status('https://example.com', 5.0)
 
-    cdx_result = [['https://example.com/login'], 'timeout_with_fallback', ['timeout']]
-    Wayback::Query.stub(:fetch_cdx_with_fallback, cdx_result) do
-      Wayback::ArchiveSources.stub(:fetch_records, external) do
-        availability = { state: :available, snapshots: snapshots, reason: nil }
-        urls, status, _, records, _, health = Wayback::Query.fetch_urls_with_status(
-          'https://example.com', 5.0, snapshots, availability: availability
-        )
-
-        assert_equal ['https://example.com/login'], urls
-        assert_equal 'timeout_with_fallback', status
-        assert_equal ['availability'], records.first['sources']
-        assert_equal 'timeout', health.dig('cdx', 'status')
+          assert_equal ['https://example.com/admin'], urls
+          assert_equal 'complete', status
+          assert_equal 'not_requested', availability[:reason]
+          assert_equal 'found', health.dig('cdx', 'status')
+          assert_equal 1, records.length
+          assert_equal 1, historical.length
+          assert_empty changed
+        end
       end
     end
   end
 
-  def test_common_crawl_timeout_is_source_local
-    Wayback::HTTP.stub(:request, ->(*) { raise Timeout::Error, 'source deadline' }) do
-      records, health = Wayback::ArchiveSources.fetch_commoncrawl_records('https://example.com', 1.0)
+  def test_availability_fallback_preserves_cdx_failure_health
+    availability = {
+      state: :available,
+      snapshots: { 'closest' => {
+        'url' => 'https://web.archive.org/web/20240102030405/https://example.com/admin',
+        'timestamp' => '20240102030405', 'status' => '200'
+      } },
+      reason: nil
+    }
+    history = { records: [], status: 'timeout', reasons: ['timeout'], resume_key: nil }
 
-      assert_empty records
-      assert_equal 'timeout', health['status']
-      assert_equal 'timeout', health['reason']
-    end
-  end
+    Wayback::Query.stub(:fetch_cdx_history, history) do
+      Wayback::Query.stub(:fetch_anchor_history, history) do
+        Wayback::Query.stub(:availability_status, availability) do
+          urls, status, _, _, _, health, historical, changed =
+            Wayback::Query.fetch_urls_with_status('https://example.com', 5.0)
 
-  def test_virustotal_timeout_is_source_local
-    Nokizaru::KeyStore.stub(:fetch, 'key') do
-      Wayback::HTTP.stub(:request, ->(*) { raise Timeout::Error, 'source deadline' }) do
-        records, health = Wayback::ArchiveSources.fetch_virustotal_records('https://example.com', 1.0)
-
-        assert_empty records
-        assert_equal 'timeout', health['status']
+          assert_equal 'fallback', status
+          assert_equal ['https://example.com/admin'], urls
+          assert_equal 'timeout', health.dig('cdx', 'status')
+          assert_equal 0, health.dig('cdx', 'records')
+          assert_equal 'found', health.dig('availability', 'status')
+          assert_empty historical
+          assert_empty changed
+        end
       end
     end
   end
 
-  def test_common_crawl_preserves_head_query_shape_and_upstream_status
-    responses = [
-      FakeResponse.new(200, '[{"cdx-api":"https://index.commoncrawl.org/cdx"}]', {}),
-      FakeResponse.new(403, 'restricted', {})
-    ]
-    requested_uri = nil
-    request = proc do |uri, **_kwargs|
-      requested_uri = uri if uri.host == 'index.commoncrawl.org' && uri.path == '/cdx'
-      responses.shift
-    end
+  def test_availability_fallback_rejects_off_host_snapshot
+    availability = {
+      state: :available,
+      snapshots: {
+        'closest' => {
+          'url' => 'https://web.archive.org/web/20240102030405/https://evil.test/admin',
+          'timestamp' => '20240102030405', 'status' => '200'
+        }
+      },
+      reason: nil
+    }
 
-    Wayback::HTTP.stub(:get, request) do
-      records, health = Wayback::ArchiveSources.fetch_commoncrawl_records('https://example.com', 2.0)
+    assert_empty Wayback::Query.availability_records(availability, 'https://example.com')
+    health = Wayback::Query.availability_health(availability, [])
 
-      assert_empty records
-      assert_equal 'failed', health['status']
-      assert_equal 'http_403', health['reason']
-      refute_includes health, 'limit'
-      assert_includes requested_uri.query, 'fl=url%2Ctimestamp'
-      refute_includes requested_uri.query, 'limit='
-    end
+    assert_equal 'failed', health['status']
+    assert_equal 'invalid_snapshot', health['reason']
   end
 
-  def test_virustotal_without_key_is_skipped
-    Nokizaru::KeyStore.stub(:fetch, nil) do
-      records, health = Wayback::ArchiveSources.fetch_virustotal_records('https://example.com', 2.0)
+  def test_availability_rejects_oversized_body_without_materializing_it
+    body = Object.new
+    body.define_singleton_method(:bytesize) { Wayback::Query::MAX_AVAIL_BODY_BYTES + 1 }
+    body.define_singleton_method(:to_s) { raise 'body should not be materialized' }
+    response = FakeResponse.new(200, body, {})
 
-      assert_empty records
-      assert_equal 'skipped', health['status']
-      assert_equal 'missing_api_key', health['reason']
-    end
-  end
+    Wayback::HTTP.stub(:get, response) do
+      result = Wayback::Query.check_availability_status('https://example.com', timeout_s: 1.0)
 
-  def test_fetch_urls_deduplicates_plaintext_while_preserving_order
-    body = "\nhttps://example.com/a\nhttps://example.com/b\nhttps://example.com/a\n"
-
-    Wayback::HTTP.stub(:get, FakeResponse.new(200, body, {})) do
-      assert_equal ['https://example.com/a', 'https://example.com/b'],
-                   Wayback::Query.fetch_urls({ 'url' => 'https://example.com/*' })
+      assert_equal 'response_too_large', result[:reason]
     end
   end
 
-  def test_build_cdx_payload_preserves_path_and_supports_optional_collapse
-    payload = Wayback::Query.build_cdx_payload('https://www.example.com/docs', limit: 50)
-    collapsed = Wayback::Query.build_cdx_payload('https://example.com', limit: 50, collapse: true)
-
-    assert_equal 'www.example.com/docs/*', payload['url']
-    assert_equal 'original', payload['fl']
-    assert_equal 'statuscode:200', payload['filter']
-    refute_includes payload, 'collapse'
-    assert_equal 'urlkey', collapsed['collapse']
-  end
-
-  def test_availability_variants_and_timeout_budget_match_proven_flow
-    assert_equal [
-      'https://example.com', 'https://example.com/', 'http://example.com/',
-      'https://www.example.com/', 'http://www.example.com/'
-    ], Wayback::Query.availability_variants('https://example.com')
-    assert_in_delta 12.0, Wayback::Query.availability_timeout(24.0)
-    assert_in_delta 12.0, Wayback::Query.cdx_timeout(24.0, 12.0)
-  end
-
-  def test_duplicate_records_merge_sources_and_observations
+  def test_duplicate_records_keep_first_compact_record
     records = [
-      Wayback::Query.archive_record('https://example.com/api', 'wayback', '20240101'),
-      Wayback::Query.archive_record('https://example.com/api', 'commoncrawl', '20240202')
+      { 'url' => 'https://example.com/api', 'source' => 'wayback', 'timestamp' => '20240101' },
+      { 'url' => 'https://example.com/api', 'source' => 'availability', 'timestamp' => '20240202' }
     ]
 
-    merged = Wayback::ArchiveSources.dedupe_records(records).first
+    _urls, compact = Wayback::Query.finalize_records(records)
+    merged = compact.first
 
-    assert_equal %w[wayback commoncrawl], merged['sources']
-    assert_equal 2, merged['observations'].length
-    assert_equal %w[source timestamp], merged['observations'].first.keys
+    assert_equal 'wayback', merged['source']
+    assert_equal '20240101', merged['timestamp']
   end
 
-  def test_common_crawl_rejects_untrusted_index_endpoints
-    refute Wayback::ArchiveSources.valid_commoncrawl_endpoint?('http://index.commoncrawl.org/cdx')
-    refute Wayback::ArchiveSources.valid_commoncrawl_endpoint?('https://user@index.commoncrawl.org/cdx')
-    refute Wayback::ArchiveSources.valid_commoncrawl_endpoint?('https://index.commoncrawl.org.evil.test/cdx')
-    assert Wayback::ArchiveSources.valid_commoncrawl_endpoint?('https://index.commoncrawl.org/CC-MAIN-index')
+  private
+
+  def empty_history
+    { records: [], status: 'not_found', reasons: [], resume_key: nil }
+  end
+
+  def cdx_row(url, timestamp, digest)
+    { 'timestamp' => timestamp, 'original' => url, 'mimetype' => 'text/html', 'statuscode' => '200',
+      'digest' => digest }
   end
 end
