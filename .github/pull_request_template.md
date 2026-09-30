@@ -14,7 +14,6 @@
 ## Docs and UX
 
 - [ ] I updated `README.md` if behavior/flags changed.
-- [ ] I updated `man/nokizaru.1` if behavior/flags changed.
 
 ## Security and Risk
 

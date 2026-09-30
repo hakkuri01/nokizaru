@@ -24,7 +24,6 @@ Gem::Specification.new do |spec|
     'lib/**/*',
     'conf/**/*',
     'wordlists/**/*',
-    'man/*',
     'README.md',
     'LICENSE'
   ]

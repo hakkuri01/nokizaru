@@ -30,7 +30,6 @@
               ./bin
               ./conf
               ./lib
-              ./man
               ./nokizaru.gemspec
               ./wordlists
             ];
@@ -58,13 +57,12 @@
             passthru = { inherit environment source; };
           }
           ''
-            mkdir -p $out/bin $out/share/man/man1
+            mkdir -p $out/bin
             makeWrapper ${environment.wrappedRuby}/bin/ruby $out/bin/nokizaru \
               --add-flags ${source}/bin/nokizaru \
               --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.file ]} \
               --set-default LANG C.UTF-8 \
               --set-default SSL_CERT_FILE ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
-            cp ${source}/man/nokizaru.1 $out/share/man/man1/
           '';
 
       developmentFor =
@@ -170,8 +168,6 @@
                 grep -F "2.6.12" "$TMPDIR/version"
                 test ! -s "$TMPDIR/version.err"
                 nokizaru --help | grep -F "Nokizaru - Recon Refined"
-                test -f ${package}/share/man/man1/nokizaru.1
-
                 set +e
                 nokizaru -nb > "$TMPDIR/initialize.log" 2>&1
                 status=$?

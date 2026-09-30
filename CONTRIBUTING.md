@@ -22,7 +22,7 @@ Nokizaru is a Ruby recon CLI focused on practical web pentest and bug bounty wor
 2. Fork the repository and create a branch from `main`.
 3. Implement your change in clear, reviewable commits.
 4. Add or run tests plus validation evidence during development.
-5. Update docs (`README.md`, `man/nokizaru.1`) if behavior or flags changed.
+5. Update `README.md` if behavior or flags changed.
 6. Before opening a PR, clean test-only scaffolding from your branch so `main` remains tidy.
 7. Open a pull request and complete the PR checklist.
 
@@ -99,7 +99,7 @@ A solid PR includes:
 - Validation evidence (tests and/or reproducible command output used during development).
 - Security impact (if any) and mitigation rationale.
 - Performance impact (if relevant, with numbers).
-- Any docs/man page updates.
+- Any documentation updates.
 
 Note: temporary test scaffolding is acceptable in development, but the final branch should be cleaned before merge in line with this repo's shipping style.
 
