@@ -162,4 +162,12 @@ class ProgressRailTest < Minitest::Test
 
     assert_empty io.string
   end
+
+  def test_updates_are_recorded_without_a_terminal
+    rail = Nokizaru::ProgressRail.new(enabled_modules: %i[headers dir], io: StringIO.new)
+    rail.module_started(:dir, label: 'Directory Enum')
+
+    assert_equal :dir, rail.current_module, 'the dashboard tags lines by the module the rail says is running'
+    assert_equal 'running', rail.snapshot.dig(:modules, :dir, :phase)
+  end
 end

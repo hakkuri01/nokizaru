@@ -46,17 +46,20 @@ module Nokizaru
 
         def request_url_following_same_scope_redirects(client, url, stop_state)
           current = url
+          headers = stop_state[:request_headers]
           redirects = 0
 
           loop do
-            response = perform_client_request(client, current, stop_state, headers: stop_state[:request_headers])
+            response = perform_client_request(client, current, stop_state, headers: headers)
             if head_confirmation_required?(stop_state, response)
-              response = perform_client_request(client, current, stop_state, headers: stop_state[:request_headers],
-                                                                             force_method: :get)
+              response = perform_client_request(client, current, stop_state, headers: headers, force_method: :get)
             end
             next_url = same_scope_redirect_url(current, response)
             return response unless next_url && redirects < Crawler::MAX_MAIN_REDIRECTS
 
+            # Security: custom headers can carry session cookies, so like the crawler's redirects they stop at the
+            # origin; sibling hosts in scope are still followed, without them (cost: one origin compare per hop)
+            headers = {} unless Nokizaru::TargetIntel.same_origin?(current, next_url)
             current = next_url
             redirects += 1
           end
@@ -117,6 +120,7 @@ module Nokizaru
           FINDING_CANDIDATE_STATUSES.include?(status)
         end
 
+        # The crawler's redirect policy: same scope only, and never from HTTPS down to cleartext HTTP
         def same_scope_redirect_url(current_url, response)
           return nil unless response.respond_to?(:status)
           return nil unless redirect_status?(response.status)
@@ -124,8 +128,7 @@ module Nokizaru
           location = response.headers['location']
           return nil if location.to_s.strip.empty?
 
-          next_url = Nokizaru::TargetIntel.resolve_location(current_url, location)
-          Nokizaru::TargetIntel.same_scope_host?(URI.parse(current_url).host, URI.parse(next_url).host) ? next_url : nil
+          Nokizaru::TargetIntel.redirect_target(current_url, location)[:next_url]
         rescue StandardError
           nil
         end

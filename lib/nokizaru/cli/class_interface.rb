@@ -4,7 +4,7 @@ module Nokizaru
   module CLIClassInterface
     HELP_USAGE = <<~USAGE
       usage: nokizaru [-h] [-v] [--target TARGET] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--ps]
-                      [--full] [--no-MODULE] [--export] [-nb] [-dt DT] [-pt PT] [-p PORTS] [-T T] [-w W] [-H HEADER] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
+                      [--full] [--no-MODULE] [--export] [--tui] [-nb] [-dt DT] [-pt PT] [-p PORTS] [-T T] [-w W] [-H HEADER] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]
     USAGE
 
     HELP_ARGUMENT_ROWS = [
@@ -15,7 +15,8 @@ module Nokizaru
       ['--dir', 'Directory Search'], ['--wayback', 'Wayback Snapshots'],
       ['--ps', 'Fast Port Scan'], ['--full', 'Full Recon'],
       ['--no-[MODULE]', 'Skip specified modules above during full scan (eg. --no-dir)'],
-      ['--export', 'Write results to export directory [ Default : False ]']
+      ['--export', 'Write results to export directory [ Default : False ]'],
+      ['--tui', 'Interactive dashboard (default on a terminal)']
     ].freeze
 
     HELP_EXTRA_ROWS = [
@@ -34,7 +35,7 @@ module Nokizaru
       ['-cd CD', 'Export directory for this run (requires --export) ' \
                  '[ Default : XDG data dir/nokizaru/exports/<hostname> ]'],
       ['-of OF', 'Export filename base for this run (requires --export) [ Default : YYYY-MM-DD_HH-MM-SS ]'],
-      ['-k K', 'Add API key [ Example : shodan@key ]']
+      ['-k K', 'Add API key, prompted without echo [ Example : shodan ]']
     ].freeze
 
     def start(given_args = ARGV, config = {})

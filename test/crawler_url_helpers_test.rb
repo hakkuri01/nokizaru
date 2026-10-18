@@ -4,6 +4,8 @@ require_relative 'test_helper'
 
 class CrawlerURLHelpersTest < Minitest::Test
   Crawler = Nokizaru::Modules::Crawler
+  PAGE = 'https://www.example.com/'
+  SESSION = { 'Cookie' => 'session=1' }.freeze
 
   def test_url_filter_rejects_fragment_script_mail_and_malformed_links
     assert_nil Crawler.send(:url_filter, 'https://example.com/app', '#section')
@@ -264,6 +266,46 @@ class CrawlerURLHelpersTest < Minitest::Test
 
     assert_equal '<urlset/>', Crawler.send(:sitemap_body, response, 'https://example.com/sitemap.xml.gz')
     assert_equal '<urlset/>', Crawler.send(:sitemap_body, Struct.new(:body).new(compressed.string), 'ignored')
+  end
+
+  def test_sitemap_body_inflates_no_further_than_the_body_cap
+    cap = Nokizaru::BodyCap::MAX_BYTES
+    compressed = StringIO.new
+    Zlib::GzipWriter.wrap(compressed) { |gzip| gzip.write("\0" * (cap + 1024)) }
+
+    assert_equal cap, Crawler.send(:sitemap_body, Struct.new(:body).new(compressed.string), 'ignored').bytesize
+  end
+
+  def test_custom_headers_reach_only_the_page_origin_for_javascript
+    sent = {}
+    fetch = lambda do |url, request_headers:|
+      sent[url] = request_headers
+      nil
+    end
+
+    Crawler.stub(:http_get, fetch) do
+      Crawler.send(:extract_urls_from_javascript, 'https://www.example.com/app.js', PAGE, SESSION)
+      Crawler.send(:extract_urls_from_javascript, 'https://status.example.com/w.js', PAGE, SESSION)
+    end
+
+    assert_equal SESSION, sent['https://www.example.com/app.js']
+    assert_empty sent['https://status.example.com/w.js'], 'a sibling host is fetched without the session'
+  end
+
+  def test_custom_headers_reach_only_the_page_origin_for_sitemaps
+    sent = {}
+    parser = lambda do |_result, url, request_headers|
+      sent[url] = request_headers
+      [[], []]
+    end
+
+    Crawler.stub(:parse_sitemap_document, parser) do
+      maps = ['https://www.example.com/a.xml', 'https://maps.example.com/b.xml']
+      Crawler.send(:sm_crawl, Crawler.send(:initialize_result), maps, PAGE, SESSION)
+    end
+
+    assert_equal SESSION, sent['https://www.example.com/a.xml']
+    assert_empty sent['https://maps.example.com/b.xml']
   end
 
   def test_javascript_url_sanitization_rejects_invalid_and_trims_punctuation

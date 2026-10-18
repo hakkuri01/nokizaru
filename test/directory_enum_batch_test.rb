@@ -39,6 +39,18 @@ class DirectoryEnumBatchTest < Minitest::Test
     assert_empty client.batch_get_calls
   end
 
+  def test_header_redirects_stop_at_the_origin_and_never_downgrade_to_http
+    session = { 'Cookie' => 'session=1' }
+    stop_state = { request_method: :get, request_headers: session, allow_redirects: true }
+    client = RedirectChainClient.new('https://www.example.com/a' => 'https://cdn.example.com/a',
+                                     'https://cdn.example.com/a' => 'http://cdn.example.com/a')
+
+    response = DirectoryEnum.__send__(:request_url, client, 'https://www.example.com/a', stop_state)
+
+    assert_equal [['https://www.example.com/a', session], ['https://cdn.example.com/a', {}]], client.calls
+    assert_equal 302, response.status, 'the HTTPS to HTTP hop is not followed'
+  end
+
   def test_request_url_does_not_drop_headers_after_request_errors
     stop_state = { request_method: :get, request_headers: { 'X-Test' => '1' }, allow_redirects: false }
 
@@ -198,6 +210,24 @@ class DirectoryEnumBatchTest < Minitest::Test
       return Response.new(status: 200, body: 'headers dropped') unless headers
 
       raise @error_class, 'request failed'
+    end
+  end
+
+  # Answers each URL in the chain with a 302 to the next one, recording the headers every hop carried
+  class RedirectChainClient
+    Redirect = Struct.new(:status, :headers)
+
+    attr_reader :calls
+
+    def initialize(chain)
+      @chain = chain
+      @calls = []
+    end
+
+    def get(url, headers: {})
+      @calls << [url, headers]
+      location = @chain[url]
+      location ? Redirect.new(302, { 'location' => location }) : Redirect.new(200, {})
     end
   end
 end

@@ -4,7 +4,7 @@ module Nokizaru
   module Exporters
     class Txt
       def write(run, path)
-        File.open(path, 'w') { |file| write_sections(file, run) }
+        File.open(path, 'w', Paths::PRIVATE_FILE) { |file| write_sections(file, run) }
       end
 
       def write_sections(file, run)

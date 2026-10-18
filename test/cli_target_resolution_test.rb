@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'socket'
+require 'tmpdir'
 require_relative 'test_helper'
 
 class CLITargetResolutionTest < Minitest::Test
@@ -83,6 +84,53 @@ class CLITargetResolutionTest < Minitest::Test
     assert_empty result['ports']
     assert_match(/stub resolver failure/, result['error'])
     assert_includes output, 'Skipping Port Scan'
+  end
+
+  def test_credentials_in_the_target_url_are_refused_before_anything_echoes_them
+    target = 'https://user:secret@192.168.1.10'
+    runner = Nokizaru::CLI::Runner.new({ target: target })
+    error = nil
+
+    output, = capture_io { error = assert_raises(SystemExit) { runner.send(:parse_target, target) } }
+
+    assert_equal 1, error.status
+    assert_includes output, 'Credentials in the target URL are not supported'
+    refute_includes output, 'secret'
+  end
+
+  def test_third_party_lookups_get_the_target_without_its_query
+    runner = Nokizaru::CLI::Runner.new({})
+
+    assert_equal 'https://example.com/app', runner.send(:third_party_target, 'https://example.com/app?token=t#part')
+  end
+
+  def test_non_positive_timeouts_ports_and_thread_counts_stop_the_run
+    { T: 0, pt: 0, dt: -1, sp: 0 }.each do |key, value|
+      runner = Nokizaru::CLI::Runner.new({ key => value })
+
+      output, = capture_io { assert_raises(SystemExit) { runner.send(:parse_runtime_options) } }
+
+      assert_includes output, "-#{key} must be a positive number"
+    end
+    options = Nokizaru::CLI::Runner.new({ T: 7.5, pt: '20' }).send(:parse_runtime_options)
+
+    assert_in_delta 7.5, options[:timeout]
+    assert_equal 20, options[:pscan_threads]
+  end
+
+  def test_a_bad_export_option_stops_the_run_before_any_module_runs
+    base = { target: 'http://192.168.1.10', headers: true, export: true }
+    Dir.mktmpdir do |dir|
+      blocker = File.join(dir, 'file')
+      File.write(blocker, '')
+      [{ o: 'txt,jsno' }, { cd: File.join(blocker, 'exports') }, { of: '../../keys', cd: dir }].each do |export|
+        runner = Nokizaru::CLI::Runner.new(base.merge(export))
+
+        output, = capture_io { assert_raises(SystemExit) { runner.plan! } }
+
+        assert_includes output, 'Export failed', export.inspect
+      end
+    end
   end
 
   private

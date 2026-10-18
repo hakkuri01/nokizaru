@@ -307,6 +307,47 @@ class DirectoryEnumTest < Minitest::Test
     assert_equal 40, runtime[:low_confidence_found].length
   end
 
+  # A per-scan map that fails the test if anything walks it, the way a per-response O(n) scan would
+  class NoScanHash < Hash
+    def values = raise('walked a per-scan map on the per-response path')
+    def keys = raise('walked a per-scan map on the per-response path')
+  end
+
+  def test_confidence_snapshot_never_walks_the_growing_pattern_maps
+    runtime = { confidence_context: DirectoryEnum.__send__(:init_confidence_context, { options: { ctx: nil } }) }
+    counters = runtime[:confidence_context][:counters]
+    counters[:redirect_patterns] = NoScanHash.new(0)
+    counters[:sensitive_fingerprints] = NoScanHash.new(0)
+
+    200.times do |index|
+      sample = { redirect_pattern: "path_specific:https:example.com:/p#{index}", fingerprint: "f#{index}" }
+      DirectoryEnum.__send__(:update_confidence_context!, runtime, index.even? ? 302 : 403, sample, nil)
+      DirectoryEnum.__send__(:confidence_context_snapshot, runtime)
+    end
+    redirect_ratio = DirectoryEnum.__send__(:confidence_context_snapshot, runtime)[:redirect_cluster_dominance_ratio]
+
+    assert_in_delta 0.01, redirect_ratio, 1e-9, 'the running max still feeds the ratio (1 of 100)'
+  end
+
+  def test_mid_scan_reconciliation_runs_a_logarithmic_number_of_times
+    window = DirectoryEnum.const_get(:PRESSURE_WINDOW_REQUESTS)
+    reconciles = 0
+    count_call = lambda do |*|
+      reconciles += 1
+      {}
+    end
+    runtime = { candidate_observations: [{}] }
+    DirectoryEnum.stub(:reconcile_candidate_findings, count_call) do
+      DirectoryEnum.stub(:apply_reconciled_runtime_buckets!, nil) do
+        (1..(window * 64)).each do |count|
+          DirectoryEnum.__send__(:reconcile_runtime_for_adaptation!, result_scan, runtime.merge(count: count))
+        end
+      end
+    end
+
+    assert_equal 7, reconciles, 'at 1, 2, 4, ... 64 windows, not at every one of the 64'
+  end
+
   def test_candidate_observation_uses_synchronized_metadata
     runtime = {
       candidate_observations: [], stats: DirectoryEnum.__send__(:init_stats),

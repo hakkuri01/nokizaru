@@ -5,6 +5,10 @@ require 'fileutils'
 module Nokizaru
   module Paths
     APP_DIR = 'nokizaru'
+    # Security: keys, the runtime log, and exports can hold API keys, target cookies, and private scan data, so
+    # Nokizaru's directories and files are owner-only, as XDG asks (cost acceptable: a mode argument per create)
+    PRIVATE_DIR = 0o700
+    PRIVATE_FILE = 0o600
 
     def self.home
       @home ||= Dir.home
@@ -44,7 +48,7 @@ module Nokizaru
     end
 
     def self.ensure_dir(path)
-      FileUtils.mkdir_p(path)
+      FileUtils.mkdir_p(path, mode: PRIVATE_DIR)
       path
     end
 

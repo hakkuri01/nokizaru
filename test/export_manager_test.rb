@@ -25,6 +25,47 @@ class ExportManagerTest < Minitest::Test
     end
   end
 
+  def test_export_filename_must_be_a_plain_name
+    Dir.mktmpdir do |dir|
+      ['../../keys', 'sub/report', '..', '.hidden', 'a\\b'].each do |name|
+        output = { custom_directory: File.join(dir, 'out'), custom_basename: name }
+        assert_raises(ArgumentError, name) do
+          Nokizaru::ExportManager.new.export(sample_run, domain: 'example.com', formats: ['json'], output: output)
+        end
+      end
+
+      assert_empty Dir.glob(File.join(dir, '**', '*.json'))
+    end
+  end
+
+  def test_exports_and_their_new_directory_are_owner_only
+    Dir.mktmpdir do |dir|
+      target = File.join(dir, 'new-exports')
+      output = { custom_directory: target, custom_basename: 'report' }
+      formats = %w[txt json html]
+      paths = Nokizaru::ExportManager.new.export(sample_run, domain: 'example.com', formats: formats, output: output)
+
+      paths.each_value { |path| assert_equal 0o600, File.stat(path).mode & 0o777, path }
+      assert_equal 0o700, File.stat(target).mode & 0o777
+    end
+  end
+
+  def test_prepare_checks_everything_before_a_long_scan_and_writes_nothing
+    Dir.mktmpdir do |dir|
+      target = File.join(dir, 'later')
+      manager = Nokizaru::ExportManager.new
+
+      assert_raises(ArgumentError) do
+        manager.prepare(domain: 'example.com', formats: ['jsno'], output: { custom_directory: target })
+      end
+      refute_path_exists target
+
+      manager.prepare(domain: 'example.com', formats: ['json'], output: { custom_directory: target })
+
+      assert_empty Dir.children(target)
+    end
+  end
+
   def test_txt_export_renders_wayback_categories_readably
     Dir.mktmpdir do |dir|
       run = sample_run

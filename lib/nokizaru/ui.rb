@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'terminal_text'
+
 module Nokizaru
   module UI
     module_function
@@ -28,13 +30,15 @@ module Nokizaru
     def section(title, type: :plus, io: $stdout)
       with_terminal_output(io) do
         io.puts
-        io.puts("#{prefix(type)} #{C}#{title}#{W}")
+        io.puts("#{prefix(type)} #{C}#{safe(title)}#{W}")
         io.puts
       end
     end
 
     def module_header(title, type: :plus, io: $stdout)
-      text = title.to_s.strip
+      return if tui_mode?
+
+      text = safe(title).strip
       width = [text.length + 6, 40].max
       bar = '─' * width
 
@@ -47,7 +51,7 @@ module Nokizaru
     end
 
     def line(type, text, io: $stdout)
-      with_terminal_output(io) { io.puts("#{prefix(type)} #{W}#{text}#{W}") }
+      with_terminal_output(io) { io.puts("#{prefix(type)} #{W}#{safe(text)}#{W}") }
     end
 
     def blank_line(io: $stdout)
@@ -59,7 +63,7 @@ module Nokizaru
     end
 
     def formatted_row(type, label, value, label_width: nil, min_dots: 3)
-      label_text = label.to_s
+      label_text = safe(label)
       value_text = normalized_value_text(value)
       width = [label_width.to_i, label_text.length].max
       dots = '.' * [min_dots, width - label_text.length + min_dots].max
@@ -69,7 +73,7 @@ module Nokizaru
     def normalized_value_text(value)
       return '-' if value.nil?
 
-      text = value.to_s
+      text = safe(value)
       text.strip.empty? ? '-' : text
     end
 
@@ -83,7 +87,7 @@ module Nokizaru
     end
 
     def tree_header(label, io: $stdout)
-      with_terminal_output(io) { io.puts("#{prefix(:info)} #{W}#{label}#{W}") }
+      with_terminal_output(io) { io.puts("#{prefix(:info)} #{W}#{safe(label)}#{W}") }
     end
 
     def tree_rows(pairs, min_dots: 3, io: $stdout)
@@ -99,7 +103,7 @@ module Nokizaru
     def format_tree_row(pair, idx, total, width, min_dots)
       label, value = pair
       branch = idx == total - 1 ? '└─◈' : '├─◈'
-      label_text = label.to_s
+      label_text = safe(label)
       dots = '.' * [min_dots, width - label_text.length + min_dots].max
       value_text = normalized_value_text(value)
       " #{branch} #{W}#{label_text}#{dots}#{W}⟦ #{C}#{value_text}#{W} ⟧"
@@ -108,8 +112,8 @@ module Nokizaru
     def run_status_line(snapshot, frame_index:, tty: $stdout.tty?, width: nil)
       rail = bracketed_pulse_rail(frame_index, tty: tty)
       body = [rail, run_status_text(snapshot, tty: tty)].join(' ')
-      body = constrained_status_line(snapshot, rail, width) if tty && width && visible_length(body) >= width
-      tty ? body : body.gsub(/\e\[[0-9;]*m/, '')
+      body = constrained_status_line(snapshot, rail, width) if tty && width && TerminalText.width(body) >= width
+      tty ? body : TerminalText.strip_sgr(body)
     end
 
     def bracketed_pulse_rail(frame_index, tty: $stdout.tty?)
@@ -120,38 +124,13 @@ module Nokizaru
 
     def constrained_status_line(snapshot, rail, width)
       available_width = width.to_i - 1
-      rail_width = visible_length(rail)
+      rail_width = TerminalText.width(rail)
       return '' if available_width < rail_width
 
       suffix_width = available_width - rail_width - 1
       return rail if suffix_width <= 0
 
-      suffix = truncate_terminal_text(run_status_text(snapshot, tty: true), suffix_width)
-      "#{rail} #{suffix}"
-    end
-
-    def truncate_terminal_text(text, width)
-      return text if visible_length(text) <= width
-
-      ellipsis = width < 4 ? '' : '...'
-      content_width = width - ellipsis.length
-      visible = 0
-      output = +''
-      text.scan(/\e\[[0-9;]*m|./m).each do |token|
-        if token.start_with?("\e[")
-          output << token
-          next
-        end
-        break if visible >= content_width
-
-        output << token
-        visible += 1
-      end
-      "#{output}#{ellipsis}#{W}"
-    end
-
-    def visible_length(text)
-      text.to_s.gsub(/\e\[[0-9;]*m/, '').length
+      "#{rail} #{TerminalText.truncate(run_status_text(snapshot, tty: true), suffix_width)}"
     end
 
     def pulse_rail(frame_index, tty: $stdout.tty?)
@@ -272,6 +251,15 @@ module Nokizaru
       @active_progress_rail
     end
 
+    # The dashboard names each module on its tab and scaffold, so the per-module header bar is dropped there
+    def tui_mode=(value)
+      @tui_mode = value
+    end
+
+    def tui_mode?
+      @tui_mode == true
+    end
+
     def with_terminal_output(io = $stdout, &)
       rail = active_progress_rail
       return yield unless rail&.active? && io.equal?($stdout)
@@ -283,6 +271,11 @@ module Nokizaru
       color = COLORS.fetch(type)
       symbol = SYMBOLS.fetch(type)
       "#{color}#{symbol}#{W}"
+    end
+
+    # Values often come from the target, so only their SGR color survives (see TerminalText.sanitize)
+    def safe(text)
+      TerminalText.sanitize(text)
     end
   end
 end

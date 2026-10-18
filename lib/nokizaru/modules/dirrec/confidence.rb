@@ -125,6 +125,7 @@ module Nokizaru
               soft_404_matches: 0,
               redirect_total: 0,
               redirect_patterns: Hash.new(0),
+              redirect_pattern_max: 0,
               sensitive_total: 0,
               sensitive_status_counts: Hash.new(0),
               sensitive_fingerprints: Hash.new(0)
@@ -190,7 +191,9 @@ module Nokizaru
           pattern = sample.to_h[:redirect_pattern].to_s
           return if pattern.empty?
 
-          counters[:redirect_patterns][pattern] += 1
+          # The largest cluster is kept as it grows, since a hostile target can mint a new pattern per candidate
+          count = counters[:redirect_patterns][pattern] += 1
+          counters[:redirect_pattern_max] = count if count > counters[:redirect_pattern_max]
         end
 
         def update_sensitive_status_context!(counters, status, sample)
@@ -243,8 +246,7 @@ module Nokizaru
           total = counters[:redirect_total].to_i
           return 0.0 if total <= 0
 
-          max_cluster = counters[:redirect_patterns].values.max.to_i
-          ratio(max_cluster, total)
+          ratio(counters[:redirect_pattern_max], total)
         end
 
         def sensitive_status_homogeneity_ratio(counters)
@@ -258,7 +260,7 @@ module Nokizaru
           total = counters[:sensitive_total].to_i
           return 0.0 if total <= 0
 
-          ratio(counters[:sensitive_fingerprints].keys.length, total)
+          ratio(counters[:sensitive_fingerprints].size, total)
         end
 
         def waf_likelihood_score(

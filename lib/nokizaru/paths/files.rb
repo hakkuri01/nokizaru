@@ -19,6 +19,8 @@ module Nokizaru
     def self.sync_default_conf!
       FileUtils.mkdir_p(config_dir)
       FileUtils.mkdir_p(user_data_dir)
+      # An install from before owner-only modes keeps its old ones, so the data directory is tightened each run
+      File.chmod(PRIVATE_DIR, user_data_dir)
       ensure_file!(config_file, default_config_template) { {} }
       ensure_file!(keys_file, default_keys_template) { {} }
       secure_keys_file!

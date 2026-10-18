@@ -34,7 +34,7 @@ module Nokizaru
         end
 
         def extract_urls_from_javascript(js_url, page_url, request_headers)
-          response = http_get(js_url, request_headers: request_headers)
+          response = http_get(js_url, request_headers: origin_headers(js_url, page_url, request_headers))
           return [] unless http_success?(response)
 
           found = Nokizaru::HTTPClient.response_body(response).scan(%r{https?://[\w\-.~:/?#\[\]@!$&'()*+,;=%]+})

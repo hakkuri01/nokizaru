@@ -13,6 +13,7 @@ module Nokizaru
       'User-Agent' => "Nokizaru/#{Nokizaru::VERSION} (+https://github.com/hakkuri01)",
       'Accept-Encoding' => 'gzip'
     }.freeze
+    COOKIE_START = /\A\s*[!#$%&'*+\-.^_`|~0-9A-Za-z]+=/
 
     def build(timeout_s: 10.0, headers: {}, follow_redirects: true, persistent: true, verify_ssl: true)
       ConnectionPool.instance.client(
@@ -105,6 +106,16 @@ module Nokizaru
       headers = response_headers(response)
       value = headers[key.to_s] || headers[key.to_s.downcase] || headers[key.to_s.capitalize]
       Array(value).join(', ')
+    end
+
+    # Splits a folded Set-Cookie value into cookies. A comma starts a new cookie only when name= follows, since
+    # Expires dates hold commas; checking each piece's start replaces a lookahead, which is not linear-time
+    def split_set_cookie(value)
+      value.to_s.split("\n").flat_map do |line|
+        line.split(',').each_with_object([]) do |part, cookies|
+          cookies.empty? || part.match?(COOKIE_START) ? cookies << part : cookies.last << ',' << part
+        end
+      end.map(&:strip).reject(&:empty?)
     end
 
     def retry_after(response, max: nil, now: Time.now)

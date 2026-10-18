@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Ruby-black.svg?style=plastic&logo=ruby&logoColor=red">
-<img src="https://img.shields.io/badge/v2.6.12-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v2.7.12-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -111,15 +111,18 @@ export NK_SHODAN_KEY="kl32lcdqwcdfv"
 
 #### Saved Keys
 
-You can use **`-k`** to add keys which will be saved automatically in the user data directory.
+You can use **`-k`** to add keys which will be saved automatically in the user data directory. With only the key name, Nokizaru prompts for the key without echoing it (or reads it from piped stdin), so it stays out of your shell history.
 
 ```bash
 # Usage
-nokizaru -k '<API NAME>@<API KEY>'
+nokizaru -k '<API NAME>'
 
 Valid Keys : 'alienvault', 'bevigil', 'binedge', 'censys_api_id', 'censys_api_secret', 'chaos', 'facebook', 'hunter', 'netlas', 'shodan', 'virustotal', 'wappalyzer', 'zoomeye'
 
 # Example :
+nokizaru -k shodan
+
+# The inline form still works, but the key lands in shell history
 nokizaru -k 'shodan@kl32lcdqwcdfv'
 ```
 
@@ -189,6 +192,7 @@ Arguments:
   --full           Full Recon
   --no-[MODULE]    Skip specified modules above during full scan (eg. --no-dir)
   --export         Write results to export directory
+  --tui            Interactive dashboard (default on a terminal)
 
 Extra Options:
   -nb          Hide Banner
@@ -206,7 +210,7 @@ Extra Options:
   -o O         Export Format(s) (comma-separated) [ Default : txt,json,html ]
   -cd CD       Export directory for this run (requires --export) [ Default : XDG data dir/nokizaru/exports/<hostname> ]
   -of OF       Export filename base for this run (requires --export) [ Default : YYYY-MM-DD_HH-MM-SS ]
-  -k K         Add API key [ Example : shodan@key ]
+  -k K         Add API key, prompted without echo [ Example : shodan ]
 ```
 
 ### Examples
@@ -242,6 +246,35 @@ nokizaru --crawl --dir --target https://example.com \
 Custom headers are applied only to in-scope target requests. Nokizaru does not echo supplied header values back in module banners.
 
 Directory enumeration ships curated `small` (2K), `medium` (5K), and `large` (10K) wordlists. `medium` is the default; `-w` also accepts any custom wordlist path.
+
+### Interactive Dashboard
+
+On a terminal, `nokizaru` (or `nokizaru --tui`) launches a full-screen app; any scan flags you pass prefill the form.
+
+1. An opening screen reveals the banner and wordmark. Press any key.
+2. A command form (vim-style) collects the target, the modules, and the option and export switches, building a live `nokizaru …` command at the foot. Flags the form has no field for (`-H`, `-sp`, `-d`, `--no-MODULE`) carry over from the command line unchanged; request header values are never shown, only their count.
+3. Enter runs the scan. Results stream into one tab per module, plus a Summary tab, each on its own scaffold.
+4. When it finishes, browse the tabs. `q` goes back one screen: from the dashboard to the form (stopping a running scan) to adjust and re-run, and from the form it quits. Ctrl+C quits from anywhere.
+
+Results are not printed to the terminal on exit; use `--export` (set in the form or on the command line) to save them.
+
+| Mode | Key | Action |
+| --- | --- | --- |
+| Form (NORMAL) | `j`/`k`, `↑`/`↓` | Move between fields |
+| Form (NORMAL) | `←`/`→` | Move across the module chips |
+| Form (NORMAL) | `space` | Toggle the field or focused module |
+| Form (NORMAL) | `i` | Edit a text or number field |
+| Form (NORMAL) | `h` | Open the flag and key reference (`q` or `h` closes it) |
+| Form (NORMAL) | `enter` | Run the scan |
+| Form (NORMAL) | `q` | Quit |
+| Form (INSERT) | type, `←`/`→`, `home`/`end` | Edit; `enter` runs, `esc` returns to NORMAL |
+| Dashboard | `tab`/`shift+tab`, `h`/`l`, `←`/`→`, `1`-`9`/`0` | Switch module tab |
+| Dashboard | `j`/`k`, `ctrl+d`/`ctrl+u`, `pgdn`/`pgup`, `g`/`G` | Scroll the results within the pane |
+| Dashboard | `f` | Follow the running module |
+| Dashboard | `q` | Back to the form (stops a running scan) |
+| Anywhere | `ctrl+c` | Quit |
+
+The app does not capture the mouse, so a plain drag selects and copies text, and the wheel scrolls the results. Piped or redirected runs (for example `nokizaru --full --target https://example.com --export | tee scan.txt`) skip the app and print the classic line output.
 
 ---
 

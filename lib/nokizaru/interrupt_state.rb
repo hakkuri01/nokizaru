@@ -12,5 +12,10 @@ module Nokizaru
     def interrupt!
       @interrupted = true
     end
+
+    # Clears the flag so a fresh scan from the interactive app is not born already interrupted
+    def reset!
+      @interrupted = false
+    end
   end
 end

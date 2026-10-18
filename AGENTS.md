@@ -25,10 +25,14 @@ This file defines the non-negotiable operating constraints and the standard work
 
 Do not introduce speculative complexity. Prefer simple, proven approaches with measurable results.
 
+Before writing code, climb the Ponytail ladder and stop at the first rung that holds: does this need to be built at all; does it already exist in this codebase; does the Ruby standard library, a platform feature, or an already-installed gem cover it; can it be one line; only then, write the minimum code that works.
+
+A deliberate shortcut with a known ceiling (an O(n²) scan over a bounded n, a lock held across a loop, a naive heuristic) carries a `# ponytail:` comment naming the ceiling, the bound that keeps it safe, and the upgrade path. The lowercase tag is a searchable marker, like `rubocop:disable`, so it is exempt from the capital-letter comment rule in `CONTRIBUTING.md`.
+
 **Default priorities, highest to lowest:**
 1. Correctness, including edge cases and test coverage
 2. Security, OWASP Top 10-aligned, justified, and not performative
-3. Performance, measured and not guessed
+3. Performance, measured and not guessed, with every path meeting its complexity target
 4. Maintainability, idiomatic Ruby, senior-level design, and clean code
 5. Developer experience, clear docs, clean artifacts, and a tidy repo
 
@@ -66,6 +70,41 @@ Do not introduce speculative complexity. Prefer simple, proven approaches with m
 ### Style Guide
 
 Follow the repository style guide in `CONTRIBUTING.md`.
+
+---
+
+## Algorithmic Complexity (Big O)
+
+**Complexity is a builder step.** Run it on every change, right after the Ponytail ladder settles what to build, and in every review: name what grows, name the path the code runs on, and meet that path's target. O(1) is the gold standard, O(log n) excellent, O(n) often optimal (the lower bound for anything that must read every item or byte), O(n log n) optimal for general sorting, and O(n²) or worse needs a stated bound on n or a redesign. O(n³), O(2ⁿ), and O(n!) never ship. The goal is the lowest practical complexity for the problem, kept readable and correct; an algorithm cleverer than n will ever need is over-engineering, and the Ponytail ladder still applies to it. This step is design, not tuning: it picks the data structure and algorithm while the code is written, and Performance Work governs tuning existing code against measurements.
+
+1. **Name what grows.** Here: candidate URLs in directory enumeration (W wordlist entries times one plus E extensions; the bundled lists hold 2,048, 5,120, and 10,240 entries, and a custom `-w` list can hold millions), ports per scan (P, up to 65,535), requests in flight (C: `-dt` and `-pt`, 50 by default; a large port scan opens up to `LARGE_SCAN_MAX_CONCURRENCY` (1,024) sockets, held under the open-file limit; 8 crawl fetch workers; 10 workers across the 17 subdomain providers), names returned per provider, links, scripts, and sitemaps per crawl, and Wayback CDX records (1,000 a page, up to 50,000 and 32 MB). Above all, text from outside: response bodies and headers, robots.txt, sitemaps, JavaScript, WHOIS and RDAP replies, DNS records, and provider JSON. The target is the system under test and may be built to fight back (tarpits, WAFs, endless or oversized responses), so all of it is untrusted and unbounded until capped. Per run: progress redraws (every 0.12 s while the rail runs), dashboard frames (in a terminal: up to 30 a second, drawn only when something changed) and the lines each dashboard tab holds (capped at `Tab::MAX_LINES`, 20,000), and the export payload, which is the sum of every module's results.
+2. **Name the path, and meet its target.**
+
+   | Path | Runs | Target | Accepted ceiling (with a `# ponytail:` comment naming n's bound) |
+   |---|---|---|---|
+   | Per candidate (pick the next URL or port, send it) | Once per candidate, C at a time | O(1): one request per candidate plus a fixed retry budget; the work queue is generated lazily and walked by cursor, never materialized up front or rescanned; the seen check is a `Set`; probe sets (preflight, soft-404 baselines) are fixed in size, never proportional to W | None worse than O(1) amortized |
+   | Per response (classify, soft-404 and confidence checks, pressure and concurrency adaptation) | Once per response, from every worker | O(1) in the responses seen so far: counters and windows update incrementally, comparisons run against fixed-size baselines, and work under the shared runtime `Mutex` stays O(1) | O(window) over a fixed-size window (`PRESSURE_WINDOW_REQUESTS`, `ADAPTIVE_CONCURRENCY_WINDOW`, `TIMEOUT_ADAPT_SAMPLE_SIZE`), outside the lock where it can be; never O(responses so far) |
+   | Text from outside (parse, extract, normalize, fingerprint) | Over every byte of every body, header, and reply | One O(n) pass over input capped first; a document is parsed once and its tree queried, never re-parsed. The text is untrusted, so worse than linear in its length is a denial of service, not only slow | None |
+   | Port scan event loop | Every `IO.select` turn | O(C) over the sockets in flight (`IO.select` is linear in what it watches) | C bounded by `LARGE_SCAN_MAX_CONCURRENCY` and the open-file limit |
+   | Network rounds (subdomain providers, Wayback, WHOIS and RDAP, crawl fetches) | Per module, per run | O(1) rounds of waiting per module: independent calls run side by side on a fixed pool, every call has a timeout and a bounded retry count, and nothing already fetched is fetched again | Cursor pagination (Wayback CDX) is sequential by nature; one round per level of dependency (a sitemap index, then its sitemaps) |
+   | Once per scan (wordlist load, port spec, URL plan, findings, export) | Once per run | O(n) to read and dedupe through a `Hash` or `Set`, O(n log n) to sort | O(n) memory for the wordlist and the seen set, the price of exact dedup |
+   | Per progress redraw | Every 0.12 s tick and every progress update | O(terminal width), drawn from counters in a snapshot | None: a redraw never walks results |
+   | Dashboard loop (TUI) | Every `IO.select` turn, one 0.05 s tick, each printed line | Waits only in `IO.select`, which releases the GVL, so scan threads keep full speed; a printed line is sanitized, capped (`Feed::MAX_LINE_BYTES`), and queued in O(its length); a tick drains at most `Program::DRAIN_LIMIT` lines and appends each in O(1) amortized, wrapping only the new line | None |
+   | Dashboard frame (TUI) | Up to 30 a second, only when the model changed | O(rows × cols): the focused tab's visible window is a slice by offset, the HUD reads one progress snapshot copy; changed rows only are written | None: a frame never walks a tab's lines. Re-wrapping a tab after a resize is O(its lines), once per resize, bounded by `Tab::MAX_LINES` |
+   | Tests and local tooling (`test/`, `bench/`) | Per suite run | O(n log n) | Polynomial for a bounded n |
+
+3. **Look up by key.** A lookup or membership test inside a loop over candidates, responses, ports, provider results, links, or CDX records goes through a `Hash` or a `Set` (`to_set`, `to_h`, `group_by`, `each_with_object({})`). A `find`, `include?`, `index`, `delete`, or `select` over one such collection inside a loop over another is a hidden O(n²). `uniq`, `|`, `&`, and `-` hash their operands and stay linear. A linear `include?` over a small frozen constant list is fine: it is fixed and small.
+4. **Ruby strings and arrays hide quadratics.**
+   - On a string holding any non-ASCII character, `str[i]` and `str[i, len]` count characters from the start, so a loop that indexes by character is O(n²). ASCII-only strings index in O(1), so the trap stays hidden until a target serves non-ASCII text. Walk with `each_char`, `each_byte`, or `StringScanner`, and work in byte offsets (`byteindex`, `byteslice`).
+   - `str += part` copies the whole string every time, so output built that way in a loop is O(n²). Build with `<<` on an unfrozen buffer (`+''` or `String.new`), `Array#join`, or `StringIO`.
+   - `list = list + other` and `inject(:+)` over arrays copy on every step; use `concat`, `<<`, `flat_map`, or `each_with_object([])`.
+   - Take the best item with `min_by` or `max_by` (O(n)), and a top k with `max_by(k)`, rather than `sort_by(...).first`.
+   - A `Regexp` literal with interpolation (`/#{value}/`) compiles every time it is evaluated; hoist it into a constant or build it once per scan.
+5. **Regexes on untrusted text run in linear time.** Ruby memoizes regex matching, so most patterns are linear, but a backreference opts a pattern out. Every pattern applied to text from outside passes `Regexp.linear_time?`, pinned by a test; a pattern that cannot (it needs a backreference) runs only on input capped to a small stated size, with a `# ponytail:` comment naming the cap.
+6. **Prepare off the hot path.** Work that depends only on the configuration and the wordlist (normalizing, deduping, and prioritizing words, parsing the port spec, building the seed URL plan, compiling patterns) runs once per scan before the first request, never per response. Lookup tables and pattern lists are frozen constants built at load time, not rebuilt inside a method that runs per response.
+7. **Round trips decide.** Big O ignores constants, and here they are large: one request to the target or a provider costs tens to hundreds of milliseconds, and seconds through a WAF or a tarpit, far more than Ruby spends on a typical response. Cut requests and rounds of waiting first, then asymptotics where n is large enough to matter. Requests are also Nokizaru's footprint on a system someone else runs: a change that adds requests per candidate, re-fetches a URL another module already fetched, or adds a retry without a budget is a regression in speed and in noise, even when it simplifies the code. Threads overlap network waits but share one GVL for Ruby work, so CPU-bound work per response caps throughput at one core however many threads run, and work inside a shared `Mutex` stalls every worker waiting on it.
+8. **Space counts.** Everything read from the network has a cap (bytes per body and page, records, links, lines); every httpx response body stops at `BodyCap::MAX_BYTES` (8 MiB decoded, gzip and deflate included) at the transport, and Wayback's `CDX::MAX_BODY_BYTES`, `Query::MAX_CDX_RECORDS`, and `Normalize::CATEGORY_LIMIT` and the crawler's `MAX_*` link limits are examples of tighter ones. Enforce a cap while reading or collecting where the client allows, so memory stops at the cap, rather than trimming a list already built. Results keep a fixed-size summary of each response (status, length, title, fingerprint), never the body. Caches and seen sets belong to one scan and die with it. Work run side by side multiplies peak memory, so C workers hold at most C responses.
+9. **Pin the target with a check.** A target that matters gets a test that fails when it regresses, counting something deterministic: requests a stubbed client received for a given wordlist and config (and duplicates to one URL), the peak number in flight against the configured threads, objects allocated around a call (`GC.stat(:total_allocated_objects)` before and after, at two input sizes so the growth rate shows), parse passes per response, or `Regexp.linear_time?` for every regex literal in `lib/` (`test/regex_linear_time_test.rb` walks the source, so a new pattern is pinned without being listed). Never a wall-clock timing, which is flaky under load; deadline logic stubs the clock (`Process.stub(:clock_gettime, ...)`), as the existing tests do. A fix's check must fail on the code before the fix.
 
 ---
 
@@ -116,7 +155,7 @@ Ensure strong coverage over:
 - edge cases
 - error handling paths
 - boundary conditions
-- performance-sensitive hot paths, via regression tests
+- performance-sensitive hot paths, via count-based regression tests (see Algorithmic Complexity, rule 9)
 
 ### QA Double Check Pass
 
@@ -136,12 +175,14 @@ Before optimizing, identify bottlenecks with real measurements:
 - Prefer Ruby profiling tools appropriate to the stack, such as a sampling profiler or allocation profiler
 - Measure relevant functions end-to-end where feasible
 - Use representative production-like workloads where possible
+- Keep profiling and benchmark scripts in the gitignored `bench/` directory so they never ship
+- Measurements find the bottleneck; the regression guard that lands with the fix is a count-based test (see Algorithmic Complexity, rule 9), never a timing
 
 ### Avoid Premature Micro-Optimization
 
-- First: algorithmic improvements, data structure choices, and unnecessary I/O removal
+- First: fewer requests and rounds of waiting, then algorithmic improvements, data structure choices, and unnecessary I/O removal
 - Then: allocation reduction, hot loop tuning, and caching with invalidation clarity
-- Only optimize with an explicit bottleneck and a regression guard
+- Only optimize with an explicit bottleneck and a count-based regression guard
 
 ---
 
@@ -194,6 +235,7 @@ Follow this cycle for each task.
 1. Read relevant code
 2. Identify the objective: refactor, performance, edge-case fix, test improvement, or another clearly scoped task
 3. Identify risk areas: input boundaries, parsing/deserialization, filesystem/shell usage, auth/session handling if applicable, and concurrency/state
+4. Name what grows and the complexity path each touched method runs on (see Algorithmic Complexity)
 
 ### Plan
 
@@ -201,6 +243,7 @@ Write a short, concrete plan in task notes or output that includes:
 - files to touch
 - tests to add or update
 - how success will be measured, including tests and profiling data if performance work
+- the complexity target for each path touched, and any ceiling to accept with a `# ponytail:` comment
 - any security considerations with justification
 
 ### Execute
@@ -214,6 +257,7 @@ Run, at minimum:
 - full test suite
 - linting/formatting if present
 - performance measurements if performance-related
+- the complexity step: every path touched meets its target, or its ceiling carries a `# ponytail:` comment naming the bound
 
 ### Post-Flight Cleanup
 
@@ -248,5 +292,6 @@ When delivering changes, include:
 - summary of what changed and why
 - tests added or updated, and what they cover
 - profiling or performance results if relevant, before/after on the same machine/settings
+- complexity notes: paths touched, targets met, and any accepted ceilings
 - any security-relevant changes with justification
 - any cleanup performed, such as deleted files or removed dead code

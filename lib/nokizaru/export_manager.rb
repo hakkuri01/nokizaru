@@ -16,6 +16,12 @@ module Nokizaru
     }.freeze
 
     def export(run, domain:, formats:, output: {})
+      write_exports(run, *prepare(domain: domain, formats: formats, output: output))
+    end
+
+    # Everything that can fail before a byte of results is written (formats, filename, directory), so a caller can
+    # check it before a long scan. Returns the directory, basename, and formats to write
+    def prepare(domain:, formats:, output: {})
       normalized_formats = normalize_formats(formats)
       validate_formats!(normalized_formats)
 
@@ -28,8 +34,7 @@ module Nokizaru
       basename = resolve_basename(output[:timestamp], output[:custom_basename])
 
       ensure_directory_exists(export_dir)
-
-      write_exports(run, export_dir, basename, normalized_formats)
+      [export_dir, basename, normalized_formats]
     end
 
     private
@@ -58,14 +63,18 @@ module Nokizaru
       Paths.target_export_dir(domain)
     end
 
+    # Security: a basename with a separator or a leading dot could write outside the export directory (for example
+    # -of ../../keys over the key store), so only a plain file name is accepted (cost acceptable: one check per run)
     def resolve_basename(timestamp, custom_basename)
-      return custom_basename if custom_basename && !custom_basename.to_s.strip.empty?
+      name = custom_basename.to_s.strip
+      return Paths.export_timestamp(timestamp) if name.empty?
+      raise ArgumentError, "Export filename must be a plain name: #{name}" if name.match?(%r{[/\\]|\A\.})
 
-      Paths.export_timestamp(timestamp)
+      name
     end
 
     def ensure_directory_exists(directory)
-      FileUtils.mkdir_p(directory)
+      FileUtils.mkdir_p(directory, mode: Paths::PRIVATE_DIR)
     end
 
     def write_exports(run, directory, basename, formats)

@@ -11,7 +11,7 @@ module Nokizaru
           return print_empty unless technologies.any?
 
           UI.section('Architecture Fingerprinting Results :')
-          UI.with_terminal_output { technologies.first(20).each { |entry| $stdout.puts(entry_line(entry)) } }
+          UI.with_terminal_output { technologies.first(20).each { |entry| $stdout.puts(UI.safe(entry_line(entry))) } }
           UI.line(:info, 'Results truncated...') if technologies.length > 20
           UI.blank_line
           UI.row(:info, 'Total Unique Technologies Found', technologies.length)

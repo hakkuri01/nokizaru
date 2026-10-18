@@ -51,9 +51,21 @@ module Nokizaru
       update(key, phase: 'failed')
     end
 
-    def update(key, fields = {})
-      return unless tty?
+    def module_skipped(key, label: nil)
+      update(key, phase: 'skipped', label: label || key.to_s)
+    end
 
+    def current_module
+      @mutex.synchronize { @snapshot[:current_module] }
+    end
+
+    # A copy the dashboard can read while workers keep updating
+    def snapshot
+      @mutex.synchronize { @snapshot.merge(modules: @snapshot[:modules].transform_values(&:dup)) }
+    end
+
+    # Records state for any reader (the TUI dashboard reads snapshots); only drawing depends on a terminal
+    def update(key, fields = {})
       @mutex.synchronize do
         mod = key.to_sym
         @snapshot[:current_module] = mod

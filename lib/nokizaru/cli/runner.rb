@@ -7,6 +7,7 @@ require_relative 'runner/parsing_support'
 require_relative 'runner/runtime'
 require_relative 'runner/workflow'
 require_relative 'runner/exporting'
+require_relative 'runner/profile'
 
 module Nokizaru
   class CLI
@@ -20,6 +21,7 @@ module Nokizaru
       include Runner::Runtime
       include Runner::Workflow
       include Runner::Exporting
+      include Runner::Profile
 
       def initialize(options, argv = [])
         @opts = options

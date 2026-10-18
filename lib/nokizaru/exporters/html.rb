@@ -16,7 +16,7 @@ module Nokizaru
 
         renderer = ERB.new(TEMPLATE)
         html = renderer.result(binding)
-        File.write(path, html)
+        File.write(path, html, perm: Paths::PRIVATE_FILE)
       end
 
       private

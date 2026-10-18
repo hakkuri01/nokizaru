@@ -22,6 +22,8 @@ module Nokizaru
         OUTPUT_GROUP_ORDER = %i[requesting status_info skipping status_error exception found].freeze
         TERMINAL_EVENT_KINDS = %i[found skipping status_error exception].freeze
         FAILURE_EVENT_KINDS = %i[status_error exception].freeze
+        # Created at load, since a lazy ||= from up to 10 provider workers could hand two of them different locks
+        EVENTS_MUTEX = Mutex.new
 
         def requesting(name)
           emit_or_print(:requesting, name, nil)
@@ -192,8 +194,7 @@ module Nokizaru
         end
 
         def synchronize_events(&)
-          @events_mutex ||= Mutex.new
-          @events_mutex.synchronize(&)
+          EVENTS_MUTEX.synchronize(&)
         end
 
         def subdomain_label_width

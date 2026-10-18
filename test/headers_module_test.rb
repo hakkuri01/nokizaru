@@ -27,4 +27,31 @@ class HeadersModuleTest < Minitest::Test
     assert_equal 'https://www.google.com/', response.headers['location']
     assert_equal 'text/html; charset=UTF-8', response.headers['content-type']
   end
+
+  # A response that fails if anything reads its body
+  class EndlessResponse < FakeNetResponse
+    def body = raise('the body was read')
+    def read_body = raise('the body was read')
+  end
+
+  # Stands in for Net::HTTP and yields an EndlessResponse, as a target streaming a body without end would
+  class EndlessBodyHTTP
+    attr_accessor :use_ssl, :verify_mode, :open_timeout, :read_timeout, :write_timeout
+
+    def use_ssl? = use_ssl
+
+    def request(_request)
+      yield EndlessResponse.new(code: '200')
+      raise 'the request block must return before the body'
+    end
+  end
+
+  def test_net_http_fallback_keeps_the_status_and_headers_and_never_reads_the_body
+    uri = URI.parse('https://example.com')
+
+    response = Net::HTTP.stub(:new, EndlessBodyHTTP.new) { Headers.send(:net_http_fetch, uri) }
+
+    assert_equal 200, response.status
+    assert_equal 'text/html; charset=UTF-8', response.headers['content-type']
+  end
 end

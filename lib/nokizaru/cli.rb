@@ -14,6 +14,7 @@ require_relative 'paths'
 require_relative 'settings'
 require_relative 'log'
 require_relative 'progress_rail'
+require_relative 'tui'
 require_relative 'modules/headers'
 require_relative 'modules/sslinfo'
 require_relative 'modules/whois'
@@ -72,7 +73,14 @@ module Nokizaru
         exit(1)
       end
 
-      Runner.new(options, ::ARGV.dup).run
+      if TUI.enabled? && !options[:k]
+        TUI.run(options, ::ARGV.dup)
+      elsif options[:tui]
+        UI.line(:error, 'The interactive dashboard needs an interactive terminal (stdin and stdout)')
+        exit(1)
+      else
+        Runner.new(options, ::ARGV.dup).run
+      end
     end
   end
 end

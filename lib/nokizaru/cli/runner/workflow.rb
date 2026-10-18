@@ -6,17 +6,48 @@ module Nokizaru
   class CLI
     class Runner
       module Workflow
+        MODULE_ORDER = %i[headers sslinfo whois dns sub arch ps crawl dir wayback].freeze
+
         def run
-          initialize_runtime!
-          ensure_modules_selected!
-          setup_run_context
+          prepare!
           begin
             start_progress_rail!
-            execute_modules(@enabled, @target, @info, @ctx)
+            execute!
           ensure
             stop_progress_rail!
           end
-          finalize_run!
+          finalize!
+        end
+
+        # Settings, keys, and banner, before any target work
+        def boot!
+          initialize_runtime!
+        end
+
+        # Validation, target resolution, the module plan, and the export destination, so a bad export option fails
+        # before the scan instead of after it
+        def plan!
+          ensure_modules_selected!
+          setup_run_context
+          prepare_export!
+        end
+
+        def prepare!
+          boot!
+          plan!
+        end
+
+        def execute!
+          execute_modules(@enabled, @target, @info, @ctx)
+        end
+
+        def finalize!
+          elapsed = finalize_run_timing(@run, @start_time)
+          compute_findings!(@run)
+          export_dir = export_if_enabled(@run, @info)
+          print_run_completion(elapsed, export_dir)
+          Log.write('-' * 30)
+          [elapsed, export_dir]
         end
 
         private
@@ -37,14 +68,6 @@ module Nokizaru
 
         def context_options(options, info)
           options.to_h.merge(request_headers: info[:request_headers])
-        end
-
-        def finalize_run!
-          elapsed = finalize_run_timing(@run, @start_time)
-          compute_findings!(@run)
-          export_dir = export_if_enabled(@run, @info)
-          print_run_completion(elapsed, export_dir)
-          Log.write('-' * 30)
         end
 
         def ensure_modules_selected!
@@ -103,6 +126,7 @@ module Nokizaru
                     else
                       "Target IP address could not be resolved: #{reason}"
                     end
+          ctx.progress&.module_skipped(:ps, label: module_label(:ps))
           UI.line(:error, "Skipping Port Scan : #{message}")
           Log.write("[portscan] Skipped: #{message}")
           ctx.run['modules']['portscan'] = {
@@ -117,6 +141,7 @@ module Nokizaru
           return unless enabled[:sub]
 
           if info[:type_ip]
+            ctx.progress&.module_skipped(:sub, label: module_label(:sub))
             UI.line(:error, 'Skipping Sub-Domain Enumeration : Not Supported for IP Addresses')
             exit(1) unless @opts[:full]
             return
@@ -132,7 +157,7 @@ module Nokizaru
           return unless enabled[:arch]
 
           safe_run_module(:arch, true, ctx, timeout_s: module_timeout_s(info, :arch)) do
-            Nokizaru::Modules::ArchitectureFingerprinting.call(target, info[:timeout], ctx)
+            Nokizaru::Modules::ArchitectureFingerprinting.call(third_party_target(target), info[:timeout], ctx)
           end
         end
 
@@ -160,7 +185,7 @@ module Nokizaru
           timeout = module_timeout_s(info, :wayback)
           safe_run_module(:wayback, true, ctx, timeout_s: timeout + Nokizaru::Modules::Wayback::OUTER_TIMEOUT_MARGIN) do
             Nokizaru::Modules::Wayback.call(
-              target,
+              third_party_target(target),
               ctx,
               timeout_s: timeout
             )
@@ -269,13 +294,14 @@ module Nokizaru
           {
             dir: 'directory_enum',
             sub: 'subdomains',
-            ps: 'portscan'
+            ps: 'portscan',
+            arch: 'architecture_fingerprinting',
+            crawl: 'crawler'
           }.fetch(key.to_sym, key.to_s)
         end
 
         def resolve_enabled_modules
-          order = %i[headers sslinfo whois dns sub arch ps crawl dir wayback]
-          enabled = order.to_h { |mod| [mod, module_enabled?(mod)] }
+          enabled = MODULE_ORDER.to_h { |mod| [mod, module_enabled?(mod)] }
           @skip.each { |mod, skip| enabled[mod] = false if skip }
           ensure_any_enabled!(enabled)
           enabled

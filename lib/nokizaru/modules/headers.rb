@@ -14,7 +14,7 @@ module Nokizaru
       module_function
 
       TIMEOUT = 10
-      FallbackResponse = Struct.new(:status, :headers, :body, keyword_init: true)
+      FallbackResponse = Struct.new(:status, :headers, keyword_init: true)
 
       # Run this module and store normalized results in the run context
       def call(target, ctx)
@@ -87,11 +87,7 @@ module Nokizaru
       end
 
       def split_set_cookie_segments(value)
-        value
-          .split(/,(?=\s*[A-Za-z0-9!#$%&'*+.^_`|~-]+=)/)
-          .map(&:strip)
-          .reject(&:empty?)
-          .map { |segment| ['cookie', segment] }
+        Nokizaru::HTTPClient.split_set_cookie(value).map { |segment| ['cookie', segment] }
       end
 
       def split_csv_segments(value)
@@ -122,7 +118,7 @@ module Nokizaru
         Log.write("[headers] Exception: #{error.class} - #{error.message}")
       end
 
-      # Read key values from env first, then keys file, and seed missing key slots
+      # Fetches with httpx, falling back to Net::HTTP when httpx returns an error response
       def fetch(uri, request_headers: {})
         response = httpx_fetch(uri, request_headers: request_headers)
         return response if response && !Nokizaru::HTTPClient.error_response?(response)
@@ -152,16 +148,14 @@ module Nokizaru
 
       def net_http_fetch(uri, request_headers: {})
         response = net_http_response(uri, build_headers(request_headers))
-        FallbackResponse.new(
-          status: response.code.to_i,
-          headers: response.each_header.to_h,
-          body: response.body.to_s
-        )
+        FallbackResponse.new(status: response.code.to_i, headers: response.each_header.to_h)
       rescue StandardError => e
         Log.write("[headers] Net::HTTP fallback error for #{uri}: #{e.class} - #{e.message}")
         nil
       end
 
+      # Only the status and headers are kept, so this returns from inside the request block, before Net::HTTP
+      # reads the body (a hostile target can stream one without end); returning closes the connection
       def net_http_response(uri, headers)
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == 'https'
@@ -169,7 +163,7 @@ module Nokizaru
         http.open_timeout = TIMEOUT
         http.read_timeout = TIMEOUT
         http.write_timeout = TIMEOUT if http.respond_to?(:write_timeout=)
-        http.request(Net::HTTP::Get.new(request_path(uri), headers))
+        http.request(Net::HTTP::Get.new(request_path(uri), headers)) { |response| return response }
       end
 
       def request_path(uri)

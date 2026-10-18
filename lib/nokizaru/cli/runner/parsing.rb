@@ -26,6 +26,7 @@ module Nokizaru
 
         def parse_target(target)
           uri = URI.parse(target)
+          reject_target_credentials!(uri)
           warn_on_unusual_scheme_port(uri)
           hostname = parse_hostname!(uri)
           protocol = uri.scheme.to_s
@@ -38,6 +39,24 @@ module Nokizaru
         def print_target_context(target, ip, ip_resolution_error = nil)
           ip_display = ip || "unresolved (#{ip_resolution_error})"
           UI.rows(:info, [['Target', target], ['IP Address', ip_display]])
+        end
+
+        # Security: credentials in the target URL would reach the terminal, the log, exports, and third-party
+        # lookups, so they are refused in favor of -H, which is never echoed (cost acceptable: one check per run)
+        def reject_target_credentials!(uri)
+          return unless uri.userinfo
+
+          UI.line(:error, "Credentials in the target URL are not supported, pass them with -H 'Authorization: …'")
+          exit(1)
+        end
+
+        # Security: a query string can carry tokens, so third-party lookups (Wappalyzer, archive.org) get the URL
+        # without it (cost acceptable because both look up a page or a host, not a query)
+        def third_party_target(target)
+          uri = URI.parse(target)
+          uri.query = nil
+          uri.fragment = nil
+          uri.to_s
         end
 
         def warn_on_unusual_scheme_port(uri)
@@ -98,18 +117,35 @@ module Nokizaru
 
         def timeout_and_dns_options
           {
-            timeout: (@opts[:T] || Settings.timeout).to_f,
+            timeout: positive_number(:T, Settings.timeout),
             dns_servers: (@opts[:d] || Settings.custom_dns).to_s,
-            ssl_port: Integer(@opts[:sp] || Settings.ssl_port)
+            ssl_port: positive_number(:sp, Settings.ssl_port, integer: true)
           }
         end
 
         def scan_thread_options
           {
-            pscan_threads: Integer(@opts[:pt] || Settings.port_scan_threads),
+            pscan_threads: positive_number(:pt, Settings.port_scan_threads, integer: true),
             pscan_ports: @opts[:p],
-            dir_threads: Integer(@opts[:dt] || Settings.dir_enum_threads)
+            dir_threads: positive_number(:dt, Settings.dir_enum_threads, integer: true)
           }
+        end
+
+        # A zero or negative timeout disables every module budget and a zero pool size crashes the scan, so both
+        # stop the run before it starts
+        def positive_number(key, default, integer: false)
+          raw = @opts[key] || default
+          value = integer ? Integer(raw) : Float(raw)
+          return value if value.positive?
+
+          invalid_number!(key)
+        rescue ArgumentError, TypeError
+          invalid_number!(key)
+        end
+
+        def invalid_number!(key)
+          UI.line(:error, "-#{key} must be a positive number")
+          exit(1)
         end
 
         def wordlist_option

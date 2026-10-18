@@ -3,6 +3,7 @@
 require 'httpx'
 require 'digest'
 require 'monitor'
+require 'zlib'
 require_relative 'version'
 
 %w[follow_redirects persistent retries].each do |plugin|
@@ -18,11 +19,54 @@ rescue StandardError
 end
 
 module Nokizaru
+  # An httpx plugin capping every response body at MAX_BYTES of decoded payload. The target is the system under
+  # test and may answer with an endless body or a gzip bomb (a few KB inflating to GBs), so buffering stops at the
+  # cap, and gzip and deflate inflate through a budgeted inflater instead of httpx's whole-chunk one
+  module BodyCap
+    MAX_BYTES = 8 * 1024 * 1024
+
+    # Inflates in zlib's own output steps and stops at the budget, so a bomb never inflates past MAX_BYTES
+    class Inflater
+      def initialize
+        @zlib = Zlib::Inflate.new(Zlib::MAX_WBITS + 32)
+        @budget = MAX_BYTES
+      end
+
+      def call(chunk)
+        out = +''.b
+        return out unless @budget.positive?
+
+        @zlib.inflate(chunk) do |piece|
+          out << piece.byteslice(0, @budget)
+          @budget -= piece.bytesize
+          break unless @budget.positive?
+        end
+        out
+      end
+    end
+
+    module ResponseBodyClassMethods
+      def initialize_inflater_by_encoding(encoding, response, **)
+        %w[gzip deflate].include?(encoding) ? Inflater.new : super
+      end
+    end
+
+    module ResponseBodyMethods
+      # ponytail: an identity body stops within one read (httpx reads 16 KB at a time) past the cap; the rest of
+      # the transfer is discarded, not buffered
+      def write(chunk)
+        return 0 if bytesize >= MAX_BYTES
+
+        super
+      end
+    end
+  end
+
   module ConnectionPoolBuilder
     private
 
     def apply_plugins(http, persistent:, follow_redirects:)
-      client = plugin_if_available(http, :persistent, enabled: persistent)
+      client = plugin_if_available(http.plugin(BodyCap), :persistent, enabled: persistent)
       client = plugin_if_available(client, :follow_redirects, enabled: follow_redirects)
       plugin_if_available(client, :retries, enabled: true)
     end
@@ -148,7 +192,7 @@ module Nokizaru
 
     # Build a minimal fallback client when advanced pooling is unavailable
     def fallback_client(headers, timeout_s, verify_ssl)
-      HTTPX.with(
+      HTTPX.plugin(BodyCap).with(
         headers: DEFAULT_HEADERS.merge(headers),
         timeout: { operation_timeout: timeout_s || 30.0 },
         ssl: ssl_options(verify_ssl)

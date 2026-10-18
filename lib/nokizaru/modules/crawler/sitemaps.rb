@@ -19,7 +19,7 @@ module Nokizaru
           apply_adaptive_budget!(result)
           return [] if crawl_budget_exhausted?(result)
 
-          state = init_sitemap_state(sitemap_links, URI.parse(page_url).host)
+          state = init_sitemap_state(sitemap_links, page_url)
           return [] if state[:pending].empty?
 
           crawl_sitemap_graph(result, state, request_headers)
@@ -29,13 +29,15 @@ module Nokizaru
           links
         end
 
-        def init_sitemap_state(sitemap_links, target_host)
+        def init_sitemap_state(sitemap_links, page_url)
           normalized = Array(sitemap_links).compact.map(&:strip).uniq
+          target_host = URI.parse(page_url).host
           {
             links: [],
             sitemaps: normalized,
             pending: scoped_sitemap_candidates(normalized, target_host),
             target_host: target_host,
+            page_url: page_url,
             seen: Set.new
           }
         end
@@ -66,7 +68,9 @@ module Nokizaru
           each_concurrently(batch) do |sitemap_url|
             next if crawl_budget_exhausted?(result)
 
-            page_links, child_sitemaps = parse_sitemap_document(result, sitemap_url, request_headers)
+            page_links, child_sitemaps = parse_sitemap_document(
+              result, sitemap_url, origin_headers(sitemap_url, state[:page_url], request_headers)
+            )
             mutex.synchronize { merge_sitemap_batch!(result, state, page_links, child_sitemaps, discovered) }
           end
           discovered.uniq
@@ -110,13 +114,15 @@ module Nokizaru
           Array(urls).select { |url| sitemap_candidate?(url) && same_scope_url?(url, target_host) }
         end
 
+        # The transport caps the compressed bytes, and reading at most MAX_BYTES caps the inflated ones (a sitemap
+        # .gz is a small payload that can inflate without limit)
         def sitemap_body(response, sitemap_url)
           body = Nokizaru::HTTPClient.response_body(response)
           return body if body.empty?
 
           return body unless gzip_sitemap_body?(body)
 
-          Zlib::GzipReader.new(StringIO.new(body)).read
+          Zlib::GzipReader.new(StringIO.new(body)).read(Nokizaru::BodyCap::MAX_BYTES).to_s
         rescue StandardError => e
           Log.write("[crawler.sm_crawl] Failed to decode gzip sitemap #{sitemap_url}: #{e.message}")
           ''

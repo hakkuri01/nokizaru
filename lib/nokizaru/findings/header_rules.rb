@@ -57,7 +57,7 @@ module Nokizaru
       def cookie_values(set_cookie)
         return [] if set_cookie.nil?
 
-        raw = set_cookie.is_a?(Array) ? set_cookie : set_cookie.to_s.split(/\n|,(?=\s*\w+=)/)
+        raw = set_cookie.is_a?(Array) ? set_cookie : Nokizaru::HTTPClient.split_set_cookie(set_cookie)
         raw.map { |value| value.to_s.strip }.reject(&:empty?)
       end
 

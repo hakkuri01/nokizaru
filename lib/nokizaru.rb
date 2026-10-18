@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require_relative 'nokizaru/version'
+require_relative 'nokizaru/banner'
+require_relative 'nokizaru/terminal_text'
 require_relative 'nokizaru/ui'
 require_relative 'nokizaru/progress_rail'
 require_relative 'nokizaru/paths'

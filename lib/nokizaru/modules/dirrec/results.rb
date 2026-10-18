@@ -187,11 +187,20 @@ module Nokizaru
           runtime[:stdout_found] = reconciled[:prioritized]
         end
 
+        # ponytail: re-deciding every observation is O(observations), so mid-scan it runs at 80, 160, 320, ...
+        # responses; the doubling keeps the total O(n) (O(1) amortized per response) while early adaptation, where
+        # it matters most, still sees fresh buckets. Later buckets only lag between doublings, and the final
+        # reconciliation re-decides everything once more. Upgrade: re-decide only observations a context change moved
         def reconcile_runtime_for_adaptation!(scan, runtime)
-          return unless (runtime[:count].to_i % PRESSURE_WINDOW_REQUESTS).zero?
+          return unless reconcile_due?(runtime[:count].to_i)
           return if Array(runtime[:candidate_observations]).empty?
 
           apply_reconciled_runtime_buckets!(runtime, reconcile_candidate_findings(scan, runtime))
+        end
+
+        def reconcile_due?(count)
+          windows, rest = count.divmod(PRESSURE_WINDOW_REQUESTS)
+          rest.zero? && windows.positive? && windows.nobits?(windows - 1)
         end
 
         def apply_reconciled_first_actionable!(runtime, entries)

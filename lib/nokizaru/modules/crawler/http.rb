@@ -230,6 +230,12 @@ module Nokizaru
           with_http_retries(url) { perform_http_get(url, request_headers: request_headers, user_agent: user_agent) }
         end
 
+        # Security: custom headers can carry session cookies, so only the crawled page's own origin receives them;
+        # sibling hosts in scope (a CDN, a status page) are fetched without them (cost: one origin compare per fetch)
+        def origin_headers(url, page_url, request_headers)
+          Nokizaru::TargetIntel.same_origin?(url, page_url) ? request_headers : {}
+        end
+
         def main_http_get(url, request_headers: {}, user_agent: Crawler::USER_AGENT)
           error = nil
           response = with_http_retries(url, on_error: ->(caught) { error = caught }) do

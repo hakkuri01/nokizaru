@@ -85,7 +85,66 @@ class CLISettingsPathsTest < Minitest::Test
     assert_raises(KeyError) { Nokizaru::Settings.config_sections({}) }
   end
 
+  def test_a_scan_never_rewrites_a_key_store_that_does_not_parse
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'keys.json')
+      broken = %({ "shodan": "kept", })
+      File.write(path, broken)
+
+      Nokizaru::Paths.stub(:keys_file, path) do
+        Nokizaru::Log.stub(:write, nil) { assert_nil Nokizaru::KeyStore.fetch('alienvault', env: 'NK_TEST_UNSET') }
+      end
+
+      assert_equal broken, File.read(path)
+    end
+  end
+
+  def test_saving_a_key_refuses_a_store_that_does_not_parse_and_replaces_it_whole
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'keys.json')
+      runner = Nokizaru::CLI::Runner.new({})
+      with_key_store(path) do
+        File.write(path, '{ "shodan": "kept", }')
+        error = nil
+
+        capture_io { error = assert_raises(SystemExit) { runner.send(:persist_key, 'virustotal', 'new') } }
+
+        assert_equal 1, error.status
+        assert_equal '{ "shodan": "kept", }', File.read(path)
+
+        File.write(path, '{ "shodan": "kept" }')
+        runner.send(:persist_key, 'virustotal', 'new')
+      end
+
+      assert_equal({ 'shodan' => 'kept', 'virustotal' => 'new' }, JSON.parse(File.read(path)))
+      assert_equal 0o600, File.stat(path).mode & 0o777
+      assert_equal ['keys.json'], Dir.children(dir), 'no temp file is left behind'
+    end
+  end
+
+  def test_a_bare_key_name_reads_the_key_from_stdin_instead_of_argv
+    runner = Nokizaru::CLI::Runner.new({})
+    saved = nil
+    runner.define_singleton_method(:persist_key) { |name, value| saved = [name, value] }
+    stdin = $stdin
+    $stdin = StringIO.new("ABC123\n")
+    error = nil
+
+    capture_io { error = assert_raises(SystemExit) { runner.send(:save_key, 'shodan') } }
+
+    assert_equal 0, error.status
+    assert_equal %w[shodan ABC123], saved
+  ensure
+    $stdin = stdin
+  end
+
   private
+
+  def with_key_store(path, &)
+    Nokizaru::Paths.stub(:keys_file, path) do
+      Nokizaru::Paths.stub(:sync_default_conf!, nil) { Nokizaru::Log.stub(:write, nil, &) }
+    end
+  end
 
   def settings_config
     {

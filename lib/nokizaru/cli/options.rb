@@ -17,6 +17,7 @@ module Nokizaru
       full: { type: :boolean, default: false, desc: 'Full Recon' },
       export: { type: :boolean, default: false, desc: 'Export results to files (txt,json,html)' },
       nb: { type: :boolean, default: false, desc: 'Hide Banner' },
+      tui: { type: :boolean, default: false, desc: 'Launch the interactive dashboard (default on a terminal)' },
       dt: { type: :numeric, default: nil, desc: 'Number of threads for directory enum [ Default : 50 ]' },
       pt: { type: :numeric, default: nil, desc: 'Port scan concurrency [ Default : 50 ]' },
       p: { type: :string, default: nil, aliases: '-p', desc: 'Port scan ports [ Example : 80,443,1000-65535 ]' },
@@ -38,7 +39,7 @@ module Nokizaru
       cd: { type: :string, default: nil,
             desc: 'Export directory for this run [ Default : XDG data dir/nokizaru/exports/<hostname> ]' },
       of: { type: :string, default: nil, desc: 'Export filename base for this run [ Default : YYYY-MM-DD_HH-MM-SS ]' },
-      k: { type: :string, default: nil, aliases: '-k', desc: 'Add API key [ Example : shodan@key ]' }
+      k: { type: :string, default: nil, aliases: '-k', desc: 'Add API key, prompted without echo [ Example : shodan ]' }
     }.freeze
 
     def apply_scan_options(klass)

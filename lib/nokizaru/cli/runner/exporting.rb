@@ -9,20 +9,27 @@ module Nokizaru
         def export_if_enabled(run, info)
           return nil unless @opts[:export]
 
-          paths = Nokizaru::ExportManager.new.export(
-            run,
-            domain: info[:hostname],
-            formats: export_formats,
-            output: export_output
-          )
+          paths = Nokizaru::ExportManager.new.export(run, **export_request(info))
           paths.any? ? File.dirname(paths.values.first) : nil
-        rescue ArgumentError => e
+        rescue ArgumentError, SystemCallError => e
           handle_export_error(e)
+        end
+
+        # Checks formats and the filename and creates the directory up front; the scan itself can take minutes
+        def prepare_export!
+          return unless @opts[:export]
+
+          Nokizaru::ExportManager.new.prepare(**export_request(@info))
+        rescue ArgumentError, SystemCallError => e
+          handle_export_error(e)
+        end
+
+        def export_request(info)
+          { domain: info[:hostname], formats: export_formats, output: export_output }
         end
 
         def handle_export_error(error)
           UI.line(:error, "Export failed : #{error.message}")
-          UI.line(:plus, 'Supported formats : txt,json,html')
           Log.write("[export] #{error.class}: #{error.message}")
           exit(1)
         end
