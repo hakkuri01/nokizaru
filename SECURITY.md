@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-The latest tagged release and current `main` branch receive security fixes. Versioned Nix flake tags are the official packaged artifacts; git clones and source tarballs remain supported installation methods.
+The latest tagged release and the current `main` branch receive security fixes. Nokizaru ships as a single statically-distributable binary; building from source is a supported installation method.
 
 ## Reporting a Vulnerability
 
@@ -35,7 +35,7 @@ Timelines may vary based on report complexity and maintainer availability.
 
 ## Scope
 
-This policy covers vulnerabilities in Nokizaru source code and official release artifacts.
+This policy covers vulnerabilities in Nokizaru source code and official release artifacts, including the handling of untrusted data from scanned targets (response bodies and headers, DNS and WHOIS replies, provider responses, redirect targets) and the embedded Public Suffix List.
 
 Out of scope unless chained into a Nokizaru defect:
 

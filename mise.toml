@@ -1,0 +1,7 @@
+# The pinned toolchain: the Crystal compiler the specs run on, and `just` the
+# task runner.
+[tools]
+# The official macOS tarball exposes only bin/crystal; shards ships in
+# embedded/bin, so the postinstall links it next to the compiler.
+crystal = { version = "1.21.1", postinstall = 'ln -sf ../embedded/bin/shards "$MISE_TOOL_INSTALL_PATH/bin/shards"' }
+just = "1.59.0"

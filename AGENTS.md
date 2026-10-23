@@ -1,297 +1,287 @@
-# Nokizaru Agent Operating Guide
+# Nokizaru | AI Agent Guidelines
 
-Nokizaru is a mature Ruby security tooling project. Agent work in this repository must preserve production reliability while improving correctness, security, performance, maintainability, and developer experience.
+Working rules for AI coding agents on Nokizaru, a fast, modular web
+reconnaissance CLI with an interactive terminal dashboard. Nokizaru is a single
+statically-distributable binary: the standard library only, zero runtime shards,
+with its data (the Public Suffix List, the curated wordlists) embedded at compile
+time.
 
-This guide applies to all agentic coding in this repository unless a more specific nested `AGENTS.md` exists.
+This repository is mid-port from Ruby to Crystal. The Crystal source lives at the
+root (`src/`, `spec/`); the original Ruby tree is frozen under `archive/` as a
+reference and is deleted at cutover. Do not edit `archive/`; it is not built and
+does not need to run (its authority is `main`/HEAD).
 
----
+## Mandatory Rules
 
-## Purpose And Scope
+### Algorithmic Complexity (Big O)
 
-The codebase is already functioning. Ongoing work is primarily:
-- refactoring for performance gains
-- fine-tuning
-- edge case hardening
-- expanded test coverage
-- keeping Nokizaru fast, reliable, and production-ready
+**Complexity is a builder step.** Run it on every change, right after the Ponytail
+ladder settles what to build, and in every review: name what grows, name the path
+the code runs on, and meet that path's target. O(1) is the gold standard,
+O(log n) excellent, O(n) often optimal (the lower bound for anything that must
+read every item or byte), O(n log n) optimal for general sorting, and O(n squared)
+or worse needs a stated bound on n or a redesign. O(n cubed), O(2^n), and O(n!)
+never ship.
 
-This file defines the non-negotiable operating constraints and the standard workflow for agentic work in this repo.
+The path-target table below is the standard this tool is held to. Each row is
+reconfirmed against the Crystal implementation with a count-based spec as its
+module lands (the per-module complexity pass); the rows are targets, not a claim
+that today's code already meets them.
 
----
-
-## Operating Principles
-
-**Prime directive:** make the Ruby implementation correct, fast, maintainable, and test-verified.
-
-Do not introduce speculative complexity. Prefer simple, proven approaches with measurable results.
-
-Before writing code, climb the Ponytail ladder and stop at the first rung that holds: does this need to be built at all; does it already exist in this codebase; does the Ruby standard library, a platform feature, or an already-installed gem cover it; can it be one line; only then, write the minimum code that works.
-
-A deliberate shortcut with a known ceiling (an O(n²) scan over a bounded n, a lock held across a loop, a naive heuristic) carries a `# ponytail:` comment naming the ceiling, the bound that keeps it safe, and the upgrade path. The lowercase tag is a searchable marker, like `rubocop:disable`, so it is exempt from the capital-letter comment rule in `CONTRIBUTING.md`.
-
-**Default priorities, highest to lowest:**
-1. Correctness, including edge cases and test coverage
-2. Security, OWASP Top 10-aligned, justified, and not performative
-3. Performance, measured and not guessed, with every path meeting its complexity target
-4. Maintainability, idiomatic Ruby, senior-level design, and clean code
-5. Developer experience, clear docs, clean artifacts, and a tidy repo
-
----
-
-## Code Standards
-
-### Idiomatic Ruby
-
-- Use idiomatic Ruby patterns, naming, and standard library where appropriate
-- Favor small, composable objects/modules, clear boundaries, and explicit interfaces
-- Avoid clever metaprogramming unless it demonstrably improves the codebase and remains readable
-
-### Senior Ruby Developer Methodology
-
-- Make changes in small, reviewable increments
-- Keep public APIs stable unless explicitly changing behavior
-- Prefer clarity over micro-optimizations until profiling indicates a bottleneck
-
-### Clean Code Principles
-
-- Single responsibility, descriptive names, minimal side effects
-- Keep methods short and intention-revealing
-- Avoid action at a distance: keep state local and pass dependencies explicitly
-- Remove dead code and dead tests as soon as they are verified obsolete
-
-### Common Ruby Guidance
-
-- Validate and sanitize external input at boundaries
-- Avoid dynamic evaluation of untrusted content
-- Use safe defaults for parsing, deserialization, and command execution
-- Treat filesystem paths, shell arguments, and SQL as hostile unless proven otherwise
-- Avoid leaking secrets in logs, errors, or test artifacts
-
-### Style Guide
-
-Follow the repository style guide in `CONTRIBUTING.md`.
-
----
-
-## Algorithmic Complexity (Big O)
-
-**Complexity is a builder step.** Run it on every change, right after the Ponytail ladder settles what to build, and in every review: name what grows, name the path the code runs on, and meet that path's target. O(1) is the gold standard, O(log n) excellent, O(n) often optimal (the lower bound for anything that must read every item or byte), O(n log n) optimal for general sorting, and O(n²) or worse needs a stated bound on n or a redesign. O(n³), O(2ⁿ), and O(n!) never ship. The goal is the lowest practical complexity for the problem, kept readable and correct; an algorithm cleverer than n will ever need is over-engineering, and the Ponytail ladder still applies to it. This step is design, not tuning: it picks the data structure and algorithm while the code is written, and Performance Work governs tuning existing code against measurements.
-
-1. **Name what grows.** Here: candidate URLs in directory enumeration (W wordlist entries times one plus E extensions; the bundled lists hold 2,048, 5,120, and 10,240 entries, and a custom `-w` list can hold millions), ports per scan (P, up to 65,535), requests in flight (C: `-dt` and `-pt`, 50 by default; a large port scan opens up to `LARGE_SCAN_MAX_CONCURRENCY` (1,024) sockets, held under the open-file limit; 8 crawl fetch workers; 10 workers across the 17 subdomain providers), names returned per provider, links, scripts, and sitemaps per crawl, and Wayback CDX records (1,000 a page, up to 50,000 and 32 MB). Above all, text from outside: response bodies and headers, robots.txt, sitemaps, JavaScript, WHOIS and RDAP replies, DNS records, and provider JSON. The target is the system under test and may be built to fight back (tarpits, WAFs, endless or oversized responses), so all of it is untrusted and unbounded until capped. Per run: progress redraws (every 0.12 s while the rail runs), dashboard frames (in a terminal: up to 30 a second, drawn only when something changed) and the lines each dashboard tab holds (capped at `Tab::MAX_LINES`, 20,000), and the export payload, which is the sum of every module's results.
+1. **Name what grows.** Candidate URLs in directory enumeration (W wordlist
+   entries times one plus E extensions; the bundled lists hold 2,048, 5,120, and
+   10,240 entries, and a custom `-w` list can hold millions), ports per scan (P,
+   up to 65,535), requests in flight (C, `-dt`/`-pt`, 50 by default; a large port
+   scan opens up to a bounded socket count under the open-file limit), names per
+   provider across the ~17 subdomain providers, links and sitemaps per crawl, and
+   Wayback CDX records. Above all, text from outside: response bodies and headers,
+   robots.txt, sitemaps, JavaScript, WHOIS and RDAP replies, DNS wire responses,
+   and provider JSON. The target is the system under test and may fight back
+   (tarpits, WAFs, endless or oversized responses), so all of it is untrusted and
+   unbounded until capped. Per run: progress redraws, dashboard frames (drawn only
+   when the model changed) and the lines each tab holds (capped), and the export
+   payload (the sum of every module's results).
 2. **Name the path, and meet its target.**
 
    | Path | Runs | Target | Accepted ceiling (with a `# ponytail:` comment naming n's bound) |
    |---|---|---|---|
-   | Per candidate (pick the next URL or port, send it) | Once per candidate, C at a time | O(1): one request per candidate plus a fixed retry budget; the work queue is generated lazily and walked by cursor, never materialized up front or rescanned; the seen check is a `Set`; probe sets (preflight, soft-404 baselines) are fixed in size, never proportional to W | None worse than O(1) amortized |
-   | Per response (classify, soft-404 and confidence checks, pressure and concurrency adaptation) | Once per response, from every worker | O(1) in the responses seen so far: counters and windows update incrementally, comparisons run against fixed-size baselines, and work under the shared runtime `Mutex` stays O(1) | O(window) over a fixed-size window (`PRESSURE_WINDOW_REQUESTS`, `ADAPTIVE_CONCURRENCY_WINDOW`, `TIMEOUT_ADAPT_SAMPLE_SIZE`), outside the lock where it can be; never O(responses so far) |
-   | Text from outside (parse, extract, normalize, fingerprint) | Over every byte of every body, header, and reply | One O(n) pass over input capped first; a document is parsed once and its tree queried, never re-parsed. The text is untrusted, so worse than linear in its length is a denial of service, not only slow | None |
-   | Port scan event loop | Every `IO.select` turn | O(C) over the sockets in flight (`IO.select` is linear in what it watches) | C bounded by `LARGE_SCAN_MAX_CONCURRENCY` and the open-file limit |
-   | Network rounds (subdomain providers, Wayback, WHOIS and RDAP, crawl fetches) | Per module, per run | O(1) rounds of waiting per module: independent calls run side by side on a fixed pool, every call has a timeout and a bounded retry count, and nothing already fetched is fetched again | Cursor pagination (Wayback CDX) is sequential by nature; one round per level of dependency (a sitemap index, then its sitemaps) |
-   | Once per scan (wordlist load, port spec, URL plan, findings, export) | Once per run | O(n) to read and dedupe through a `Hash` or `Set`, O(n log n) to sort | O(n) memory for the wordlist and the seen set, the price of exact dedup |
-   | Per progress redraw | Every 0.12 s tick and every progress update | O(terminal width), drawn from counters in a snapshot | None: a redraw never walks results |
-   | Dashboard loop (TUI) | Every `IO.select` turn, one 0.05 s tick, each printed line | Waits only in `IO.select`, which releases the GVL, so scan threads keep full speed; a printed line is sanitized, capped (`Feed::MAX_LINE_BYTES`), and queued in O(its length); a tick drains at most `Program::DRAIN_LIMIT` lines and appends each in O(1) amortized, wrapping only the new line | None |
-   | Dashboard frame (TUI) | Up to 30 a second, only when the model changed | O(rows × cols): the focused tab's visible window is a slice by offset, the HUD reads one progress snapshot copy; changed rows only are written | None: a frame never walks a tab's lines. Re-wrapping a tab after a resize is O(its lines), once per resize, bounded by `Tab::MAX_LINES` |
-   | Tests and local tooling (`test/`, `bench/`) | Per suite run | O(n log n) | Polynomial for a bounded n |
+   | Per candidate (pick the next URL or port, send it) | Once per candidate, C at a time | O(1): one request plus a fixed retry budget; the work queue is generated lazily and walked by cursor, never materialized or rescanned; the seen check is a `Set` | None worse than O(1) amortized |
+   | Per response (classify, soft-404, confidence, pressure/concurrency adaptation) | Once per response, from every worker | O(1) in responses seen so far: counters and windows update incrementally against fixed-size baselines; work under the shared lock stays O(1) | O(window) over a fixed-size window, outside the lock where it can be; never O(responses so far) |
+   | Text from outside (parse, extract, normalize, fingerprint) | Over every byte of every body, header, reply | One O(n) pass over input capped first; a document is parsed once and its tree queried | None |
+   | Port scan event loop | Every readiness turn | O(C) over sockets in flight | C bounded by the large-scan cap and the open-file limit |
+   | Network rounds (providers, Wayback, WHOIS/RDAP, crawl fetches) | Per module, per run | O(1) rounds of waiting: independent calls run side by side on a fixed pool, each with a timeout and a bounded retry count; nothing already fetched is refetched | Cursor pagination is sequential; one round per dependency level |
+   | Once per scan (wordlist load, port spec, URL plan, findings, export) | Once per run | O(n) to read and dedup through a `Hash`/`Set`, O(n log n) to sort | O(n) memory for the wordlist and seen set |
+   | Per progress redraw | Every tick and progress update | O(terminal width), from a snapshot of counters | None: a redraw never walks results |
+   | Dashboard frame (TUI) | Only when the model changed | O(rows x cols): the focused tab's visible window is a slice by offset; changed rows only | None: a frame never walks a tab's lines |
 
-3. **Look up by key.** A lookup or membership test inside a loop over candidates, responses, ports, provider results, links, or CDX records goes through a `Hash` or a `Set` (`to_set`, `to_h`, `group_by`, `each_with_object({})`). A `find`, `include?`, `index`, `delete`, or `select` over one such collection inside a loop over another is a hidden O(n²). `uniq`, `|`, `&`, and `-` hash their operands and stay linear. A linear `include?` over a small frozen constant list is fine: it is fixed and small.
-4. **Ruby strings and arrays hide quadratics.**
-   - On a string holding any non-ASCII character, `str[i]` and `str[i, len]` count characters from the start, so a loop that indexes by character is O(n²). ASCII-only strings index in O(1), so the trap stays hidden until a target serves non-ASCII text. Walk with `each_char`, `each_byte`, or `StringScanner`, and work in byte offsets (`byteindex`, `byteslice`).
-   - `str += part` copies the whole string every time, so output built that way in a loop is O(n²). Build with `<<` on an unfrozen buffer (`+''` or `String.new`), `Array#join`, or `StringIO`.
-   - `list = list + other` and `inject(:+)` over arrays copy on every step; use `concat`, `<<`, `flat_map`, or `each_with_object([])`.
-   - Take the best item with `min_by` or `max_by` (O(n)), and a top k with `max_by(k)`, rather than `sort_by(...).first`.
-   - A `Regexp` literal with interpolation (`/#{value}/`) compiles every time it is evaluated; hoist it into a constant or build it once per scan.
-5. **Regexes on untrusted text run in linear time.** Ruby memoizes regex matching, so most patterns are linear, but a backreference opts a pattern out. Every pattern applied to text from outside passes `Regexp.linear_time?`, pinned by a test; a pattern that cannot (it needs a backreference) runs only on input capped to a small stated size, with a `# ponytail:` comment naming the cap.
-6. **Prepare off the hot path.** Work that depends only on the configuration and the wordlist (normalizing, deduping, and prioritizing words, parsing the port spec, building the seed URL plan, compiling patterns) runs once per scan before the first request, never per response. Lookup tables and pattern lists are frozen constants built at load time, not rebuilt inside a method that runs per response.
-7. **Round trips decide.** Big O ignores constants, and here they are large: one request to the target or a provider costs tens to hundreds of milliseconds, and seconds through a WAF or a tarpit, far more than Ruby spends on a typical response. Cut requests and rounds of waiting first, then asymptotics where n is large enough to matter. Requests are also Nokizaru's footprint on a system someone else runs: a change that adds requests per candidate, re-fetches a URL another module already fetched, or adds a retry without a budget is a regression in speed and in noise, even when it simplifies the code. Threads overlap network waits but share one GVL for Ruby work, so CPU-bound work per response caps throughput at one core however many threads run, and work inside a shared `Mutex` stalls every worker waiting on it.
-8. **Space counts.** Everything read from the network has a cap (bytes per body and page, records, links, lines); every httpx response body stops at `BodyCap::MAX_BYTES` (8 MiB decoded, gzip and deflate included) at the transport, and Wayback's `CDX::MAX_BODY_BYTES`, `Query::MAX_CDX_RECORDS`, and `Normalize::CATEGORY_LIMIT` and the crawler's `MAX_*` link limits are examples of tighter ones. Enforce a cap while reading or collecting where the client allows, so memory stops at the cap, rather than trimming a list already built. Results keep a fixed-size summary of each response (status, length, title, fingerprint), never the body. Caches and seen sets belong to one scan and die with it. Work run side by side multiplies peak memory, so C workers hold at most C responses.
-9. **Pin the target with a check.** A target that matters gets a test that fails when it regresses, counting something deterministic: requests a stubbed client received for a given wordlist and config (and duplicates to one URL), the peak number in flight against the configured threads, objects allocated around a call (`GC.stat(:total_allocated_objects)` before and after, at two input sizes so the growth rate shows), parse passes per response, or `Regexp.linear_time?` for every regex literal in `lib/` (`test/regex_linear_time_test.rb` walks the source, so a new pattern is pinned without being listed). Never a wall-clock timing, which is flaky under load; deadline logic stubs the clock (`Process.stub(:clock_gettime, ...)`), as the existing tests do. A fix's check must fail on the code before the fix.
+3. **Look up by key.** A membership test inside a loop over candidates,
+   responses, ports, provider results, links, or CDX records goes through a `Hash`
+   or `Set`, never a `find`/`includes?`/`index`/`select` over one collection
+   inside a loop over another (a hidden O(n squared)). `uniq`, `|`, `&`, and `-`
+   hash their operands and stay linear.
+4. **Crystal strings and arrays hide quadratics.** On a string holding any
+   non-ASCII character, `str[i]` and `str[i, n]` count characters from the start,
+   so a per-character loop is O(n squared) (ASCII-only strings index in O(1), so
+   the trap hides until a target serves non-ASCII text). Walk with `each_char`,
+   `each_byte`, or a `Char::Reader` kept in one scope, and work in byte offsets
+   (`byte_index`, `byte_slice`). Build strings with `String.build` or `<<` on a
+   buffer, never `str += part` in a loop. Grow arrays with `concat`/`<<`, not
+   `arr + other` in a loop. Take the best item with `min_by`/`max_by`, not
+   `sort_by(...).first`. Hoist an interpolated `Regex` into a constant.
+5. **Regexes on untrusted text.** PCRE2 backtracks and gives no linear-time
+   guarantee, so every pattern applied to text from outside is structurally safe
+   (no backreference, no lookaround), pinned by a spec that walks `src/`; a
+   pattern that cannot be made safe runs only on input capped to a small stated
+   size, or becomes a hand-written scanner.
+6. **Prepare off the hot path.** Work that depends only on config and the wordlist
+   (normalizing and prioritizing words, parsing the port spec, building the seed
+   URL plan, compiling patterns) runs once per scan before the first request,
+   never per response. Lookup tables are frozen constants built at load time.
+7. **Round trips decide.** A request to the target or a provider costs tens to
+   hundreds of milliseconds, seconds through a WAF or tarpit, far more than Crystal
+   spends on a response. Cut requests and rounds of waiting first, then
+   asymptotics where n is large. Requests are also Nokizaru's footprint on someone
+   else's system: a change that adds a request per candidate, refetches a URL
+   another module already fetched, or adds a retry without a budget is a
+   regression even when it simplifies the code. Fibers overlap network waits but
+   share one process for Crystal work, so CPU work per response caps throughput at
+   one core, and work inside a shared lock stalls every worker waiting on it.
+8. **Space counts.** Everything read from the network has a cap (bytes per body
+   and page, records, links, lines), enforced while reading where the client
+   allows, so memory stops at the cap rather than trimming a list already built.
+   Results keep a fixed-size summary per response (status, length, title,
+   fingerprint), never the body. Caches and seen sets belong to one scan and die
+   with it. C workers hold at most C responses.
+9. **Pin the target with a check.** A target that matters gets a spec that fails
+   when it regresses, counting something deterministic: requests a stubbed client
+   received for a given wordlist and config (and duplicates to one URL), the peak
+   in flight against the configured limit, bytes allocated around a call
+   (`GC.stats.total_bytes` before and after, at two input sizes so the growth rate
+   shows), parse passes per response, or `Regex` source safety for every literal in
+   `src/`. Never a wall-clock timing; deadline logic stubs the clock.
 
----
+### Security
 
-## Security Requirements
+**All code is OWASP Top 10 avoidant by construction**, and every block that
+touches untrusted data is reasoned through before it is written.
 
-Follow OWASP Top 10 avoidant secure coding best practices, with justification.
+1. **Server data is untrusted and hostile.** Nokizaru renders arbitrary HTTP
+   responses, DNS and WHOIS replies, and provider JSON from arbitrary targets. All
+   external text (bodies, headers, status reasons, titles, extracted links,
+   redirect targets, WHOIS text, filenames) passes a sanitize pass before it
+   touches the terminal or the filesystem: strip escape sequences, C0 and C1
+   controls except newline and tab, and bidirectional overrides. A malicious or
+   compromised target must not inject terminal escapes into the TUI or the classic
+   output; styles are applied after sanitizing.
+2. **Validate at the boundary, never repair.** A redirect `Location`, a crawled
+   link's host, a DNS name, a provider-returned hostname are validated (scheme,
+   host, scope) and refused when unsafe, not rewritten. No outbound request is
+   built from unvalidated server data.
+3. **Network limits.** Every request has connect and read timeouts and a total
+   operation deadline. Every response has its status, content type, and size
+   (against a cap) checked before use; bodies, including transparent gzip/deflate,
+   stop at the decoded cap. Retries are bounded. TLS verification is on by default;
+   the operator may disable it explicitly for directory enumeration (`-s`), and
+   that choice is theirs.
+4. **No shell.** Subprocesses, if ever needed, use argument arrays, never a shell,
+   with a timeout and a cleaned environment. Nothing of any provenance is
+   shell-interpolated.
+5. **Secrets.** API keys, and authentication headers and cookies the operator
+   supplies via `-H`, are never written to result files, logs, or module output;
+   reference them by name, never echo or persist them silently. The key store is
+   written owner-only through a temp file and rename.
+6. **Filesystem.** Export paths and anything derived from server data are reduced
+   to a safe basename under the owner-only data directory; no path traversal.
+7. **Errors.** Every expected failure is one actionable line, no stack trace or
+   internal path.
+8. **Authorization is the operator's.** Nokizaru scans what it is pointed at; the
+   README says scanning a target you are not authorized to test is the operator's
+   responsibility.
+9. **A safety predicate has one home.** A sanitize, scope, or validation check is
+   written once and called everywhere, never re-derived beside a new caller.
+10. **Any network exposure is private by default.** A test fixture or debug server
+    binds `127.0.0.1` only; `just verify` never touches the network.
 
-Every security decision must answer:
-1. What is the realistic threat or exploit vector here?
-2. What is the simplest mitigation that meaningfully reduces risk?
-3. What is the performance or complexity cost, and is it worth it?
+### Code Quality
 
-Do not add heavy security scaffolding just because. When a mitigation is added, document it briefly with a code comment or PR note tied to the specific risk.
+1. **Maximum 40 lines per method or macro.** Extract private helpers.
+2. **File size: 500 lines is a hard limit, 300 the soft target.** Split past 300
+   unless the code is one cohesive unit that reads worse split.
+3. **Maximum 4 parameters per method.** Group more into a `record` or struct, or
+   use named arguments.
+4. **No duplicated blocks over 6 lines.** Extract the shared code.
+5. **No `not_nil!`, `.as(T)` cast, or `uninitialized` in `src/`** without an inline
+   comment saying why the type cannot be narrowed. Prefer `if value = ...`
+   narrowing and exhaustive `case ... in`. In `spec/`, `not_nil!` is the ordinary
+   way to assert presence and is allowed.
+   - `Char::Reader` (like every struct) is copied when passed to a method, so a
+     helper that advances it advances a copy. Keep a reader in one scope or an ivar.
+6. **No dead code.** `crystal tool unreachable --check` fails the gate on any
+   method called by neither the binary nor a spec, so nothing is written ahead of
+   its caller.
+7. **`src/` has no side effects when required.** Only `src/nokizaru.cr` runs
+   anything. Nested namespaces use the compact form (`module Nokizaru::Modules`).
+8. **Typed state, not hashes.** Module results and the run state are typed structs
+   and records; the export is `JSON::Serializable` whose on-wire shape matches the
+   Ruby tool's JSON (the parity contract). An untyped `JSON::Any` is not a data
+   carrier across module boundaries.
 
-### OWASP-Aware Checklist
+#### Naming
 
-Use this checklist when relevant. Not all items apply to all changes.
+Crystal community conventions: `snake_case` for methods, variables, and files;
+`CamelCase` for types; `SCREAMING_CASE` for constants; predicates end in `?` and
+raising variants in `!`. One primary type per file, named after it in snake_case,
+directories mirroring namespaces (`Nokizaru::Modules::DirectoryEnum` lives in
+`src/nokizaru/modules/dirrec/...`).
 
-- **Injection:** Avoid SQL injection, command injection, and template injection. Prefer parameterized queries; avoid string interpolation into queries or commands
-- **Broken Access Control:** Validate permissions at boundaries; test negative paths
-- **Cryptographic Failures:** Do not invent crypto; use established libraries and patterns
-- **Insecure Design:** Prefer explicit invariants and constraints; test them
-- **Security Misconfiguration:** Avoid insecure defaults; document required env vars/config
-- **Vulnerable/Outdated Components:** Keep dependencies minimal; document rationale
-- **Identification/Auth Failures:** Avoid leaking auth state; validate session logic
-- **Software/Data Integrity:** Validate inputs; avoid unsafe deserialization
-- **Logging/Monitoring Failures:** Do not log secrets; ensure errors are actionable but safe
-- **SSRF:** Treat URLs and network destinations as hostile unless allowlisted
+Avoid non-inclusive terms (use allowlist/denylist, primary/replica, and so on) in
+code, comments, and docs.
 
-Lean on OWASP's broader Top 10 documentation and secure coding guidance when necessary; the checklist above is not exhaustive.
+#### Comments / Documentation
 
-When a mitigation is added, include a short rationale:
-- `# Security: <risk> mitigated by <approach> (cost acceptable because <reason>)`
+This is a solo-maintainer project with a minimal comment policy, not a
+doc-commented library (Ameba's documentation rule stays off).
 
----
+- A comment appears only where the code is not readably self-explanatory.
+- Ideally one line, no ending period.
+- Otherwise two to three lines at most, ending in a period, as a docstring-style
+  block.
+- One exception runs longer: a non-obvious security decision or a known gotcha (a
+  crash, a DoS, an ordering trap) may take a short block, ideally ending with a
+  pointer (the function it mirrors, the principle it serves).
+- No commented-out code, no `TODO`/`FIXME`.
+- A deliberate shortcut with a known ceiling carries a lowercase `# ponytail:`
+  comment naming the ceiling, the bound that keeps it safe, and the upgrade path
+  (a searchable marker, like `ameba:disable`, exempt from the capital-letter rule).
+- Never use em dashes anywhere: code, comments, string literals, Markdown, or
+  commit messages. Use commas, semicolons, colons, parentheses, or separate
+  sentences.
 
-## Testing And QA
+### Dependencies
 
-### Tests Are Mandatory For Behavior And Edge Cases
+- **Zero runtime shards.** `shard.yml` has no `dependencies` key; the binary uses
+  the standard library only. Every former Ruby gem (thor, json, erb, nokogiri,
+  httpx, dnsruby, whois, public_suffix, concurrent-ruby/async, zlib) is hand-rolled
+  or covered by the standard library. HTTP/2 is hand-rolled; Gori (`hahwul/gori`)
+  may be read for structural insight only, never copied.
+- **Embedded data is not a dependency.** The Public Suffix List and the curated
+  wordlists under `data/` are compile-time `read_file` embeds, carried in the
+  binary, not linked code.
+- **Ameba is the only development dependency.** Pinned to a commit, `shard.lock`
+  committed, installed by `just setup` with `--frozen --skip-postinstall` and built
+  from `lib/`, so no install script runs. Adding any other dependency is the
+  owner's decision.
 
-- Every non-trivial change must include tests
-- Bug fix = test that fails before the fix and passes after
-- Prefer deterministic tests; avoid timing-based flakiness
+### Testing
 
-### Coverage Expectations
+- `spec/` mirrors `src/` (the Crystal convention). New logic ships with a spec. A
+  cross-cutting invariant no single file owns is a seam spec at the `spec/` root
+  (the PSL integrity pin, the regex-source-safety walk): it fails the moment one
+  file breaks the property.
+- **Dependency injection over stubbing.** The clock, the HTTP transport, and the
+  resolver are constructor parameters; specs inject fakes. There is no runtime
+  method replacement.
+- `just verify` never touches the network. Fixtures bind `127.0.0.1` only.
+- Count-based checks, never timings: allocation deltas (`GC.stats.total_bytes`),
+  stubbed-client request counts, peak in-flight against the configured limit.
+- Before trusting a new lint or source rule, prove it fires on a probe.
 
-Ensure strong coverage over:
-- edge cases
-- error handling paths
-- boundary conditions
-- performance-sensitive hot paths, via count-based regression tests (see Algorithmic Complexity, rule 9)
+### What NOT to Do
 
-### QA Double Check Pass
+- Do NOT add a runtime shard, or a second development dependency, without the
+  owner's decision.
+- Do NOT encode or sanitize an operator's own payload bytes (`-H` values, a
+  target path); that is the payload. Sanitize only where a byte is rendered.
+- Do NOT edit `archive/` (the frozen Ruby reference) or cite a `.kiro/specs/` path
+  from committed code, tests, or docs.
+- Do NOT add files under `.github/workflows/`.
 
-After implementing changes:
-- Run the full test suite
-- Run linters/formatters
-- Confirm no debug output, stray files, or unused artifacts remain
-- Verify behavior is unchanged unless explicitly intended
+## Maintainer Tasks
 
----
+Some upkeep is the maintainer's alone and is not documented for contributors.
 
-## Performance Work
+- **Refreshing the Public Suffix List.** The embedded `data/public_suffix_list.dat`
+  is pinned by `spec/psl_pin_spec.cr` to `Nokizaru::PSL::SHA256`. To update it, the
+  maintainer runs `crystal run tools/refresh_psl.cr`: it fetches the canonical
+  list, accepts it only if it is still the structured Mozilla list and its delta
+  against the committed baseline is purely rule and comment data, rewrites the
+  file, and prints the new SHA-256 to paste into `src/nokizaru/psl.cr`. Then review
+  the diff and commit. The tool is never run by the build, a scan, or CI, and there
+  is no LLM in the loop: the one-time legitimacy judgment is already captured as
+  the pinned baseline.
 
-### Profiling First
+## Dev
 
-Before optimizing, identify bottlenecks with real measurements:
-- Prefer Ruby profiling tools appropriate to the stack, such as a sampling profiler or allocation profiler
-- Measure relevant functions end-to-end where feasible
-- Use representative production-like workloads where possible
-- Keep profiling and benchmark scripts in the gitignored `bench/` directory so they never ship
-- Measurements find the bottleneck; the regression guard that lands with the fix is a count-based test (see Algorithmic Complexity, rule 9), never a timing
+The task runner is `just` (`just --list` shows every recipe). `mise install` pins
+the toolchain (Crystal and `just`).
 
-### Avoid Premature Micro-Optimization
+```sh
+mise trust && mise install   # once per machine: pins crystal + just
+just setup                   # once after cloning, and when shard.lock changes (the only networked recipe)
+just verify                  # the canonical gate
+```
 
-- First: fewer requests and rounds of waiting, then algorithmic improvements, data structure choices, and unnecessary I/O removal
-- Then: allocation reduction, hot loop tuning, and caching with invalidation clarity
-- Only optimize with an explicit bottleneck and a count-based regression guard
+`just verify` runs, stopping at the first failure:
 
----
+1. `crystal tool format --check src spec`
+2. `bin/ameba` (default rules, scoped to `src` and `spec`)
+3. `crystal spec --order random`
+4. `crystal tool unreachable --check` (roots: the binary and the specs)
+5. `crystal build --release` into `bin/nokizaru`
 
-## Repository Hygiene
+The Crystal `flake.nix` and `nix flake check` arrive at cutover; the Ruby flake is
+in `archive/`, and the development gate is mise-based.
 
-### Remove Dead Artifacts
+## Committing
 
-After each pass, delete unused tests, obsolete fixtures, scratch scripts, and redundant helpers.
+- **One logical change per commit.** Release commits lead with the version and a
+  colon (`1.0.0: ...`); smaller commits use a category prefix (`Docs:`, `Chore:`,
+  `Fix:`) or a brief bare summary. Capitalized, no trailing period, no body unless
+  it earns one.
+- **No AI attribution** anywhere, in a commit or a PR.
+- Agent commits only when the owner asks; the owner pushes.
 
-Confirm removal does not reduce needed coverage or tooling.
+## Refactoring and Bulk Edits
 
-### Keep The Repo Orderly
-
-- Keep docs current
-- Keep the test suite fast and organized
-- Prefer consistent conventions for paths, naming, and structure
-
-### Packaging And Release Hygiene
-
-- Source clones and source tarballs may include contributor files such as tests, docs, and repository metadata
-- Runtime packages should stay lean through the gemspec allowlist
-- Do not broaden `spec.files` casually; include only runtime files and user-facing documentation needed by installed packages
-- The versioned Nix flake is the only maintained package-manager release target; git clones and source tarballs remain supported installation methods
-- Additional package-manager pipelines must be contributor-owned, complete, and accepted through review before becoming supported
-- Keep `Gemfile.nix.lock` on the generic `ruby` platform and version-aligned with `Gemfile.lock`
-- Regenerate `gemset.nix` whenever `Gemfile.nix.lock` changes and review every source hash
-- Run `nix flake check` natively before release and evaluate all declared systems with `nix flake check --all-systems --no-build`
-- Never place credentials, API keys, mutable configuration, or private scan data in a Nix derivation or flake input
-- Never add GitHub Actions or other files under `.github/workflows/`
-- Submit nixpkgs packaging only after the corresponding immutable release tag exists
-
-### Bundler Cooldown Hygiene
-
-- This project uses Bundler's `cooldown` feature on the public RubyGems source to reduce exposure to freshly published malicious gems after supply-chain incidents
-- Treat the feature as actively evolving until RubyGems/Bundler clearly stabilizes it across Bundler and standalone `gem` workflows
-- In future dependency-hygiene sessions, always investigate the current RubyGems/Bundler cooldown status first, then update the user with findings before changing project policy
-- After the investigation, ask whether to address related hygiene or housekeeping so this remains an intentional recurring maintenance item
-- If the feature has reached a stable or mature state, explicitly say so in the update to the user
-- Emergency bypass for urgent security fixes: `bundle update <gem> --conservative --cooldown 0`
-- Prefer Bundler 4.0.14 or newer for cooldown work because 4.0.14 includes follow-up fixes after the initial 4.0.13 release
-
----
-
-## Agent Workflow
-
-Follow this cycle for each task.
-
-### Pre-Flight
-
-1. Read relevant code
-2. Identify the objective: refactor, performance, edge-case fix, test improvement, or another clearly scoped task
-3. Identify risk areas: input boundaries, parsing/deserialization, filesystem/shell usage, auth/session handling if applicable, and concurrency/state
-4. Name what grows and the complexity path each touched method runs on (see Algorithmic Complexity)
-
-### Plan
-
-Write a short, concrete plan in task notes or output that includes:
-- files to touch
-- tests to add or update
-- how success will be measured, including tests and profiling data if performance work
-- the complexity target for each path touched, and any ceiling to accept with a `# ponytail:` comment
-- any security considerations with justification
-
-### Execute
-
-- Keep refactors behavior-preserving unless explicitly changing behavior
-- Maintain clean diffs
-
-### Verify
-
-Run, at minimum:
-- full test suite
-- linting/formatting if present
-- performance measurements if performance-related
-- the complexity step: every path touched meets its target, or its ceiling carries a `# ponytail:` comment naming the bound
-
-### Post-Flight Cleanup
-
-- Remove unused artifacts introduced during exploration
-- Ensure there are no temporary files, debug prints, or disabled tests
-- Update docs if behavior or performance claims changed
-
----
-
-## Practical Defaults
-
-If the repository does not already define these, prefer:
-- stdlib hand-written tests tailored to the situation, or RSpec at most if a dedicated test dependency is needed
-- RuboCop for linting/formatting
-
-### RuboCop Governance Baseline
-
-- Treat RuboCop as architectural governance, not just syntax cleanup
-- Keep `Lint`, `Security`, and `Naming` cops strict as hard quality gates
-- Use `Metrics` cops as readability guardrails, calibrated for CLI orchestration code so methods/modules remain cohesive without helper over-fragmentation
-- Do not use broad excludes or TODO debt files to suppress structural issues
-- Avoid inline cop disables unless truly necessary; when used, add a concise rationale tied to maintainability/performance/security tradeoff
-- Keep refactors RuboCop-clean under the curated repo config, without changing cop rules to fit a single patch
-
-Do not add new tooling unless it is justified, lightweight, and consistent with the existing ecosystem of the repo.
-
----
-
-## Output Expectations
-
-When delivering changes, include:
-- summary of what changed and why
-- tests added or updated, and what they cover
-- profiling or performance results if relevant, before/after on the same machine/settings
-- complexity notes: paths touched, targets met, and any accepted ceilings
-- any security-relevant changes with justification
-- any cleanup performed, such as deleted files or removed dead code
+Never use blanket find-and-replace (sed, regex bulk replacement) across the code.
+Work occurrence by occurrence, reading the context of each before changing it.

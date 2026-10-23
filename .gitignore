@@ -11,36 +11,27 @@ Thumbs.db
 *.vim
 .netrwhist
 
-# Ruby / Bundler
-.bundle/
-vendor/bundle/
-pkg/
-*.gem
-.irb_history
-.ruby-gemset
-.rbenv-vars
-.byebug_history
-.yardoc/
-doc/
-coverage/
-*.rbc
+# Crystal: shards install target (ameba), compiled binaries, debug info
+/lib/
+/bin/
+/.shards/
+*.dwarf
 
-# Nokizaru runtime outputs
+# Build / bench / runtime outputs
+/build/
+/bench/
 *.log
 tmp/
 log/
-/bench/
+coverage/
 
 # Secrets / local config
 *.env
 .env.*
-/keys.json
+keys.json
 config.local.json
 config.local.yml
 config.local.yaml
-keys.local.json
-keys.json.bak
-keys.json.old
 *.key
 *.pem
 *.p12
@@ -50,3 +41,8 @@ keys.json.old
 # Nix
 /result
 /result-*
+
+# Ruby reference snapshot (archive/) build artifacts
+archive/.bundle/
+archive/vendor/bundle/
+archive/**/*.gem

@@ -1,0 +1,30 @@
+# Ameba runs its default rules, scoped to our own code. This is a port of a
+# Ruby tool to a single stdlib-only Crystal binary; the house style lives in
+# AGENTS.md.
+
+Globs:
+  - "src/**/*.cr"
+  - "spec/**/*.cr"
+
+# `return nil if ...` is kept deliberately: in a method typed `: T?` the explicit
+# nil documents the nullable return at the call site, which idiomatic Crystal
+# prefers over a bare `return`. Off, so the explicit form is allowed.
+Style/RedundantNilInControlExpression:
+  Enabled: false
+
+# Short block parameter names (`rr`, `io`, `i`) are idiomatic Crystal, so this
+# rule is off. Names still earn their length where it aids reading.
+Naming/BlockParameterName:
+  Enabled: false
+
+# `.not_nil!` is how a spec asserts a value is present; it is the ordinary spec
+# idiom. Still a real smell in `src/`, where it stays linted.
+Lint/NotNil:
+  Excluded:
+    - "spec/**/*.cr"
+
+# Files under spec/support are helpers required by specs, not spec files
+# themselves, so they do not end in _spec.cr.
+Lint/SpecFilename:
+  Excluded:
+    - "spec/support/**/*.cr"

@@ -1,0 +1,26 @@
+name: nokizaru
+version: 1.0.0
+
+description: |
+  Fast, modular web reconnaissance CLI with an interactive terminal dashboard.
+  A single static binary: zero runtime shards, standard library only.
+
+authors:
+  - hakkuri
+
+license: MIT
+
+crystal: ">= 1.21.1, < 2.0.0"
+
+targets:
+  nokizaru:
+    main: src/nokizaru.cr
+
+# No `dependencies` key, on purpose: the shipped binary uses the standard
+# library only (every former Ruby gem is hand-rolled or embedded data). Ameba is
+# the one development dependency, pinned to a commit (a tag can move, a commit
+# cannot) and built from lib/ by `just setup`, so no install script runs.
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    commit: 9a19f5f98abdf792a5a0ef6ca5c5d89459740e2f
