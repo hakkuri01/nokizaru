@@ -41,5 +41,28 @@ describe Nokizaru::CLI do
     it "returns 2 on an unknown option" do
       present_capture { Nokizaru::CLI.start(["--bogus"], interactive: false).should eq(2) }
     end
+
+    {
+      "-dt" => %w[nope 2147483648 -2147483649 NaN inf],
+      "-pt" => %w[nope 2147483648 -2147483649 NaN inf],
+      "-sp" => %w[nope 2147483648 -2147483649 NaN inf],
+      "-T"  => %w[nope NaN nan inf -inf Infinity 1e999 1e100 2e18],
+    }.each do |flag, values|
+      values.each do |value|
+        it "returns one actionable line and status 2 for #{flag} #{value}" do
+          text = present_capture do
+            Nokizaru::CLI.start([flag, value], interactive: false).should eq(2)
+          end
+          text.lines.size.should eq(1)
+          text.should contain("#{flag} must be")
+          text.should_not contain("Exception")
+          text.should_not contain("ArgumentError")
+          text.should_not contain("OverflowError")
+          text.should_not contain(".cr:")
+          text.should_not contain("/home/")
+          text.should_not contain("/nix/store/")
+        end
+      end
+    end
   end
 end

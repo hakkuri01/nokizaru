@@ -1,0 +1,89 @@
+require "../spec_helper"
+require "../support/subdom_transport"
+require "../../src/nokizaru/modules/subdomains"
+
+describe Nokizaru::Subdom::Enumerator do
+  it "pins the exact ordered default jobs and never dispatches quarantined sources" do
+    providers = Nokizaru::Modules::Subdomains::PROVIDERS
+    expected = %w[AnubisDB CertSpotter HackerTarget UrlScan AlienVault BeVigil Facebook VirusTotal Shodan BinaryEdge ZoomEye Netlas Hunter Chaos Censys]
+    providers.map(&.name).should eq(expected)
+    keys = {} of String => String
+    providers.each { |provider| provider.key_names.each { |(name, _env)| keys[name] = "key" } }
+    pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) { subdom_response(429) })
+
+    _, outcomes = Nokizaru::Subdom::Enumerator.new(providers).run("example.com", pool, keys, 30.0)
+
+    outcomes.map(&.name).should eq(expected)
+    pool.requests.size.should eq(15)
+    pool.requests.each do |request|
+      request.url.should_not contain("threatminer.org")
+      request.url.should_not contain("crt.sh")
+    end
+  end
+
+  it "runs independent calls on a bounded pool and joins all workers" do
+    providers = Array(Nokizaru::Subdom::Provider).new(25) { Nokizaru::Subdom::AnubisDB.new }
+    pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) {
+      Fiber.yield
+      subdom_response(200, %q(["a.example.com"]))
+    })
+
+    names, outcomes = Nokizaru::Subdom::Enumerator.new(providers).run("example.com", pool, {} of String => String, 30.0)
+
+    pool.requests.size.should eq(25)
+    pool.peak.should eq(Nokizaru::Subdom::Enumerator::WORKER_LIMIT)
+    pool.active.should eq(0)
+    outcomes.size.should eq(25)
+    names.should eq(["a.example.com"])
+    Fiber.yield
+    pool.requests.size.should eq(25)
+  end
+
+  it "bounds queued providers and pagination by the aggregate scan budget" do
+    clock = SubdomClock.new
+    providers = Array(Nokizaru::Subdom::Provider).new(15) { Nokizaru::Subdom::Censys.new }
+    pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) {
+      clock.advance(5.0)
+      Fiber.yield
+      subdom_response(200, censys_page)
+    })
+
+    names, outcomes = Nokizaru::Subdom::Enumerator.new(providers, -> { clock.now }).run("example.com", pool, censys_keys, 1.0)
+
+    pool.budgets.should eq([5.0]) # Ruby's minimum scan budget
+    pool.active.should eq(0)
+    outcomes.size.should eq(15)
+    outcomes.map(&.status).uniq!.should eq(["timeout"])
+    outcomes.first.result_count.should eq(1)
+    outcomes.last.reason.should eq("shared provider deadline exceeded before start")
+    names.should eq(["a.example.com"])
+    Fiber.yield
+    pool.requests.size.should eq(1)
+  end
+
+  it "retains the quarantined adapters for explicit use only" do
+    [Nokizaru::Subdom::ThreatMiner.new, Nokizaru::Subdom::CrtSh.new].each do |provider|
+      body = provider.name == "ThreatMiner" ? %q({"results":["a.example.com"]}) : %q([{"name_value":"a.example.com"}])
+      pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) { subdom_response(200, body) })
+      result = provider.run("example.com", pool, {} of String => String, 5.0)
+      result.status.should eq("healthy")
+      result.names.should eq(["a.example.com"])
+      pool.requests.size.should eq(1)
+    end
+  end
+
+  it "gives later single-request providers only the scan time remaining" do
+    clock = SubdomClock.new
+    providers = Array(Nokizaru::Subdom::Provider).new(6) { Nokizaru::Subdom::AnubisDB.new }
+    pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) {
+      clock.advance(1.0)
+      subdom_response
+    })
+
+    _, outcomes = Nokizaru::Subdom::Enumerator.new(providers, -> { clock.now }).run("example.com", pool, {} of String => String, 5.0)
+
+    pool.budgets.should eq([5.0, 4.0, 3.0, 2.0, 1.0])
+    outcomes.last.status.should eq("timeout")
+    pool.active.should eq(0)
+  end
+end

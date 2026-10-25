@@ -41,8 +41,3 @@ config.local.yaml
 # Nix
 /result
 /result-*
-
-# Ruby reference snapshot (archive/) build artifacts
-archive/.bundle/
-archive/vendor/bundle/
-archive/**/*.gem

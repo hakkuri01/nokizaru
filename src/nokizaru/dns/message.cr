@@ -108,7 +108,7 @@ module Nokizaru
       end
 
       # Decodes a (possibly compressed) domain name starting at `start`,
-      # returning the dotted name and the bytes consumed in the sequential
+      # returning the DNS-escaped dotted name and bytes consumed in the sequential
       # stream at `start` (a compression pointer ends that read after its two
       # bytes). Pointer chases are counted and capped so a loop is rejected, and
       # the assembled name is capped at MAX_NAME octets.
@@ -157,8 +157,25 @@ module Nokizaru
         raise MalformedMessage.new("label overruns message") if label_start + len > buf.size
         total += len + 1
         raise MalformedMessage.new("name exceeds 255 octets") if total > MAX_NAME
-        labels << String.new(buf[label_start, len])
+        labels << present_label(buf[label_start, len])
         {label_start + len, total}
+      end
+
+      # Escape wire octets, not Unicode characters, matching dnsruby Name.decode
+      private def self.present_label(bytes : Bytes) : String
+        String.build do |io|
+          bytes.each do |byte|
+            if byte < 33 || byte > 126
+              io << '\\' << (byte // 100) << ((byte // 10) % 10) << (byte % 10)
+            else
+              case byte
+              when 34, 36, 40, 41, 59, 64, 92, 46
+                io << '\\'
+              end
+              io.write_byte(byte)
+            end
+          end
+        end
       end
 
       private def self.read_record(buf : Bytes, offset : Int32) : {Record, Int32}

@@ -32,6 +32,12 @@ describe Nokizaru::Dns::Message do
         Nokizaru::Dns::Message.build_query("#{"a" * 64}.com", 1_u16, 1_u16)
       end
     end
+
+    it "does not apply presentation escaping or case folding to query bytes" do
+      query = Nokizaru::Dns::Message.build_query("MiXeD\\name.example", 16_u16, 1_u16)
+      query[12].should eq(10)
+      query[13, 10].should eq("MiXeD\\name".to_slice)
+    end
   end
 
   describe ".parse" do
@@ -68,6 +74,25 @@ describe Nokizaru::Dns::Message do
   end
 
   describe ".read_name" do
+    it "matches dnsruby label escaping byte for byte, including invalid UTF-8" do
+      labels = {
+        Bytes[0]                                                => "\\000",
+        Bytes[97, 46, 98, 92, 99]                               => "a\\.b\\\\c",
+        Bytes[34, 36, 40, 41, 59, 64, 32, 9, 27, 127, 128, 255] => "\\\"\\$\\(\\)\\;\\@\\032\\009\\027\\127\\128\\255",
+        Bytes[0xc3, 0xa9]                                       => "\\195\\169",
+      }
+      labels.each do |label, escaped|
+        wire = IO::Memory.new
+        wire.write_byte(label.size.to_u8)
+        wire.write(label)
+        wire.write(DnsTestServer.encode_name("EXample.com"))
+        name, consumed = Nokizaru::Dns::Message.read_name(wire.to_slice, 0)
+        name.should eq("#{escaped}.EXample.com")
+        name.ascii_only?.should be_true
+        consumed.should eq(wire.size)
+      end
+    end
+
     it "decompresses a name embedded in rdata via a pointer to the question" do
       # A CNAME whose rdata is "alias" followed by a pointer to "example.com".
       query = Nokizaru::Dns::Message.build_query("example.com", 5_u16, 1_u16)
@@ -78,6 +103,23 @@ describe Nokizaru::Dns::Message do
       name, consumed = Nokizaru::Dns::Message.read_name(record.message, record.rdata_offset)
       name.should eq("alias.example.com")
       consumed.should eq(8) # "alias" label (6 bytes) + the 2-byte pointer
+    end
+
+    it "escapes compressed labels while counting only their sequential wire bytes" do
+      wire = Bytes[1, 0, 0, 0xc0, 0]
+      Nokizaru::Dns::Message.read_name(wire, 3).should eq({"\\000", 2})
+    end
+
+    it "bounds escaped output to four ASCII bytes per wire label byte" do
+      [1, Nokizaru::Dns::Message::MAX_LABEL].each do |size|
+        wire = Bytes.new(size + 2, 0xff_u8)
+        wire[0] = size.to_u8
+        wire[size + 1] = 0
+        name, consumed = Nokizaru::Dns::Message.read_name(wire, 0)
+        name.should eq("\\255" * size)
+        name.bytesize.should eq(4 * size)
+        consumed.should eq(size + 2)
+      end
     end
 
     it "rejects a compression pointer loop instead of spinning" do

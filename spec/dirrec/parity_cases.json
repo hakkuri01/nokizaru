@@ -1,0 +1,9 @@
+[
+  {"name":"HTML path", "url":"https://x.com/reflected403/alpha%26bravo", "body":"request blocked for /reflected403/alpha&amp;bravo", "fingerprint":"d9282858"},
+  {"name":"form path", "url":"https://x.com/reflected403/alpha%20bravo", "body":"request blocked for %2Freflected403%2Falpha+bravo", "fingerprint":"d9282858"},
+  {"name":"repeated and doubly encoded query values", "url":"https://x.com/search?next=alpha%252Fbravo&next=charlie+delta", "body":"request blocked for alpha/bravo and charlie delta", "fingerprint":"bd601484"},
+  {"name":"HTML request target", "url":"https://x.com/search?one=alpha&two=bravo", "body":"<p>/search?one=alpha&amp;two=bravo</p>", "fingerprint":"7828b5b5"},
+  {"name":"URI path", "url":"https://x.com/reflected403/alpha%23bravo", "body":"request blocked for /reflected403/alpha%23bravo", "fingerprint":"d9282858"},
+  {"name":"UTF-8 path", "url":"https://x.com/reflected403/caf%C3%A9%26bravo", "body":"request blocked for /reflected403/caf\u00e9&amp;bravo", "fingerprint":"d9282858"},
+  {"name":"form punctuation", "url":"https://x.com/reflected403/alpha%21%27%28%29%2A%7Ebravo", "body":"request blocked for %2Freflected403%2Falpha%21%27%28%29%2A~bravo", "fingerprint":"d9282858"}
+]

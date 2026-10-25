@@ -70,6 +70,13 @@ describe Nokizaru::CLI::Workflow do
         plan.state.findings.should be_a(Array(Nokizaru::Finding))
 
         plan.state.modules.directory_enum.not_nil!.confirmed_found.any?(&.ends_with?("/admin")).should be_true
+        artifacts = JSON.parse(plan.state.to_json)["artifacts"]
+        crawler = plan.state.modules.crawler.not_nil!
+        directory = plan.state.modules.directory_enum.not_nil!
+        artifacts["urls"].as_a.map(&.as_s).should eq(crawler.stats.total_urls)
+        artifacts["high_signal_urls"].as_a.map(&.as_s).should eq(crawler.high_signal_urls)
+        artifacts["paths"].as_a.map(&.as_s).should eq(directory.prioritized_found)
+        artifacts["prioritized_paths"].as_a.map(&.as_s).should eq(directory.prioritized_found)
 
         text.should contain("Headers")
         text.should contain("Crawler")

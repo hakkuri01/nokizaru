@@ -193,26 +193,12 @@ describe Nokizaru::Http::Pool do
       end
     end
 
-    it "honors an injected scope predicate for cross-host redirects" do
-      echo = ->(context : ::HTTP::Server::Context) do
-        context.response.print("reached")
-      end
-      HttpTestServer.with_server(echo) do |echo_base|
-        target = echo_base.sub("127.0.0.1", "localhost")
-        redirector = ->(context : ::HTTP::Server::Context) do
-          context.response.status_code = 302
-          context.response.headers["Location"] = "#{target}/echo"
-        end
-        HttpTestServer.with_server(redirector) do |redir_base|
-          pool = Nokizaru::Http::Pool.new
-          pool.get("#{redir_base}/start").status.should eq(302)
-
-          pool.scope_check = ->(_left : String, _right : String) { true }
-          followed = pool.get("#{redir_base}/start")
-          followed.status.should eq(200)
-          followed.body.should eq("reached")
-          pool.shutdown
-        end
+    it "honors an injected restrictive scope predicate" do
+      HttpTestServer.with_server(private_handler) do |base|
+        pool = Nokizaru::Http::Pool.new
+        pool.scope_check = ->(_left : String, _right : String) { false }
+        pool.get("#{base}/start").status.should eq(302)
+        pool.shutdown
       end
     end
   end

@@ -20,6 +20,38 @@ describe Nokizaru::Modules::SSLInfo do
     end
   end
 
+  [
+    {"TLSv1.3", "TLS_AES_256_GCM_SHA384", "TLSv1.3", 256},
+    {"TLSv1.2", "ECDHE-RSA-AES128-GCM-SHA256", "TLSv1.2", 128},
+    {"TLSv1.2", "ECDHE-RSA-AES256-SHA", "TLSv1.0", 256},
+  ].each do |protocol, name, version, bits|
+    it "exports the negotiated #{name} with Ruby cipher metadata" do
+      context = OpenSSL::SSL::Context::Server.new
+      if protocol == "TLSv1.3"
+        context.cipher_suites = name
+        context.add_options(OpenSSL::SSL::Options::NO_TLS_V1_2)
+      else
+        context.ciphers = name
+        context.add_options(OpenSSL::SSL::Options::NO_TLS_V1_3)
+      end
+      TlsTestServer.with_server(context) do |host, port|
+        result = Nokizaru::Modules::SSLInfo.collect(host, port)
+        result.success?.should be_true
+        cert = result.cert.not_nil!
+        cert.protocol.should eq(protocol)
+        cert.cipher.should eq({name, version, bits, bits})
+        json = JSON.parse(result.to_json)["cert"]
+        cipher = json["cipher"].as_a
+        cipher.size.should eq(4)
+        cipher[0].as_s.should eq(name)
+        cipher[1].as_s.should eq(version)
+        cipher[2].as_i.should eq(bits)
+        cipher[3].as_i.should eq(bits)
+        Nokizaru::Modules::SSLInfo::Result.from_json(result.to_json).cert.not_nil!.cipher.should eq(cert.cipher)
+      end
+    end
+  end
+
   it "serializes to the Ruby JSON shape" do
     TlsTestServer.with_server do |host, port|
       json = JSON.parse(Nokizaru::Modules::SSLInfo.collect(host, port).to_json)
@@ -58,13 +90,14 @@ end
 describe "Nokizaru::Modules::SSLInfo.present" do
   it "renders the certificate fields as rows and trees" do
     cert = Nokizaru::Modules::SSLInfo::CertInfo.new(
-      protocol: "TLSv1.3", cipher: "TLS_AES_256_GCM_SHA384",
+      protocol: "TLSv1.3", cipher: {"TLS_AES_256_GCM_SHA384", "TLSv1.3", 256, 256},
       subject: {"CN" => "example.com"}, issuer: {"O" => "Let's Encrypt", "CN" => "R3"},
       version: 3, serial_number: "0A1B", not_before: "Jan 01 00:00:00 2024 GMT",
       not_after: "Apr 01 00:00:00 2024 GMT", subject_alt_name: ["example.com", "www.example.com"])
     text = present_capture { Nokizaru::Modules::SSLInfo.present(Nokizaru::Modules::SSLInfo::Result.ok(cert)) }
     text.should contain("protocol")
     text.should contain("TLSv1.3")
+    text.should match(/cipher\.+\S TLS_AES_256_GCM_SHA384 \S/)
     text.should contain("subject")
     text.should contain("example.com")
     text.should contain("subjectAltName")

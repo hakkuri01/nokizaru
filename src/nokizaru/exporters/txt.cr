@@ -65,7 +65,7 @@ module Nokizaru
         modules.each do |name, payload|
           file.puts(name)
           file.puts("=" * name.size)
-          if name == "wayback" && payload.as_h?
+          if name == "wayback" && payload.as_h? && opt_s(payload, "status") != "failed"
             write_wayback(file, payload)
           else
             string = payload.as_s?

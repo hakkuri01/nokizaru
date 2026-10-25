@@ -85,7 +85,10 @@ module Nokizaru
       private def sitemap(url : String, discovered : Array(String)) : Array(String)
         links = UrlRules.cap_links(discovered, @budget.max_sitemap_links)
         fetch = @fetcher.fetch_following(url, @request_headers)
-        links << fetch.effective_url if fetch.success?
+        if fetch.success?
+          @fetcher.sitemap_seed = fetch
+          links << fetch.effective_url
+        end
         UrlRules.cap_links(links, @budget.max_sitemap_links)
       end
 

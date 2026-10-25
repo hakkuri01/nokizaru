@@ -8,19 +8,13 @@ require "../ui"
 
 module Nokizaru
   module Modules
-    # Subdomain enumeration across 17 sources (Nokizaru::Modules::Subdomains),
+    # Subdomain enumeration across 15 sources (Nokizaru::Modules::Subdomains),
     # driving the Nokizaru::Subdom engine. Ports modules/subdom.rb. The JSON
     # result matches the Ruby run hash (parity): the sorted unique subdomains
     # plus a provider_health summary. The event-capture/replay machinery that
     # ordered concurrent provider UI output in the Ruby tool is a rendering
     # concern and is replaced by each provider returning a typed Outcome; the UI
     # rendering wires up with the runner.
-    #
-    # Divergence (owner to confirm): the Ruby JOBS list wired only 15 of its 17
-    # implemented providers, leaving crt.sh and ThreatMiner defined but never
-    # run. This port runs all 17 (the PROVIDER_NAMES set), treating the omission
-    # as a bug; crt.sh in particular is a high-value CT source. Revert to 15 by
-    # dropping them from PROVIDERS if strict parity is preferred.
     module Subdomains
       extend self
 
@@ -58,11 +52,10 @@ module Nokizaru
         end
       end
 
-      # The 17 providers in PROVIDER_NAMES order; this order is the provider
-      # health order too.
+      # Ruby job order, also the provider health order; quarantined adapters stay out
       PROVIDERS = [
-        Subdom::AnubisDB.new, Subdom::ThreatMiner.new, Subdom::CertSpotter.new, Subdom::HackerTarget.new,
-        Subdom::CrtSh.new, Subdom::UrlScan.new, Subdom::AlienVault.new, Subdom::BeVigil.new,
+        Subdom::AnubisDB.new, Subdom::CertSpotter.new, Subdom::HackerTarget.new,
+        Subdom::UrlScan.new, Subdom::AlienVault.new, Subdom::BeVigil.new,
         Subdom::FacebookCT.new, Subdom::VirusTotal.new, Subdom::Shodan.new, Subdom::BinaryEdge.new,
         Subdom::ZoomEye.new, Subdom::Netlas.new, Subdom::Hunter.new, Subdom::Chaos.new, Subdom::Censys.new,
       ] of Subdom::Provider

@@ -17,10 +17,8 @@ module Nokizaru
     end
 
     # The directory-scan stats. Field order and names match the Ruby dir_stats
-    # hash so the benchmark harness can diff it. The deterministic fields (counts,
-    # confidence, WAF context, first-actionable) are filled by the assembler; the
-    # adaptive-engine fields (downshifts, pressure window, dispatch mode) stay at
-    # neutral defaults under route B and will be rebuilt from benchmark data.
+    # hash so the benchmark harness can diff it. Runtime adaptation fills its
+    # counters live; final confidence reconciliation fills the finding counters.
     class Stats
       include JSON::Serializable
 

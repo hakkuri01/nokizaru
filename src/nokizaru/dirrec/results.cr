@@ -140,7 +140,7 @@ module Nokizaru
       private def path_signal_score(path : String) : Int32
         score = 0
         score += 4 if Signals.high_signal_path?(path)
-        score += 2 if path.count('/') >= 2
+        score += 1 if path.count('/') >= 2
         score -= 3 if Signals.low_information_segment?(Signals.first_path_segment(path))
         score
       end
@@ -154,20 +154,16 @@ module Nokizaru
       end
 
       private def build_stats(runtime : Runtime, reconciled : Reconciled, concurrency : Int32, extension_enabled : Bool) : Stats
-        stats = Stats.new
+        stats = runtime.policy.stats
         total = runtime.success + runtime.errors
-        elapsed = (Time.instant - runtime.start_time).total_seconds
-        elapsed = 1.0 if elapsed <= 0
+        elapsed = runtime.policy.elapsed_seconds
 
         stats.total_requests = total
         stats.successful = runtime.success
         stats.errors = runtime.errors
         stats.error_breakdown = runtime.error_kinds
         stats.elapsed_seconds = elapsed.round(2)
-        stats.requests_per_second = (total / elapsed).round(1)
-        stats.adaptive_concurrency = concurrency
-        stats.extension_phase_enabled = extension_enabled
-        stats.extension_phase_reason = extension_enabled ? "extensions_provided" : nil
+        stats.requests_per_second = elapsed > 0 ? (total / elapsed).round(1) : 0.0
         apply_confidence_stats(stats, reconciled.entries, runtime.start_time)
         apply_context_stats(stats, runtime.context.snapshot)
         stats

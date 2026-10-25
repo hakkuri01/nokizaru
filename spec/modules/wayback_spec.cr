@@ -6,6 +6,35 @@ require "../../src/nokizaru/context"
 private CDX_JSON = %q([["timestamp","original","mimetype","statuscode","digest"],["20230101000000","http://example.com/admin","text/html","200","AAA"],["20230601000000","http://example.com/api/v1/users","application/json","200","BBB"]])
 
 describe Nokizaru::Modules::Wayback do
+  it "overlaps all four same-origin CDX requests on real worker-owned clients" do
+    entered = Channel(Nil).new(4)
+    release = Channel(Nil).new
+    active = 0
+    peak = 0
+    requests = 0
+    handler = ->(context : ::HTTP::Server::Context) do
+      active += 1
+      peak = {peak, active}.max
+      requests += 1
+      entered.send(nil)
+      release.receive
+      context.response.print(CDX_JSON)
+      active -= 1
+    end
+    HttpTestServer.with_server(handler) do |base|
+      spawn do
+        4.times { entered.receive }
+        4.times { release.send(nil) }
+      end
+      result = Nokizaru::Modules::Wayback.collect(
+        "http://example.com/", Nokizaru::Http::Pool.new, "#{base}/cdx", "#{base}/available", 5.0)
+      result.cdx_status.should eq("complete")
+      peak.should eq(4)
+      requests.should eq(4)
+      active.should eq(0)
+    end
+  end
+
   it "assembles the payload from CDX history with triage and health" do
     handler = ->(context : ::HTTP::Server::Context) do
       case context.request.path

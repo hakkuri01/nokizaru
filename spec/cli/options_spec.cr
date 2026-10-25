@@ -35,6 +35,42 @@ describe Nokizaru::CLI::Options do
     Nokizaru::CLI::Options.parse(["-dt=15"]).dir_threads.should eq(15)
   end
 
+  %w[-dt -pt -sp].each do |flag|
+    ["", "nope", "12oops", "1.5", "2147483648", "-2147483649", "NaN", "inf"].each do |value|
+      it "rejects #{flag}=#{value.inspect} as an option error" do
+        expect_raises(OptionParser::InvalidOption, "#{flag} must be a 32-bit integer") do
+          Nokizaru::CLI::Options.parse(["#{flag}=#{value}"])
+        end
+      end
+    end
+  end
+
+  ["", "nope", "12oops", "NaN", "nan", "inf", "-inf", "Infinity", "1e999", "1e100", "2e18"].each do |value|
+    it "rejects -T #{value.inspect} as an option error" do
+      expect_raises(OptionParser::InvalidOption, "-T must be a finite timeout within the runtime range") do
+        Nokizaru::CLI::Options.parse(["-T", value])
+      end
+    end
+  end
+
+  it "leaves nonpositive numbers for runtime validation" do
+    [-1, 0].each do |value|
+      opts = Nokizaru::CLI::Options.parse(["-dt=#{value}", "-pt=#{value}", "-sp=#{value}", "-T", value.to_s])
+      opts.dir_threads.should eq(value)
+      opts.port_threads.should eq(value)
+      opts.ssl_port.should eq(value)
+      opts.timeout.should eq(value.to_f)
+    end
+  end
+
+  it "accepts representable integer boundaries and finite fractional timeouts" do
+    opts = Nokizaru::CLI::Options.parse(["-dt=2147483647", "-pt=-2147483648", "-sp=65536", "-T", "1e-3"])
+    opts.dir_threads.should eq(Int32::MAX)
+    opts.port_threads.should eq(Int32::MIN)
+    opts.ssl_port.should eq(65536)
+    opts.timeout.should eq(0.001)
+  end
+
   it "leaves tri-state redirect and verify flags nil when unset" do
     opts = Nokizaru::CLI::Options.parse(["--headers"])
     opts.redirects.should be_nil

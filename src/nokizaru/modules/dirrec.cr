@@ -20,12 +20,7 @@ require "../ui"
 
 module Nokizaru
   module Modules
-    # Directory/file enumeration (the Ruby DirectoryEnum). Route B: the faithful
-    # deterministic core (lazy queue, soft-404, confidence, WAF context, results)
-    # driven by a fixed bounded-fiber worker pool; the adaptive engine (preflight
-    # hostility, mode budgets, pressure/concurrency tuning) is left at neutral
-    # stat defaults, to be rebuilt from benchmark data. Ports modules/dirrec.rb's
-    # `call`. UI rendering and ctx/progress wiring are assembled with the runner.
+    # Directory/file enumeration with a lazy queue and bounded adaptive workers
     module DirectoryEnum
       extend self
 
@@ -63,11 +58,6 @@ module Nokizaru
       # Renders the enumeration for the classic output and the dashboard capture:
       # each prioritized finding colored by its status code, then a compact
       # summary (requests/second, counts). Header bar dropped in TUI mode.
-      #
-      # ponytail: the Ruby tool also printed a "3xx Signals" block built from
-      # runtime redirect telemetry that the parity Result does not carry, and the
-      # route-B stats leave stop_reason/stop_status_code_shape null, so those rows
-      # are omitted here; everything rendered is Result-derived.
       def present(result : Result) : Nil
         UI.module_header("Directory Enum")
         present_findings(result)
@@ -96,6 +86,12 @@ module Nokizaru
         UI.row(:info, "Requests/second", result.stats.requests_per_second.to_s, label_width: width)
         UI.row(:info, "Directories found", found.to_s, label_width: width)
         UI.row(:info, "Low confidence", low.to_s, label_width: width) if low > 0
+        if reason = result.stats.stop_reason_display
+          UI.row(:info, "Stopped early", reason, label_width: width)
+          if shape = result.stats.stop_status_code_shape
+            UI.row(:info, "Response shape", shape, label_width: width)
+          end
+        end
         UI.blank_line
       end
 
@@ -118,9 +114,11 @@ module Nokizaru
         normalized = DirRec::Fields.normalize_target_base(scan_target)
 
         plan = DirRec::Plan.build(normalized, Nokizaru::Wordlist.load(config.wordlist), config.extensions, crawler_seed_paths(config.crawler, normalized))
-        runtime = DirRec::Runtime.new(scan_target, normalized, build_initial_baseline(normalized, config), DirRec::ConfidenceContext.new(config.headers, config.crawler))
         concurrency = Math.max(config.threads, 1)
         extension_enabled = !plan.extensions.empty?
+        baseline = build_initial_baseline(normalized, config)
+        policy = DirRec::AdaptivePolicy.new(concurrency, config.timeout_s, baseline, extensions: extension_enabled)
+        runtime = DirRec::Runtime.new(scan_target, normalized, baseline, DirRec::ConfidenceContext.new(config.headers, config.crawler), policy: policy)
 
         runtime.run(DirRec::LazyQueue.new(plan, normalized, extension_enabled), concurrency, worker_options(config), progress, plan.estimated_total)
         info = DirRec::Target.new(original: target, effective: scan_target, reanchored: anchor.reanchor?, reason: anchor.reason)
@@ -131,8 +129,8 @@ module Nokizaru
         headers = ::HTTP::Headers.new
         config.request_headers.each { |name, values| headers[name] = values }
         headers["User-Agent"] = DirRec::DEFAULT_UA
-        follow = config.allow_redirects? && config.request_headers.empty?
-        Http::Options.new(headers: headers, timeout_s: config.timeout_s, verify_ssl: config.verify_ssl?, follow_redirects: follow)
+        Http::Options.new(headers: headers, timeout_s: config.timeout_s, verify_ssl: config.verify_ssl?,
+          follow_redirects: config.allow_redirects?, scope_check: TargetIntel.scope_check)
       end
 
       private def compute_profile(target : String, config : Config) : TargetIntel::Profile
@@ -148,16 +146,18 @@ module Nokizaru
         base = DirRec::Fields.normalize_target_base(normalized)
         samples = [] of DirRec::Sample
         DirRec::SOFT_404_PROBES.times do
-          result = pool.get("#{base}/#{Random::Secure.hex(10)}", worker_options(config))
+          probe_url = "#{base}/#{Random::Secure.hex(10)}"
+          result = pool.get(probe_url, worker_options(config))
           next if result.error?
 
-          sample = DirRec::Sampler.sample(result, base)
+          sample = DirRec::Sampler.sample(result, probe_url)
           samples << sample if sample
         end
-        pool.shutdown
         DirRec::Soft404.build_from_samples(samples)
       rescue
         nil
+      ensure
+        pool.try(&.shutdown)
       end
 
       private def crawler_seed_paths(crawler : Modules::Crawler::Result?, base_target : String) : Array(String)

@@ -358,22 +358,17 @@ module Nokizaru
 
       # Follows the cursor for up to MAX_PAGES pages. Complexity: O(MAX_PAGES)
       # bounded requests, each parsed in one pass.
-      def fetch(host : String, pool : Http::Pool, keys : Hash(String, String), timeout : Float64) : Array(String)
-        names = [] of String
+      def fetch(host : String, operation : Operation, keys : Hash(String, String)) : Nil
         cursor = ""
-        first = true
         MAX_PAGES.times do
-          request = first ? build(host, keys) : page_request(host, keys, cursor)
-          first = false
-          result = execute(pool, request, timeout)
+          result = operation.execute(page_request(host, keys, cursor))
           raise ProviderError.new(status_label(result), failure_reason(result)) unless result.status == 200
 
-          body = result.body || ""
-          names.concat(parse(host, body))
-          cursor = next_cursor(body)
+          data = JSON.parse(result.body || "")
+          operation.names.concat(extract(host, data))
+          cursor = next_cursor(data)
           break if cursor.empty?
         end
-        names.uniq!
       end
 
       private def page_request(host : String, keys : Hash(String, String), cursor : String) : Request
@@ -396,8 +391,8 @@ module Nokizaru
         names.uniq!
       end
 
-      private def next_cursor(body : String) : String
-        links = JSON.parse(body)["result"]?.try { |value| value["links"]? }
+      private def next_cursor(data : JSON::Any) : String
+        links = data["result"]?.try { |value| value["links"]? }
         links.try { |value| value["next"]? }.try(&.as_s?).to_s.strip
       end
     end

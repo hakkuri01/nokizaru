@@ -101,6 +101,11 @@ describe Nokizaru::Subdom::Provider do
       Nokizaru::Subdom::CertSpotter.new.parse("example.com", %q([{"dns_names":["a.example.com","b.example.com"]}])).should eq(["a.example.com", "b.example.com"])
     end
 
+    it "Censys reads certificate names" do
+      body = %q({"result":{"hits":[{"names":["A.example.com","b.invalid"]}]}})
+      Nokizaru::Subdom::Censys.new.parse("example.com", body).should eq(["a.example.com"])
+    end
+
     it "Hunter raises on an application-level error code" do
       expect_raises(Nokizaru::Subdom::ProviderError) do
         Nokizaru::Subdom::Hunter.new.parse("example.com", %q({"code":401,"message":"invalid key"}))
@@ -111,6 +116,12 @@ describe Nokizaru::Subdom::Provider do
   describe "request building" do
     it "HackerTarget puts the host in the q parameter" do
       Nokizaru::Subdom::HackerTarget.new.build("example.com", {} of String => String).url.should contain("q=example.com")
+    end
+
+    it "Censys starts with an empty cursor" do
+      keys = {"censys_api_id" => "id", "censys_api_secret" => "secret"}
+      request = Nokizaru::Subdom::Censys.new.build("example.com", keys)
+      JSON.parse(request.body.not_nil!)["cursor"].as_s.should eq("")
     end
   end
 end

@@ -17,13 +17,14 @@ module Nokizaru
         return nil unless SOFT_404_SAMPLE_STATUSES.includes?(status)
 
         body = result.body || ""
+        text = body.valid_encoding? ? body : body.scrub
         location_header = result.headers["Location"]?
         Sample.new(
           status: status,
           content_type: Fields.normalize_content_type(result.headers["Content-Type"]?),
           body_length: body.bytesize,
-          title: Fields.extract_title(body),
-          fingerprint: Fields.body_fingerprint(body, url),
+          title: Fields.extract_title(text),
+          fingerprint: Fields.body_fingerprint(text, url),
           location: Fields.normalized_location_from_request(url, location_header),
           redirect_pattern: Fields.redirect_pattern(url, location_header),
         )

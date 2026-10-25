@@ -36,6 +36,8 @@ module Nokizaru
         )
         status = MainFetch.new(@fetcher, @request_headers).run(anchor.effective_target)
         status.ok? ? success(info, status) : failure(info, status)
+      ensure
+        @fetcher.sitemap_seed = nil
       end
 
       private def failure(info : Target, status : FetchStatus) : Result
@@ -83,7 +85,7 @@ module Nokizaru
         sitemap_urls, updated = Sitemaps.new(@fetcher, headers, @budget, counts).crawl(result.sitemap_links, page_url)
         result.urls_inside_sitemap = sitemap_urls
         result.sitemap_links = updated
-        result.urls_inside_js = JavaScript.new(@fetcher, headers, @budget, counts).crawl(result.js_links, page_url)
+        result.urls_inside_js = JavaScript.new(headers, @budget, counts).crawl(result.js_links, page_url)
       end
 
       private def surface_of(result : Result) : Surface

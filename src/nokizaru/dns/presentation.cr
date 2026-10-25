@@ -37,7 +37,7 @@ module Nokizaru
       end
 
       def aaaa(r : RdataReader) : String
-        ipv6(r.take(16))
+        ipv6(r.take(16)).upcase
       end
 
       def single_name(r : RdataReader) : String
@@ -77,7 +77,7 @@ module Nokizaru
       def caa(r : RdataReader) : String
         flags = r.u8
         tag = r.char_string
-        "#{flags} #{tag} #{String.new(r.rest)}"
+        %(#{flags} #{tag} "#{String.new(r.rest)}")
       end
 
       def naptr(r : RdataReader) : String
@@ -93,7 +93,7 @@ module Nokizaru
         keytag = r.u16
         algorithm = r.u8
         digest_type = r.u8
-        "#{keytag} #{algorithm} #{digest_type} #{hexup(r.rest)}"
+        "#{keytag} #{algorithm} #{digest_type} #{format_char(String.new(r.rest))}"
       end
 
       def dnskey(r : RdataReader) : String

@@ -47,11 +47,11 @@ module Nokizaru::CLI
         o.on("--export", "Export results") { opts.export = true }
         o.on("--tui", "Interactive dashboard") { opts.tui = true }
         o.on("--nb", "Hide banner") { opts.nb = true }
-        o.on("--dt THREADS", "Directory enum threads") { |v| opts.dir_threads = v.to_i }
-        o.on("--pt THREADS", "Port scan concurrency") { |v| opts.port_threads = v.to_i }
-        o.on("--sp PORT", "SSL port") { |v| opts.ssl_port = v.to_i }
+        o.on("--dt THREADS", "Directory enum threads") { |v| opts.dir_threads = integer(v, "dt") }
+        o.on("--pt THREADS", "Port scan concurrency") { |v| opts.port_threads = integer(v, "pt") }
+        o.on("--sp PORT", "SSL port") { |v| opts.ssl_port = integer(v, "sp") }
         o.on("-p PORTS", "Port scan ports") { |v| opts.ports = v }
-        o.on("-T TIMEOUT", "Base timeout") { |v| opts.timeout = v.to_f }
+        o.on("-T TIMEOUT", "Base timeout") { |v| opts.timeout = timeout(v) }
         o.on("-w WORDLIST", "Wordlist size or path") { |v| opts.wordlist = v }
         o.on("-H HEADER", "--header HEADER", "Custom request header") { |v| opts.request_headers << v }
         o.on("-r", "Follow redirects") { opts.redirects = true }
@@ -65,6 +65,20 @@ module Nokizaru::CLI
       end
       parser.parse(Argv.normalize(argv))
       opts
+    end
+
+    private def self.integer(value : String, label : String) : Int32
+      value.to_i? || raise OptionParser::InvalidOption.new("-#{label} must be a 32-bit integer")
+    end
+
+    private def self.timeout(value : String) : Float64
+      number = value.to_f
+      raise ArgumentError.new unless number.finite?
+      # Workflow's largest module budget is six times the base timeout
+      (number * 6.0).seconds
+      number
+    rescue ArgumentError | OverflowError
+      raise OptionParser::InvalidOption.new("-T must be a finite timeout within the runtime range")
     end
 
     # The modules this invocation runs, in execution order: a module is on when

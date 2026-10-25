@@ -1,5 +1,7 @@
 require "json"
+require "./terminal_text"
 require "./finding"
+require "./module_outcome"
 require "./modules/sslinfo"
 require "./modules/headers"
 require "./modules/arch"
@@ -48,6 +50,17 @@ module Nokizaru
   class ModuleResults
     include JSON::Serializable
 
+    STORAGE_KEYS = {"dir" => "directory_enum", "sub" => "subdomains", "ps" => "portscan", "arch" => "architecture_fingerprinting", "crawl" => "crawler"}
+    FIELDS       = {
+      sslinfo: "sslinfo", headers: "headers", dns: "dns", whois: "whois", portscan: "portscan",
+      subdomains: "subdomains", crawler: "crawler", wayback: "wayback", directory_enum: "directory_enum",
+      arch: "architecture_fingerprinting",
+    }
+
+    # Outcome envelopes override serialization without widening successful-result getters
+    @[JSON::Field(ignore: true)]
+    getter outcomes : Hash(String, ModuleOutcome) = {} of String => ModuleOutcome
+
     # Each scan module adds its typed result field here as it lands; an unset
     # (nil) field is omitted from the export, matching the Ruby run hash where a
     # module that did not run has no key.
@@ -65,6 +78,18 @@ module Nokizaru
     property arch : Modules::Arch::Result? = nil
 
     def initialize
+    end
+
+    def to_json(json : JSON::Builder) : Nil
+      json.object do
+        {% for field, key in FIELDS %}
+          if outcome = @outcomes[{{ key }}]?
+            json.field({{ key }}, outcome)
+          elsif result = @{{ field.id }}
+            json.field({{ key }}, result)
+          end
+        {% end %}
+      end
     end
   end
 
@@ -92,7 +117,8 @@ module Nokizaru
       list = (@artifacts[kind] ||= [] of String)
       seen = list.to_set
       values.each do |value|
-        list << value if seen.add?(value)
+        safe = TerminalText.strip_sgr(TerminalText.sanitize(value))
+        list << safe if seen.add?(safe)
       end
     end
   end

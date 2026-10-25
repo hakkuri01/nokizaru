@@ -33,9 +33,8 @@ module TlsTestServer
     {cert, key}
   end
 
-  def with_server(&block : (String, Int32) ->) : Nil
+  def with_server(context = OpenSSL::SSL::Context::Server.new, &block : (String, Int32) ->) : Nil
     cert, key = material
-    context = OpenSSL::SSL::Context::Server.new
     context.certificate_chain = cert
     context.private_key = key
     server = TCPServer.new("127.0.0.1", 0)

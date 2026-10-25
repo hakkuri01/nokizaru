@@ -1,15 +1,13 @@
 require "uri"
 require "./client"
+require "../target_intel"
 
 module Nokizaru
   module Http
     DEFAULT_MAX_REDIRECTS = 5
     REDIRECT_STATUSES     = {301, 302, 303, 307, 308}
 
-    # Default redirect scope: follow only within the same host. The registrable
-    # domain scope (so www.example.com -> example.com is in scope) needs the PSL,
-    # which lands with target_intel; that phase injects its predicate via
-    # `scope_check=`. Same-host is the safe subset until then.
+    # Registrable-domain redirects require an explicit per-request scope choice
     SAME_HOST_SCOPE = ->(left : String, right : String) { left.downcase == right.downcase }
 
     # Per-request knobs, grouped so the request methods stay within the parameter
@@ -21,6 +19,7 @@ module Nokizaru
       getter? follow_redirects : Bool
       getter max_redirects : Int32
       getter body : String?
+      getter scope_check : Proc(String, String, Bool)?
 
       def initialize(
         @headers : ::HTTP::Headers = ::HTTP::Headers.new,
@@ -29,11 +28,12 @@ module Nokizaru
         @follow_redirects : Bool = true,
         @max_redirects : Int32 = DEFAULT_MAX_REDIRECTS,
         @body : String? = nil,
+        @scope_check : Proc(String, String, Bool)? = nil,
       )
       end
 
       def with_headers(headers : ::HTTP::Headers) : Options
-        Options.new(headers, @timeout_s, @verify_ssl, @follow_redirects, @max_redirects, @body)
+        Options.new(headers, @timeout_s, @verify_ssl, @follow_redirects, @max_redirects, @body, @scope_check)
       end
     end
 
@@ -46,10 +46,10 @@ module Nokizaru
     class Pool
       setter scope_check : Proc(String, String, Bool)
 
-      def initialize
+      def initialize(*, @scope_check : Proc(String, String, Bool) = SAME_HOST_SCOPE,
+                     @client_factory : Proc(String, Int32, Bool, Bool, Client) = ->(host : String, port : Int32, tls : Bool, verify : Bool) { Client.new(host, port, tls, verify) })
         @clients = {} of String => Client
         @mutex = Mutex.new
-        @scope_check = SAME_HOST_SCOPE
       end
 
       def request(method : String, url : String, options : Options = Options.new) : Result
@@ -81,49 +81,54 @@ module Nokizaru
       # inspect. Ports the dirrec/crawler redirect rules (security-critical).
       private def follow(method : String, url : String, options : Options, result : Result) : Result
         current = url
+        current_options = options
         hops = 0
         while hops < options.max_redirects && !result.error? && redirect?(result.status)
-          location = result.headers["Location"]?.try(&.strip)
+          location = result.headers["Location"]?
           break if location.nil? || location.empty?
 
-          hop = next_hop(current, location)
+          hop = next_hop(current, location, url, options.scope_check || @scope_check)
           break if hop.nil?
 
           current, origin_changed = hop
-          hop_options = origin_changed ? options.with_headers(::HTTP::Headers.new) : options
-          result = perform_once(method, current, hop_options)
+          current_options = current_options.with_headers(::HTTP::Headers.new) if origin_changed
+          result = perform_once(method, current, current_options)
           hops += 1
         end
         result
       end
 
-      private def next_hop(current : String, location : String) : {String, Bool}?
-        source = URI.parse(current)
-        target = source.resolve(location)
-        scheme = target.scheme
-        return nil unless scheme == "http" || scheme == "https"
+      private def next_hop(current : String, location : String, scope : String, scope_check : Proc(String, String, Bool)) : {String, Bool}?
+        return nil unless valid_location?(location)
 
-        target_host = target.host
-        return nil if target_host.nil? || target_host.empty?
-        return nil if source.scheme == "https" && scheme == "http"
+        target = TargetIntel.redirect_target(current, location, scope).next_url
+        return nil unless target
+        destination = URI.parse(target)
+        return nil if (port = destination.port) && !(1..65535).includes?(port)
+        return nil unless scope_check.call(URI.parse(scope).host || "", destination.host || "")
 
-        source_host = source.host || ""
-        return nil unless @scope_check.call(source_host, target_host)
-
-        origin_changed = source.scheme != scheme ||
-                         source_host.downcase != target_host.downcase ||
-                         effective_port(source) != effective_port(target)
-        {target.to_s, origin_changed}
+        {target, !TargetIntel.same_origin?(current, target)}
       rescue ArgumentError
         nil
       end
 
-      private def redirect?(status : Int32?) : Bool
-        !status.nil? && REDIRECT_STATUSES.includes?(status)
+      private def valid_location?(location : String) : Bool
+        escaped = 0
+        location.each_byte do |byte|
+          if escaped > 0
+            return false unless byte.in?(48..57) || byte.in?(65..70) || byte.in?(97..102)
+            escaped -= 1
+          elsif byte == 37
+            escaped = 2
+          elsif byte <= 32 || byte == 127 || byte == 92
+            return false
+          end
+        end
+        escaped == 0
       end
 
-      private def effective_port(uri : URI) : Int32
-        uri.port || (uri.scheme == "https" ? 443 : 80)
+      private def redirect?(status : Int32?) : Bool
+        !status.nil? && REDIRECT_STATUSES.includes?(status)
       end
 
       private def perform_once(method : String, url : String, options : Options) : Result
@@ -142,7 +147,7 @@ module Nokizaru
         port = uri.port || (tls ? 443 : 80)
         key = "#{uri.scheme}://#{host}:#{port}:ssl=#{verify_ssl}"
         @mutex.synchronize do
-          @clients[key] ||= Client.new(host, port, tls, verify_ssl)
+          @clients[key] ||= @client_factory.call(host, port, tls, verify_ssl)
         end
       end
 

@@ -82,11 +82,8 @@ module Nokizaru
     # Orchestrates the Wayback query: fetch the anchor windows and the full CDX
     # history, combine them, fall back to the availability API when CDX returned
     # nothing usable, then classify health, archive status, and select snapshots.
-    # Ports modules/wayback/query.rb. ponytail: the Ruby code threaded a single
-    # monotonic deadline through every call for its total-time budget; this port
-    # gives each request a fixed timeout and bounds only the one unbounded loop
-    # (CDX paging) with a local deadline, consistent with the subdomain/crawler
-    # phases. Complexity: 3 anchor requests + at most MAX_CDX_RECORDS/PAGE_SIZE
+    # Complexity: 3 independent anchors and initial history run on owned pools;
+    # subsequent cursor pages are sequential, at most MAX_CDX_RECORDS/PAGE_SIZE
     # paged requests (capped by records and bytes) + at most one availability
     # request; selection and health are O(n) over the capped record set.
     class Query
@@ -104,15 +101,21 @@ module Nokizaru
 
       def run(target : String) : Outcome
         now = Time.utc
-        anchor = fetch_anchor_history(target, now)
-        change = fetch_cdx_history(target)
+        budget = @timeout_s > 0 ? @timeout_s : TOTAL_TIMEOUT
+        started = @fetcher.now
+        deadline = started + budget.seconds
+        network_deadline = deadline - POST_PROCESSING_BUDGET.seconds
+        anchor_deadline = {started + (budget * ANCHOR_BUDGET_SHARE).seconds, network_deadline}.min
+        history_deadline = deadline - {POST_PROCESSING_BUDGET, {budget * 0.10, 5.0}.min}.max.seconds
+        anchor, initial = fetch_initial(target, now, anchor_deadline, history_deadline)
+        change = fetch_cdx_history(target, initial, history_deadline)
         combined = combine([anchor, change])
-        availability, wayback_records, fallback = fallback_records(target, combined)
+        availability, wayback_records, fallback = fallback_records(target, combined, network_deadline)
 
         urls, records = finalize_records(wayback_records)
         unique_cdx_urls = combined.records.map(&.url).to_set.size
         health = {
-          "availability" => availability_health(availability),
+          "availability" => availability_health(availability, fallback ? records.size : 0),
           "cdx"          => cdx_health(combined, unique_cdx_urls),
         }
         status = fallback ? "fallback" : combined.status
@@ -125,28 +128,39 @@ module Nokizaru
         )
       end
 
-      # Per-request timeout, bounded by READ_TIMEOUT.
-      private def request_timeout : Float64
-        budget = @timeout_s > 0 ? @timeout_s : TOTAL_TIMEOUT
-        {budget, READ_TIMEOUT}.min
-      end
-
-      private def fetch_anchor_history(target : String, now : Time) : HistoryResult
-        results = History::ANCHORS.map do |(reason, days, tolerance)|
-          fetch_anchor_window(target, reason, days, tolerance, now)
+      private def fetch_initial(target : String, now : Time, anchor_deadline : Time::Instant, history_deadline : Time::Instant) : {HistoryResult, Cdx::Page}
+        urls = History::ANCHORS.map do |(_, days, tolerance)|
+          anchor = now - days.days
+          payload = Cdx.build_payload(target, collapse: "urlkey",
+            from: timestamp_value(anchor - tolerance.days), to: timestamp_value(anchor + tolerance.days))
+          Cdx.query_url(@cdx_url, payload)
         end
-        combine(results)
+        urls << Cdx.query_url(@cdx_url, Cdx.build_payload(target))
+        pages = Array(Cdx::Page).new(4) { Cdx::Page.new(reason: "timeout") }
+        done = Channel(Nil).new(4)
+        urls.each_with_index do |url, index|
+          spawn do
+            pages[index] = fetch_owned_page(url, index == 3 ? history_deadline : anchor_deadline)
+            done.send(nil)
+          end
+        end
+        4.times { done.receive }
+        anchors = History::ANCHORS.map_with_index do |(reason, _, _), index|
+          anchor_result(pages[index], target, reason)
+        end
+        {combine(anchors), pages[3]}
       end
 
-      private def fetch_anchor_window(target : String, reason : String, days : Int32, tolerance : Int32, now : Time) : HistoryResult
-        anchor = now - days.days
-        payload = Cdx.build_payload(
-          target,
-          collapse: "urlkey",
-          from: timestamp_value(anchor - tolerance.days),
-          to: timestamp_value(anchor + tolerance.days),
-        )
-        page = Cdx.fetch_page(@fetcher, Cdx.query_url(@cdx_url, payload), request_timeout)
+      private def fetch_owned_page(url : String, deadline : Time::Instant) : Cdx::Page
+        worker = @fetcher.worker
+        Cdx.fetch_page(worker, url, deadline)
+      rescue
+        Cdx::Page.new(reason: "exception")
+      ensure
+        worker.try(&.close)
+      end
+
+      private def anchor_result(page : Cdx::Page, target : String, reason : String) : HistoryResult
         reason_text = page.reason
         return history_result([] of UrlRecord, response_failure_status(reason_text), [reason_text]) unless reason_text.nil?
 
@@ -155,24 +169,22 @@ module Nokizaru
         history_result(records, resume ? "partial_limit" : "complete", resume ? ["record_limit"] : [] of String)
       end
 
-      private def fetch_cdx_history(target : String) : HistoryResult
+      private def fetch_cdx_history(target : String, page : Cdx::Page, deadline : Time::Instant) : HistoryResult
         payload = Cdx.build_payload(target)
         records = [] of UrlRecord
         record_bytes = 0
         resume_key = nil
         seen = Set(String).new
-        deadline = Time.instant + request_timeout.seconds
         loop do
-          return history_result(records, partial_status("timeout", records), ["timeout"]) if Time.instant >= deadline
-
-          payload = payload.dup
-          resume_key.try { |key| payload["resumeKey"] = key }
-          page = Cdx.fetch_page(@fetcher, Cdx.query_url(@cdx_url, payload), request_timeout)
           terminal = append_or_stop(page, records, pointerof(record_bytes), target, seen)
           return terminal unless terminal.nil?
 
           resume_key = page.resume_key
-          sleep(PAGE_DELAY.seconds)
+          @fetcher.wait(PAGE_DELAY.seconds, deadline)
+          return history_result(records, partial_status("timeout", records), ["timeout"]) if @fetcher.now >= deadline
+
+          resume_key.try { |key| payload["resumeKey"] = key }
+          page = Cdx.fetch_page(@fetcher, Cdx.query_url(@cdx_url, payload), deadline)
         end
       end
 
@@ -264,10 +276,10 @@ module Nokizaru
         History.select(change_records, anchor_records, now)
       end
 
-      private def fallback_records(target : String, combined : HistoryResult) : {AvailabilityCheck, Array(UrlRecord), Bool}
+      private def fallback_records(target : String, combined : HistoryResult, deadline : Time::Instant) : {AvailabilityCheck, Array(UrlRecord), Bool}
         return {AvailabilityCheck.new("unknown", nil, "not_requested"), combined.records, false} if cdx_finished?(combined)
 
-        availability = check_availability(target)
+        availability = check_availability(target, {deadline, @fetcher.now + AVAIL_TIMEOUT.seconds}.min)
         records = availability_records(availability, target)
         {availability, records, !records.empty?}
       end
@@ -276,9 +288,9 @@ module Nokizaru
         !history.records.empty? || history.status == "complete" || history.status == "not_found"
       end
 
-      private def check_availability(target : String) : AvailabilityCheck
+      private def check_availability(target : String, deadline : Time::Instant) : AvailabilityCheck
         url = "#{@avail_url}?#{URI::Params.encode({"url" => target})}"
-        result = @fetcher.get(url, request_timeout)
+        result = @fetcher.get(url, deadline)
         return AvailabilityCheck.new("unknown", nil, result.error_kind.timeout? ? "timeout" : "request_failed") if result.error?
 
         status = result.status
@@ -327,12 +339,12 @@ module Nokizaru
         {unique.map(&.url), unique}
       end
 
-      private def availability_health(availability : AvailabilityCheck) : SourceHealth
+      private def availability_health(availability : AvailabilityCheck, record_count : Int32) : SourceHealth
         return SourceHealth.new("skipped", reason: "not_requested") if availability.reason == "not_requested"
 
         case availability.state
         when "available"
-          availability.closest.nil? ? SourceHealth.new("failed", reason: "invalid_snapshot") : SourceHealth.new("found", records: 1)
+          record_count > 0 ? SourceHealth.new("found", records: record_count) : SourceHealth.new("failed", reason: "invalid_snapshot")
         when "not_available"
           SourceHealth.new("empty")
         else

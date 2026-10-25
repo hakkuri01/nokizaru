@@ -24,6 +24,19 @@ describe Nokizaru::RunState do
     run.artifacts["k"].should eq(["b", "a", "c"])
   end
 
+  it "consumes artifact values once and deduplicates against earlier modules" do
+    run = Nokizaru::RunState.new(meta)
+    run.add_artifact("urls", ["0", "1"])
+    visits = 0
+    values = (0...10_000).each.map do |index|
+      visits += 1
+      (index % 100).to_s
+    end
+    run.add_artifact("urls", values)
+    visits.should eq(10_000)
+    run.artifacts["urls"].should eq((0...100).map(&.to_s))
+  end
+
   it "keeps unresolved hostname and ip as null in meta, like the Ruby tool" do
     json = JSON.parse(meta.to_json)
     json.as_h.has_key?("hostname").should be_true

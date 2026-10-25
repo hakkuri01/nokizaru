@@ -6,10 +6,9 @@ statically-distributable binary: the standard library only, zero runtime shards,
 with its data (the Public Suffix List, the curated wordlists) embedded at compile
 time.
 
-This repository is mid-port from Ruby to Crystal. The Crystal source lives at the
-root (`src/`, `spec/`); the original Ruby tree is frozen under `archive/` as a
-reference and is deleted at cutover. Do not edit `archive/`; it is not built and
-does not need to run (its authority is `main`/HEAD).
+Nokizaru is implemented in Crystal. Source lives at the root (`src/`, `spec/`),
+and the original Ruby implementation through 2.7.12 remains available in Git
+history and at the `v2.7.12` tag.
 
 ## Mandatory Rules
 
@@ -232,8 +231,7 @@ doc-commented library (Ameba's documentation rule stays off).
   owner's decision.
 - Do NOT encode or sanitize an operator's own payload bytes (`-H` values, a
   target path); that is the payload. Sanitize only where a byte is rendered.
-- Do NOT edit `archive/` (the frozen Ruby reference) or cite a `.kiro/specs/` path
-  from committed code, tests, or docs.
+- Do NOT cite a `.kiro/specs/` path from committed code, tests, or docs.
 - Do NOT add files under `.github/workflows/`.
 
 ## Maintainer Tasks
@@ -252,6 +250,10 @@ Some upkeep is the maintainer's alone and is not documented for contributors.
 
 ## Dev
 
+Always enter the project-level development shell with `nix develop` before doing
+any work. Use the project shell's toolchain, never tools inherited from the host
+or agent environment.
+
 The task runner is `just` (`just --list` shows every recipe). `mise install` pins
 the toolchain (Crystal and `just`).
 
@@ -269,8 +271,8 @@ just verify                  # the canonical gate
 4. `crystal tool unreachable --check` (roots: the binary and the specs)
 5. `crystal build --release` into `bin/nokizaru`
 
-The Crystal `flake.nix` and `nix flake check` arrive at cutover; the Ruby flake is
-in `archive/`, and the development gate is mise-based.
+The root `flake.nix` packages the Crystal binary and runs the same development
+gate through `nix flake check`.
 
 ## Committing
 

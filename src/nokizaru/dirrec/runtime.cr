@@ -4,6 +4,8 @@ require "./sample"
 require "./sampler"
 require "./soft404"
 require "./context"
+require "./adaptive_policy"
+require "./queue"
 require "../http/pool"
 require "../progress_reporter"
 
@@ -19,13 +21,8 @@ module Nokizaru
       observed_count : Int32,
       observed_at : Time::Instant
 
-    # The mutable scan state and the worker pool. Route B: a fixed bounded set of
-    # fibers, each with its own HTTP connection to the (single) target, drains the
-    # lazy queue; per response it learns the soft-404 baseline, updates the WAF
-    # context, and records the observation. Classification is done once at
-    # finalize (Results), so no mid-scan adaptation is needed. Complexity: O(1)
-    # work per response under the shared Mutex; memory is the fixed-size summary
-    # per finding candidate, never a body.
+    # A blocking coordinator admits work up to the adaptive cap. Workers keep
+    # their connections, and already admitted requests drain on stop/downshift.
     class Runtime
       getter responses = [] of Tuple(String, Int32)
       getter all_found = [] of String
@@ -38,12 +35,14 @@ module Nokizaru
       getter success = 0
       getter errors = 0
       getter count = 0
+      getter policy : AdaptivePolicy
+      getter peak_in_flight = 0
 
-      def initialize(@scan_target : String, @normalized_target : String, @soft_404_baseline : Baseline?, @context : ConfidenceContext)
+      def initialize(@scan_target : String, @normalized_target : String, @soft_404_baseline : Baseline?, @context : ConfidenceContext, *, policy : AdaptivePolicy? = nil, @transport : Proc(String, Http::Options, Http::Result)? = nil)
         @state = Soft404::State.new
         @learning = Soft404::Learning.new
-        @mutex = Mutex.new
-        @start_time = Time.instant
+        @policy = policy || AdaptivePolicy.new(1, DEFAULT_TIMEOUT, @soft_404_baseline)
+        @start_time = @policy.start_time
         @progress = ProgressReporter::NULL
         @total = 0
       end
@@ -51,58 +50,99 @@ module Nokizaru
       def run(queue : LazyQueue, concurrency : Int32, options : Http::Options, progress : ProgressReporter = ProgressReporter::NULL, total : Int32 = 0) : Nil
         @progress = progress
         @total = total
+        jobs = Channel(Tuple(String, Http::Options)).new
+        completed = Channel(Tuple(String, Http::Result)).new(concurrency)
         waiter = WaitGroup.new(concurrency)
         concurrency.times do
           spawn do
             pool = Http::Pool.new
             begin
-              worker_loop(queue, pool, options)
+              worker_loop(jobs, completed, pool)
             ensure
-              pool.shutdown
-              waiter.done
+              begin
+                pool.shutdown
+              ensure
+                waiter.done
+              end
             end
           end
         end
-        waiter.wait
+        begin
+          dispatch(queue, jobs, completed, options)
+        ensure
+          jobs.close
+          waiter.wait
+        end
       end
 
-      private def worker_loop(queue : LazyQueue, pool : Http::Pool, options : Http::Options) : Nil
-        loop do
-          url = queue.pop
-          break if url.nil?
-
+      private def worker_loop(jobs, completed, pool : Http::Pool) : Nil
+        while job = jobs.receive?
+          url, options = job
           begin
-            result = pool.get(url, options)
-            result.error? ? record_error(result) : record_success(url, result)
+            transport = @transport
+            result = transport ? transport.call(url, options) : pool.get(url, options)
           rescue
-            record_exception
+            result = Http::Result.failure(Http::ErrorKind::Other, "Directory request failed")
           end
+          completed.send({url, result})
         end
+      end
+
+      private def dispatch(queue, jobs, completed, options : Http::Options) : Nil
+        active = dispatched = 0
+        loop do
+          while active < @policy.stats.adaptive_concurrency && !@policy.stopped?(dispatched)
+            queue.extension_enabled = @policy.stats.extension_phase_enabled?
+            url = queue.pop
+            break if url.nil?
+            jobs.send({url, request_options(options)})
+            dispatched += 1
+            active += 1
+            @peak_in_flight = Math.max(@peak_in_flight, active)
+          end
+          break if active == 0
+
+          url, result = completed.receive
+          active -= 1
+          result.error? ? record_error(result) : record_success(url, result)
+          report_progress(counts_snapshot)
+        end
+      end
+
+      private def request_options(options : Http::Options) : Http::Options
+        Http::Options.new(headers: options.headers, timeout_s: @policy.timeout_s,
+          verify_ssl: options.verify_ssl?, follow_redirects: options.follow_redirects?,
+          max_redirects: options.max_redirects, body: options.body, scope_check: options.scope_check)
       end
 
       private def record_success(url : String, result : Http::Result) : Nil
         status = result.status
         return if status.nil?
 
-        sample = Sampler.sample(result, url)
-        counts = @mutex.synchronize do
-          @success += 1
-          @count += 1
-          @responses << {url, status}
-          @signal_responses << {url, status} if SOFT_404_SAMPLE_STATUSES.includes?(status)
-          @all_found << url if FINDING_CANDIDATE_STATUSES.includes?(status) && url != "#{@scan_target}/"
-          observe_candidate(url, status, sample)
-          counts_snapshot
+        begin
+          sample = Sampler.sample(result, url)
+          prioritized = observe_candidate(url, status, sample)
+        rescue
+          record_error(Http::Result.failure(Http::ErrorKind::Other, "Directory response processing failed"))
+          return
         end
-        report_progress(counts)
+        @success += 1
+        @count += 1
+        @responses << {url, status}
+        @signal_responses << {url, status} if SOFT_404_SAMPLE_STATUSES.includes?(status)
+        @all_found << url if FINDING_CANDIDATE_STATUSES.includes?(status) && url != "#{@scan_target}/"
+        @policy.observe(status, nil, prioritized, @context.snapshot)
       end
 
-      private def observe_candidate(url : String, status : Int32, sample : Sample?) : Nil
-        return unless FINDING_CANDIDATE_STATUSES.includes?(status)
+      private def observe_candidate(url : String, status : Int32, sample : Sample?) : Bool
+        return false unless FINDING_CANDIDATE_STATUSES.includes?(status)
 
         learn_baseline(sample)
         @context.update!(status, sample, @soft_404_baseline)
-        @observations << Observation.new(url, status, sample, @count, Time.instant) if sample
+        decision = Confidence.finding_confidence(url, status, sample, @soft_404_baseline, @normalized_target)
+        prioritized = @context.adjust(decision, url, @context.snapshot).level != "low"
+        @observations << Observation.new(url, status, sample, @count + 1, @policy.now) if sample
+        prioritized
       end
 
       private def learn_baseline(sample : Sample?) : Nil
@@ -116,27 +156,13 @@ module Nokizaru
 
       private def record_error(result : Http::Result) : Nil
         kind = classify_error(result)
-        counts = @mutex.synchronize do
-          @errors += 1
-          @error_kinds[kind] += 1
-          @count += 1
-          counts_snapshot
-        end
-        report_progress(counts)
+        @errors += 1
+        @error_kinds[kind] += 1
+        @count += 1
+        @policy.observe(nil, kind, false, @context.snapshot)
       end
 
-      private def record_exception : Nil
-        counts = @mutex.synchronize do
-          @errors += 1
-          @error_kinds["other"] += 1
-          @count += 1
-          counts_snapshot
-        end
-        report_progress(counts)
-      end
-
-      # A consistent view of the live counters, captured under the mutex so the
-      # rail detail never shows a torn read. {count, success, errors, found}.
+      # Only the coordinator mutates counters; workers publish through a channel
       private def counts_snapshot : Tuple(Int32, Int32, Int32, Int32)
         {@count, @success, @errors, @all_found.size}
       end
@@ -147,7 +173,7 @@ module Nokizaru
         return unless @progress.active?
 
         count, success, errors, found = counts
-        elapsed = (Time.instant - @start_time).total_seconds
+        elapsed = @policy.elapsed_seconds
         rps = elapsed > 0 ? (count / elapsed).round(1) : 0.0
         @progress.report(detail: "#{count}/#{@total} avg #{rps}r/s ok #{success} err #{errors} found #{found}")
       end

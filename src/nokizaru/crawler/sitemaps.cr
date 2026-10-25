@@ -12,35 +12,42 @@ module Nokizaru
   module Crawler
     # The mutable state of one sitemap graph crawl: the accumulated page URLs, the
     # discovered sitemap documents, the pending queue, the seen set (cycle guard),
-    # and a Mutex guarding the concurrent merges.
+    # and retained membership sets. Only the ordered merge mutates this state.
     class SitemapState
-      property links : Array(String)
-      property sitemaps : Array(String)
+      getter links : Array(String)
+      getter sitemaps : Array(String)
       property pending : Array(String)
       getter target_host : String?
       getter page_url : String
       getter seen : Set(String)
-      getter mutex : Mutex
+      getter link_seen : Set(String)
+      getter sitemap_seen : Set(String)
 
-      def initialize(sitemap_links : Array(String), @page_url : String)
+      def initialize(sitemap_links : Array(String), @page_url : String, budget : Budget)
         normalized = sitemap_links.map(&.strip)
         normalized.uniq!
         @target_host = UrlRules.target_host(@page_url)
         @links = [] of String
-        @sitemaps = normalized
-        @pending = UrlRules.scoped_sitemap_candidates(normalized, @target_host)
+        @sitemaps = normalized.first(budget.max_sitemap_links)
+        @pending = UrlRules.scoped_sitemap_candidates(normalized, @target_host).first(budget.max_sitemaps)
         @seen = Set(String).new
-        @mutex = Mutex.new
+        @link_seen = Set(String).new
+        @sitemap_seen = @sitemaps.to_set
       end
     end
+
+    record SitemapDocument,
+      links : Array(String) = [] of String,
+      sitemaps : Array(String) = [] of String,
+      pending : Array(String) = [] of String
 
     # Walks the sitemap graph breadth-first over a bounded fiber pool, following
     # `<sitemap><loc>` children in scope and collecting `<url><loc>` page URLs,
     # all under the live caps. Ports crawler/sitemaps.rb. Gzip (`.xml.gz`) bodies
     # are inflated with the inflated size capped (a small `.gz` can inflate
     # without bound). Complexity: at most `max_sitemaps` documents fetched, each
-    # parsed once in an O(bytes) pass capped at MAX_BYTES; lookups go through the
-    # seen Set.
+    # parsed once in O(bytes) capped at MAX_BYTES; extraction and merging append
+    # capped unique prefixes, with O(1) membership checks and no merge lock.
     class Sitemaps
       def initialize(@fetcher : Fetcher, @request_headers : ::HTTP::Headers, @budget : Budget, @counts : Surface)
       end
@@ -51,11 +58,11 @@ module Nokizaru
         @budget.apply(@counts)
         return {[] of String, sitemap_links} if @budget.exhausted?
 
-        state = SitemapState.new(sitemap_links, page_url)
+        state = SitemapState.new(sitemap_links, page_url, @budget)
         return {[] of String, sitemap_links} if state.pending.empty?
 
         walk(state)
-        {state.links.uniq, UrlRules.cap_links(state.sitemaps, @budget.max_sitemap_links)}
+        {state.links, state.sitemaps.first(@budget.max_sitemap_links)}
       end
 
       private def walk(state : SitemapState) : Nil
@@ -74,50 +81,79 @@ module Nokizaru
 
       private def next_batch(state : SitemapState) : Array(String)
         remaining = Math.max(@budget.max_sitemaps - state.seen.size, 0)
-        fresh = state.pending.reject { |url| state.seen.includes?(url) }
-        fresh.first(remaining)
+        batch = [] of String
+        state.pending.each do |url|
+          break if batch.size >= remaining
+
+          batch << url unless state.seen.includes?(url)
+        end
+        batch
       end
 
       private def crawl_batch(batch : Array(String), state : SitemapState) : Array(String)
-        discovered = [] of String
-        Concurrency.each_concurrently(batch) do |sitemap_url|
+        positions = Hash(String, Int32).new
+        batch.each_with_index { |url, index| positions[url] = index }
+        # ponytail: at most 200 capped document slots per level; stream ordered merges if caps grow
+        documents = Array.new(batch.size) { SitemapDocument.new }
+        Concurrency.each_concurrently(batch) do |sitemap_url, fetcher|
           next if @budget.exhausted?
 
           headers = UrlRules.origin_headers(sitemap_url, state.page_url, @request_headers)
-          page_links, child_sitemaps = parse_document(sitemap_url, headers)
-          state.mutex.synchronize { merge_batch(state, page_links, child_sitemaps, discovered) }
+          documents[positions[sitemap_url]] = parse_document(sitemap_url, headers, fetcher, state.target_host)
         end
-        discovered.uniq
+        discovered = [] of String
+        pending_seen = Set(String).new
+        documents.each { |document| merge_batch(state, document, discovered, pending_seen) }
+        discovered
       end
 
-      private def merge_batch(state : SitemapState, page_links : Array(String), child_sitemaps : Array(String), discovered : Array(String)) : Nil
-        state.links = UrlRules.cap_links(state.links + page_links, @budget.max_sitemap_urls)
-        state.sitemaps = UrlRules.cap_links(state.sitemaps + child_sitemaps, @budget.max_sitemap_links)
-        discovered.concat(UrlRules.scoped_sitemap_candidates(child_sitemaps, state.target_host))
-        capped = UrlRules.cap_links(discovered, @budget.max_sitemaps)
-        discovered.clear
-        discovered.concat(capped)
+      private def merge_batch(state : SitemapState, document : SitemapDocument, discovered : Array(String), pending_seen : Set(String)) : Nil
+        append_capped(state.links, document.links, state.link_seen, @budget.max_sitemap_urls)
+        append_capped(state.sitemaps, document.sitemaps, state.sitemap_seen, @budget.max_sitemap_links)
+        append_capped(discovered, document.pending, pending_seen, @budget.max_sitemaps)
       end
 
-      private def parse_document(sitemap_url : String, headers : ::HTTP::Headers) : {Array(String), Array(String)}
-        return {[] of String, [] of String} if @budget.exhausted?
+      private def append_capped(destination : Array(String), source : Array(String), seen : Set(String), cap : Int32) : Nil
+        source.each do |url|
+          break if destination.size >= cap
 
-        fetch = @fetcher.fetch_following(sitemap_url, headers)
-        return {[] of String, [] of String} unless fetch.success?
+          destination << url if seen.add?(url)
+        end
+      end
+
+      private def parse_document(sitemap_url : String, headers : ::HTTP::Headers, fetcher : Fetcher, target_host : String?) : SitemapDocument
+        return SitemapDocument.new if @budget.exhausted?
+
+        fetch = @fetcher.take_sitemap(sitemap_url) || fetcher.fetch_following(sitemap_url, headers)
+        return SitemapDocument.new unless fetch.success?
 
         body = decode_body(fetch.result.try(&.body) || "", sitemap_url)
-        return {[] of String, [] of String} if body.empty?
+        return SitemapDocument.new if body.empty?
 
         doc = XML.parse(body)
-        page_locs = xml_links(doc, "//*[local-name()='url']/*[local-name()='loc']")
-        child = xml_links(doc, "//*[local-name()='sitemap']/*[local-name()='loc']").select { |url| UrlRules.sitemap_candidate?(url) }
-        {page_locs, child}
+        pages = xml_links(doc, "//*[local-name()='url']/*[local-name()='loc']", @budget.max_sitemap_urls) { true }
+        child_xpath = "//*[local-name()='sitemap']/*[local-name()='loc']"
+        children = xml_links(doc, child_xpath, @budget.max_sitemap_links) { |url| UrlRules.sitemap_candidate?(url) }
+        pending = xml_links(doc, child_xpath, @budget.max_sitemaps) do |url|
+          UrlRules.sitemap_candidate?(url) && UrlRules.same_scope_url?(url, target_host)
+        end
+        SitemapDocument.new(pages, children, pending)
       rescue
-        {[] of String, [] of String}
+        SitemapDocument.new
       end
 
-      private def xml_links(doc : XML::Node, xpath : String) : Array(String)
-        doc.xpath_nodes(xpath).map(&.text.strip).reject(&.empty?)
+      private def xml_links(doc : XML::Node, xpath : String, cap : Int32, &accept : String -> Bool) : Array(String)
+        links = [] of String
+        seen = Set(String).new
+        doc.xpath_nodes(xpath).each do |node|
+          break if links.size >= cap
+
+          url = node.text.strip
+          next if url.empty? || !accept.call(url)
+
+          links << url if seen.add?(url)
+        end
+        links
       end
 
       # The transport caps the compressed bytes; inflating through a capped read

@@ -22,7 +22,7 @@ module Nokizaru
       # Trailing string/structure punctuation to trim off a captured URL.
       TRAILING = /["'`,;)\]]+\z/
 
-      def initialize(@fetcher : Fetcher, @request_headers : ::HTTP::Headers, @budget : Budget, @counts : Surface)
+      def initialize(@request_headers : ::HTTP::Headers, @budget : Budget, @counts : Surface)
       end
 
       def crawl(js_links : Array(String), page_url : String) : Array(String)
@@ -40,10 +40,10 @@ module Nokizaru
         seen = Set(String).new
         mutex = Mutex.new
         cap = @budget.max_js_urls_total
-        Concurrency.each_concurrently(targets) do |js|
+        Concurrency.each_concurrently(targets) do |js, fetcher|
           next if @budget.exhausted?
 
-          extracted = extract(js, page_url)
+          extracted = extract(js, page_url, fetcher)
           mutex.synchronize do
             extracted.each do |url|
               break if urls.size >= cap
@@ -69,9 +69,9 @@ module Nokizaru
         scoped
       end
 
-      private def extract(js_url : String, page_url : String) : Array(String)
+      private def extract(js_url : String, page_url : String, fetcher : Fetcher) : Array(String)
         headers = UrlRules.origin_headers(js_url, page_url, @request_headers)
-        result = @fetcher.get(js_url, headers, USER_AGENT)
+        result = fetcher.get(js_url, headers, USER_AGENT)
         return [] of String unless success_2xx?(result)
 
         found = (result.body || "").scan(URL_PATTERN).map(&.[0])

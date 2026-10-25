@@ -1,34 +1,56 @@
 require "wait_group"
 require "./limits"
+require "./fetcher"
 
 module Nokizaru
   module Crawler
-    # Runs a block over items with a bounded fiber pool, porting
-    # crawler/concurrency.rb (async semaphore + barrier). A Channel of
-    # MAX_FETCH_WORKERS tokens caps how many fibers run at once; a WaitGroup joins
-    # them. Complexity: O(items) runs, at most MAX_FETCH_WORKERS concurrent, each
-    # bounded by the per-request HTTP timeout. The block may mutate shared state,
-    # so callers guard it with a Mutex.
+    # Each worker owns its transport so same-origin requests do not share a
+    # Client lock. O(1) cursor acquisition per URL, O(C) connections for C workers;
+    # pools are cleared on origin changes and closed when the batch finishes.
     module Concurrency
       extend self
 
-      def each_concurrently(items : Array(T), &block : T ->) : Nil forall T
+      def each_concurrently(items : Array(String), &block : String, Fetcher ->) : Nil
         return if items.empty?
 
         concurrency = {MAX_FETCH_WORKERS, items.size}.min
-        slots = Channel(Nil).new(concurrency)
-        concurrency.times { slots.send(nil) }
-        waiter = WaitGroup.new(items.size)
-        items.each do |item|
-          slots.receive
+        cursor = 0
+        mutex = Mutex.new
+        next_item = -> do
+          mutex.synchronize do
+            item = items[cursor]?
+            cursor += 1 if item
+            item
+          end
+        end
+        errors = Channel(Exception).new(concurrency)
+        waiter = WaitGroup.new(concurrency)
+        concurrency.times do
           spawn do
-            block.call(item)
+            run_worker(next_item, &block)
+          rescue error
+            errors.send(error)
           ensure
-            slots.send(nil)
             waiter.done
           end
         end
         waiter.wait
+        errors.close
+        if error = errors.receive?
+          raise error
+        end
+      end
+
+      private def run_worker(next_item : Proc(String?), &block : String, Fetcher ->) : Nil
+        pool = Http::Pool.new
+        fetcher = Fetcher.new(pool, worker_local: true)
+        begin
+          while item = next_item.call
+            block.call(item, fetcher)
+          end
+        ensure
+          pool.shutdown
+        end
       end
     end
   end

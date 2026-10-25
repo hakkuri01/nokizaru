@@ -12,17 +12,17 @@ require "../ui"
 require "../log"
 require "./options"
 require "./runtime"
+require "./workflow_artifacts"
+require "./workflow_failures"
 
 module Nokizaru::CLI
   # The scan runner: resolves the target, plans the module set and export
   # destination, runs each enabled module in order, then finalizes (timing,
   # findings, export, completion). Ports the Ruby Runner::Workflow. The Crystal
   # modules are pure `collect→Result`, so this stores each typed Result on the
-  # run and drives each module's `present`; a failed or timed-out module leaves
-  # its typed field nil (the Ruby tool wrote a synthetic failed payload into the
-  # modules hash, which a typed field cannot hold — documented divergence, and it
-  # only affects the non-deterministic failure case, never a successful-run
-  # export). The interactive Session (a later phase) drives plan!/execute!/
+  # run and drives each module's `present`; guarded failures and port skips are
+  # recorded as typed outcome envelopes under the same exported module keys.
+  # The interactive Session drives plan!/execute!/
   # finalize! directly; classic mode calls `run`.
   class Workflow
     # A fatal condition the runner cannot proceed past (no target, no modules, a
@@ -174,7 +174,6 @@ module Nokizaru::CLI
       end
       return if result.nil?
 
-      plan.state.modules.headers = result
       Modules::Headers.present(result)
     end
 
@@ -185,7 +184,6 @@ module Nokizaru::CLI
       end
       return if result.nil?
 
-      plan.state.modules.sslinfo = result
       Modules::SSLInfo.present(result)
     end
 
@@ -196,7 +194,6 @@ module Nokizaru::CLI
       end
       return if result.nil?
 
-      plan.state.modules.whois = result
       Modules::WhoisLookup.present(result)
     end
 
@@ -207,7 +204,6 @@ module Nokizaru::CLI
       end
       return if result.nil?
 
-      plan.state.modules.dns = result
       Modules::DnsEnumeration.present(result)
     end
 
@@ -226,18 +222,16 @@ module Nokizaru::CLI
       end
       return if result.nil?
 
-      plan.state.modules.subdomains = result
       Modules::Subdomains.present(result)
     end
 
     private def run_arch(plan : Plan, pool : Http::Pool) : Nil
       info = plan.info
       result = run_module(plan, "arch", module_timeout_s(info, "arch")) do
-        Modules::Arch.collect(third_party_target(info.target), pool, KeyStore.fetch("wappalyzer"), info.timeout)
+        Modules::Arch.collect(third_party_target(info.target), pool, KeyStore.fetch("wappalyzer", "NK_WAPPALYZER_KEY"), info.timeout)
       end
       return if result.nil?
 
-      plan.state.modules.arch = result
       Modules::Arch.present(result)
     end
 
@@ -247,7 +241,7 @@ module Nokizaru::CLI
       info = plan.info
       ip = info.ip
       if ip.nil? || ip.empty?
-        skip(plan, "ps", "Skipping Port Scan : #{port_scan_skip_reason(info)}")
+        skip_portscan_without_ip(plan)
         return
       end
 
@@ -256,7 +250,6 @@ module Nokizaru::CLI
       end
       return if result.nil?
 
-      plan.state.modules.portscan = result
       Modules::PortScan.present(result)
     end
 
@@ -267,7 +260,6 @@ module Nokizaru::CLI
       end
       return if result.nil?
 
-      plan.state.modules.crawler = result
       Modules::Crawler.present(result)
     end
 
@@ -278,7 +270,6 @@ module Nokizaru::CLI
       end
       return if result.nil?
 
-      plan.state.modules.directory_enum = result
       Modules::DirectoryEnum.present(result)
     end
 
@@ -291,7 +282,6 @@ module Nokizaru::CLI
       end
       return if result.nil?
 
-      plan.state.modules.wayback = result
       Modules::Wayback.present(result)
     end
 
@@ -311,11 +301,13 @@ module Nokizaru::CLI
     private def run_guarded(plan : Plan, key : String, timeout_s : Float64, &block : -> T) : T? forall T
       plan.rail.module_started(key, LABELS[key]? || key)
       result = with_timeout(timeout_s, &block)
+      store_result(plan.state, result)
+      plan.state.modules.outcomes.delete(ModuleResults::STORAGE_KEYS[key]? || key)
       plan.rail.module_finished(key)
       result
     rescue error
       plan.rail.module_failed(key)
-      Log.write("[#{key}] Module failed = #{error.class}: #{error.message}")
+      record_module_failure(plan, key, error)
       nil
     end
 

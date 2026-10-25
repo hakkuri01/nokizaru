@@ -3,7 +3,7 @@ require "../../src/nokizaru/findings/tls_rules"
 
 private def result_with(not_after : String) : Nokizaru::Modules::SSLInfo::Result
   cert = Nokizaru::Modules::SSLInfo::CertInfo.new(
-    protocol: "TLSv1.3", cipher: "x", subject: {} of String => String, issuer: {} of String => String,
+    protocol: "TLSv1.3", cipher: nil, subject: {} of String => String, issuer: {} of String => String,
     version: 2, serial_number: "1", not_before: "Jan 01 00:00:00 2020 GMT", not_after: not_after,
     subject_alt_name: nil,
   )

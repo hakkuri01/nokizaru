@@ -10,10 +10,6 @@
 
 Nokizaru is a CLI tool purpose-built for enumerating the core web recon surface. Its goal is to provide a sufficiently expansive, high-signal overview of a target quickly, subverting the need to reach for heavier OSINT suites. Instead of running several tools in sequence, Nokizaru aims to produce comparable recon results with a single full-scan command. The ideal use case is collecting relevant information on a web target during the recon phase of a bug bounty or web app pentest engagement. As such, the primary audience is security researchers (not CTI analysts who may still prefer larger, more comprehensive OSINT suites).
 
-> [!NOTE]
->
-> Nokizaru `1.0.0` is a ground-up rewrite in [Crystal](https://crystal-lang.org/): one statically-distributable binary, the standard library only, with its data embedded at compile time. Earlier `2.x` releases were the original Ruby implementation and remain in the git history. The feature set and command grammar carry over.
-
 > [!CAUTION]
 >
 > *Nokizaru is intended for authorized security testing and research. Always ensure you have explicit permission to scan targets you do not own.*
@@ -60,6 +56,24 @@ crystal build --release src/nokizaru.cr -o bin/nokizaru
 ```
 
 Put `bin/nokizaru` on your `PATH`.
+
+### Nix
+
+The root flake supports `aarch64-linux` and `x86_64-linux`, with nixpkgs pinned
+to a Crystal 1.21.1 toolchain:
+
+```bash
+nix build
+./result/bin/nokizaru --help
+nix develop       # Crystal, shards, just, OpenSSL, and the pinned Ameba
+just verify       # offline; the shell installs bin/ameba, no just setup needed
+```
+
+`nix flake check` runs formatting, lint, specs, unreachable-code detection, the
+release build, and offline CLI smoke tests. Nix may fetch the pinned inputs and
+build dependencies first. The package embeds its data and has no runtime shards;
+its linked system libraries are managed by Nix. See [CONTRIBUTING.md](CONTRIBUTING.md#nix)
+for the development workflow.
 
 ---
 
@@ -247,4 +261,4 @@ Exports are grouped by hostname and use timestamped filenames. Override the dire
 ## Roadmap
 
 - **Headless mode (`--headless`):** a no-TUI, no-TTY run for AI-agent and automation workflows. Structured results to `-o`/exports or stdout, progress and errors on stderr, an exit code for chaining, the same engine and flag grammar. (Piped runs already produce the classic line output today; `--headless` will make that an explicit, TTY-independent contract.)
-- **Prebuilt binaries and a Nix flake** for the Crystal release.
+- **Prebuilt binaries** for the Crystal release.

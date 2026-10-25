@@ -2,6 +2,7 @@ require "../spec_helper"
 require "json"
 require "file_utils"
 require "../../src/nokizaru/exporters/json"
+require "../support/tls_test_server"
 
 private def sample_run : Nokizaru::RunState
   meta = Nokizaru::Meta.new(version: "1.0.0", target: "https://example.com", started_at: "2026-08-29T00:00:00Z")
@@ -25,6 +26,26 @@ private def with_tmpdir(&)
 end
 
 describe Nokizaru::Exporters::Json do
+  it "preserves the collected TLS cipher tuple in the on-disk run export" do
+    TlsTestServer.with_server do |host, port|
+      run = sample_run
+      result = Nokizaru::Modules::SSLInfo.collect(host, port)
+      result.success?.should be_true
+      run.modules.sslinfo = result
+      with_tmpdir do |dir|
+        path = File.join(dir, "report.json")
+        Nokizaru::Exporters::Json.write(run, path)
+        cipher = JSON.parse(File.read(path))["modules"]["sslinfo"]["cert"]["cipher"].as_a
+        expected = result.cert.not_nil!.cipher.not_nil!
+        cipher.size.should eq(4)
+        cipher[0].as_s.should eq(expected[0])
+        cipher[1].as_s.should eq(expected[1])
+        cipher[2].as_i.should eq(expected[2])
+        cipher[3].as_i.should eq(expected[3])
+      end
+    end
+  end
+
   it "writes the typed run as pretty JSON matching the Ruby run shape" do
     with_tmpdir do |dir|
       path = File.join(dir, "report.json")

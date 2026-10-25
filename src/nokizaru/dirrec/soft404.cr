@@ -71,7 +71,7 @@ module Nokizaru
       end
 
       def tolerance(body_length : Int32) : Int32
-        Math.max((body_length * 0.05).round.to_i, SOFT_404_MIN_TOLERANCE).clamp(0, SOFT_404_MAX_TOLERANCE)
+        Math.max((body_length * 0.05).round(:ties_away).to_i, SOFT_404_MIN_TOLERANCE).clamp(0, SOFT_404_MAX_TOLERANCE)
       end
 
       private def learning_top_ratio(learning : Learning) : Float64

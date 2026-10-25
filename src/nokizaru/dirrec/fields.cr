@@ -1,4 +1,5 @@
 require "uri"
+require "html"
 require "digest/crc32"
 require "./limits"
 require "../target_intel"
@@ -9,14 +10,6 @@ module Nokizaru
     # body fingerprint, the content type, and the redirect pattern used to cluster
     # path-preserving redirects. Ports the normalization and fingerprint helpers
     # from dirrec/redirects.rb. Each is one O(len) pass over a single value.
-    #
-    # ponytail: the fingerprint collapses the request URL's own path out of the
-    # body before hashing so a wildcard page that echoes the path hashes stably.
-    # The Ruby tool reflected many percent/HTML-escape variants of the request;
-    # this port reflects the raw and decoded path only. The fingerprint is an
-    # opaque hash compared only within a run (sample vs baseline), so a value that
-    # is internally consistent but not byte-identical to Ruby's does not change
-    # which paths are found. Upgrade: reflect the full escape-variant set.
     module Fields
       extend self
 
@@ -123,18 +116,21 @@ module Nokizaru
       private def reflected_redirect_path(request_path : String, location_path : String) : String?
         return nil if request_path == "/"
         return nil if location_path.starts_with?("#{request_path}/")
-        return nil unless reflected_path_segment?(location_path, request_path)
+        values = [request_path, escape_reflection(request_path), URI.encode_www_form(request_path)].uniq
+        values.sort_by! { |value| -value.size }
+        reflected = values.find { |value| reflected_path_segment?(location_path, value) }
+        return nil unless reflected
 
-        location_path.sub(request_path, "{request}")
+        location_path.sub(reflected, "{request}")
       end
 
       private def reflected_path_segment?(location_path : String, value : String) : Bool
-        start = location_path.index(value)
+        start = location_path.byte_index(value)
         return false if start.nil?
 
-        left_boundary = value.starts_with?("/") || start.zero? || location_path[start - 1] == '/'
-        right_index = start + value.size
-        left_boundary && (right_index == location_path.size || location_path[right_index] == '/')
+        left_boundary = value.starts_with?("/") || start.zero? || location_path.byte_at(start - 1) == '/'.ord
+        right_index = start + value.bytesize
+        left_boundary && (right_index == location_path.bytesize || location_path.byte_at(right_index) == '/'.ord)
       end
 
       private def fingerprint_slice(raw : String) : String
@@ -146,23 +142,45 @@ module Nokizaru
       private def normalize_request_reflections(body : String, request_url : String?) : String
         return body if request_url.nil? || request_url.empty?
 
+        # Only values that fit the fixed fingerprint window can match; length
+        # buckets preserve longest-first replacement without sorting URL parts.
+        buckets = Hash(Int32, Array(String)).new
+        reflected_request_values(request_url).uniq.each do |value|
+          length = value.size
+          next if length > FINGERPRINT_SLICE
+
+          (buckets[length] ||= [] of String) << value.downcase
+        end
         result = body
-        reflected_request_values(request_url).each { |value| result = result.gsub(value.downcase, "{request}") }
+        FINGERPRINT_SLICE.downto(3) do |length|
+          buckets[length]?.try(&.each { |value| result = result.gsub(value, "{request}") })
+        end
         result
       end
 
       private def reflected_request_values(request_url : String) : Array(String)
-        uri = URI.parse(request_url)
+        value = request_url.strip
+        uri = URI.parse(value)
         path = uri.path
-        parts = [request_url, path]
+        parts = [value, uri.request_target, path]
         parts.concat(path.split('/'))
-        decoded = parts.map { |part| decode(part) }
-        values = (parts + decoded).select { |part| part.size >= 3 && part != "/" }
-        values.uniq!
-        values.sort_by! { |part| -part.size }
-        values
+        URI::Params.parse(uri.query || "").each { |_key, part| parts << part }
+        parts.flat_map { |part| reflection_variants(decode(part)) }
       rescue
-        [request_url].select { |part| part.size >= 3 }
+        [request_url.strip, HTML.escape(request_url.strip)]
+      end
+
+      private def reflection_variants(part : String) : Array(String)
+        return [] of String if part.size < 3 || part == "/"
+
+        encoded = [escape_reflection(part), URI.encode_www_form(part)]
+        [part, HTML.escape(part)] + encoded + encoded.map { |value| HTML.escape(value) }
+      end
+
+      private def escape_reflection(value : String) : String
+        String.build do |io|
+          URI.encode(value, io) { |byte| URI.unreserved?(byte) || (URI.reserved?(byte) && byte != '#'.ord) }
+        end
       end
 
       private def decode(value : String) : String

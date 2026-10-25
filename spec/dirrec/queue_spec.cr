@@ -26,4 +26,19 @@ describe Nokizaru::DirRec::LazyQueue do
     end
     urls.any?(&.ends_with?("/config.php")).should be_false
   end
+
+  it "retains its extension cursor while the phase is suspended" do
+    plan = Nokizaru::DirRec::UrlPlan.new([] of String, [] of String, ["first", "second"], ["txt"], 4)
+    queue = Nokizaru::DirRec::LazyQueue.new(plan, "http://fixture", false)
+    queue.pop.should eq("http://fixture/first")
+    queue.pop.should eq("http://fixture/second")
+    queue.pop.should be_nil
+    queue.extension_enabled = true
+    queue.pop.should eq("http://fixture/first.txt")
+    queue.extension_enabled = false
+    queue.pop.should be_nil
+    queue.extension_enabled = true
+    queue.pop.should eq("http://fixture/second.txt")
+    queue.pop.should be_nil
+  end
 end

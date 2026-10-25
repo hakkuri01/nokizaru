@@ -4,6 +4,11 @@ require "json"
 require "../http/x509_ext"
 require "../ui"
 
+lib LibSSL
+  fun ssl_cipher_get_version = SSL_CIPHER_get_version(cipher : SSLCipher) : UInt8*
+  fun ssl_cipher_get_bits = SSL_CIPHER_get_bits(cipher : SSLCipher, algorithm_bits : Int*) : Int
+end
+
 module Nokizaru
   module Modules
     # SSL/TLS certificate inspection. Opens a TLS connection to the target, reads
@@ -18,13 +23,16 @@ module Nokizaru
       CONNECT_TIMEOUT = 5.0
       LABEL_WIDTH     = "serialNumber".size
 
+      # Ruby SSLSocket#cipher: name, cipher version, effective bits, algorithm bits
+      alias CipherInfo = Tuple(String, String, Int32, Int32)
+
       # The certificate payload, serialized under "cert". Key order and names
       # match the Ruby cert dict; camelCase keys are mapped explicitly.
       struct CertInfo
         include JSON::Serializable
 
         getter protocol : String?
-        getter cipher : String?
+        getter cipher : CipherInfo?
         getter subject : Hash(String, String)
         getter issuer : Hash(String, String)
         getter version : Int32
@@ -39,7 +47,7 @@ module Nokizaru
 
         def initialize(
           @protocol : String?,
-          @cipher : String?,
+          @cipher : CipherInfo?,
           @subject : Hash(String, String),
           @issuer : Hash(String, String),
           @version : Int32,
@@ -87,7 +95,7 @@ module Nokizaru
         end
 
         UI.row(:info, "protocol", cert.protocol, label_width: LABEL_WIDTH)
-        UI.row(:info, "cipher", cert.cipher, label_width: LABEL_WIDTH)
+        UI.row(:info, "cipher", cert.cipher.try(&.first), label_width: LABEL_WIDTH)
         present_tree("subject", cert.subject)
         present_tree("issuer", cert.issuer)
         UI.row(:info, "version", cert.version.to_s, label_width: LABEL_WIDTH)
@@ -134,7 +142,7 @@ module Nokizaru
         san = Http::X509Ext.san(cert)
         CertInfo.new(
           protocol: socket.tls_version,
-          cipher: socket.cipher,
+          cipher: cipher_info(socket),
           subject: name_hash(cert.subject.to_a),
           issuer: name_hash(Http::X509Ext.issuer(cert)),
           version: Http::X509Ext.version(cert),
@@ -143,6 +151,17 @@ module Nokizaru
           not_after: format_time(Http::X509Ext.not_after(cert)),
           subject_alt_name: san.empty? ? nil : san,
         )
+      end
+
+      private def cipher_info(socket : OpenSSL::SSL::Socket::Client) : CipherInfo?
+        # Crystal exposes only the cipher name, with no public SSL handle accessor
+        cipher = LibSSL.ssl_get_current_cipher(socket.@ssl)
+        return nil if cipher.null?
+
+        algorithm_bits = 0
+        effective_bits = LibSSL.ssl_cipher_get_bits(cipher, pointerof(algorithm_bits))
+        {String.new(LibSSL.ssl_cipher_get_name(cipher)),
+         String.new(LibSSL.ssl_cipher_get_version(cipher)), effective_bits, algorithm_bits}
       end
 
       private def name_hash(entries : Array({String, String})) : Hash(String, String)

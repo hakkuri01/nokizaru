@@ -20,7 +20,7 @@ private class CannedProvider < Nokizaru::Subdom::Provider
     [] of String
   end
 
-  def run(host : String, pool : Nokizaru::Http::Pool, keys : Hash(String, String), timeout : Float64) : Nokizaru::Subdom::Outcome
+  def run(host : String, pool : Nokizaru::Http::Pool, keys : Hash(String, String), timeout : Float64, *, clock : Proc(Time::Instant) = -> { Time.instant }, deadline : Time::Instant? = nil) : Nokizaru::Subdom::Outcome
     count = @state == "healthy" ? @found.size : nil
     Nokizaru::Subdom::Outcome.new(@pname, @state, @found, elapsed_s: 0.5, result_count: count)
   end

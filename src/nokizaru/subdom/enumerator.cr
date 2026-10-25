@@ -47,17 +47,8 @@ module Nokizaru
       end
     end
 
-    # Runs the providers over a bounded fiber pool and collects their outcomes
-    # plus the scoped result set. Each provider gets a per-vendor timeout as its
-    # HTTP deadline; the slow public sources are capped shorter (VENDOR_CAPS).
-    #
-    # ponytail: the Ruby runner also wrapped each provider in Timeout.timeout
-    # and enforced one overall wall-clock budget with mid-flight cancellation.
-    # Here the per-request HTTP timeout bounds each provider and the worker cap
-    # bounds how many run at once, so the total is bounded without cancelling an
-    # in-flight fiber; a true overall-deadline cancel is deferred to the
-    # benchmarking pass. Complexity: O(providers) runs, at most WORKER_LIMIT in
-    # flight, each O(1) bounded requests.
+    # O(providers) dispatch through a fixed pool, joined before returning. Every
+    # request shares the scan deadline and its provider's shorter absolute cap.
     class Enumerator
       WORKER_LIMIT       =   10
       MIN_BUDGET         =  5.0
@@ -65,35 +56,45 @@ module Nokizaru
       VENDOR_DEFAULT_CAP = 12.0
       VENDOR_CAPS        = {"AnubisDB" => 10.0, "ThreatMiner" => 8.0, "crt.sh" => 8.0, "AlienVault" => 8.0, "Chaos" => 8.0}
 
-      def initialize(@providers : Array(Provider))
+      def initialize(@providers : Array(Provider), @clock : Proc(Time::Instant) = -> { Time.instant })
       end
 
       def run(host : String, pool : Http::Pool, keys : Hash(String, String), timeout : Float64, progress : ProgressReporter = ProgressReporter::NULL) : {Array(String), Array(Outcome)}
         return {[] of String, [] of Outcome} if @providers.empty?
 
-        vendor_default = {timeout.clamp(MIN_BUDGET, MAX_BUDGET), VENDOR_DEFAULT_CAP}.min
+        budget = timeout.clamp(MIN_BUDGET, MAX_BUDGET)
+        deadline = @clock.call + budget.seconds
+        vendor_default = {budget, VENDOR_DEFAULT_CAP}.min
         found = ResultSet.new(host)
         outcomes = Array(Outcome?).new(@providers.size, nil)
         concurrency = {WORKER_LIMIT, @providers.size}.min
-        slots = Channel(Nil).new(concurrency)
-        concurrency.times { slots.send(nil) }
-        waiter = WaitGroup.new(@providers.size)
+        cursor = Atomic(Int32).new(0)
+        waiter = WaitGroup.new(concurrency)
         done = Atomic(Int32).new(0)
 
-        @providers.each_with_index do |provider, index|
-          slots.receive
+        concurrency.times do
           spawn do
-            outcome = provider.run(host, pool, keys, vendor_timeout(provider.name, vendor_default))
-            found.add(outcome.names)
-            outcomes[index] = outcome
+            while (index = cursor.add(1)) < @providers.size
+              provider = @providers[index]
+              outcome = run_provider(provider, host, pool, keys, vendor_default: vendor_default, deadline: deadline)
+              found.add(outcome.names)
+              outcomes[index] = outcome
+              report(progress, done.add(1) + 1, found)
+            end
           ensure
-            slots.send(nil)
-            report(progress, done.add(1) + 1, found)
             waiter.done
           end
         end
         waiter.wait
         {found.sorted, outcomes.compact}
+      end
+
+      private def run_provider(provider : Provider, host : String, pool : Http::Pool, keys : Hash(String, String), *, vendor_default : Float64, deadline : Time::Instant) : Outcome
+        if @clock.call >= deadline
+          return Outcome.new(provider.name, STATUS_TIMEOUT, [] of String, "shared provider deadline exceeded before start", 0.0)
+        end
+
+        provider.run(host, pool, keys, vendor_timeout(provider.name, vendor_default), clock: @clock, deadline: deadline)
       end
 
       # Publishes "<completed>/<total> found <n>" as each provider finishes,

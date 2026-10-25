@@ -33,12 +33,20 @@ module Nokizaru
     # retry on a 429/5xx or a transport error, backing off 0.15*attempt up to
     # MAX_HTTP_RETRIES. Also follows same-scope redirects for resource fetches.
     # Complexity: O(1) requests per call (a fixed retry budget, a fixed redirect
-    # budget); no state grows with input.
+    # budget); retains at most one capped sitemap seed and one worker origin.
     class Fetcher
-      def initialize(@pool : Http::Pool)
+      property sitemap_seed : ResourceFetch? = nil
+      @previous_url : String? = nil
+
+      def initialize(@pool : Http::Pool, @worker_local : Bool = false)
       end
 
       def get(url : String, headers : ::HTTP::Headers, user_agent : String, timeout : Float64 = TIMEOUT) : Http::Result
+        if @worker_local
+          previous = @previous_url
+          @pool.shutdown if previous && !TargetIntel.same_origin?(previous, url)
+          @previous_url = url
+        end
         options = Http::Options.new(
           headers: build_headers(headers, user_agent),
           timeout_s: timeout,
@@ -54,6 +62,15 @@ module Nokizaru
           attempt += 1
         end
         result
+      end
+
+      # One bounded handoff from seed discovery to parsing, not a response cache
+      def take_sitemap(url : String) : ResourceFetch?
+        seed = @sitemap_seed
+        return nil unless seed && seed.effective_url == url
+
+        @sitemap_seed = nil
+        seed
       end
 
       # Follows same-scope redirects up to MAX_MAIN_REDIRECTS, dropping the

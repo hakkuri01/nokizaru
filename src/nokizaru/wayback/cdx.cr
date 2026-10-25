@@ -89,8 +89,8 @@ module Nokizaru
 
       # Fetches and parses one page, translating every failure mode into a reason
       # string rather than raising.
-      def fetch_page(fetcher : Fetcher, url : String, timeout : Float64) : Page
-        result = fetcher.get(url, timeout)
+      def fetch_page(fetcher : Fetcher, url : String, deadline : Time::Instant) : Page
+        result = fetcher.get(url, deadline)
         return Page.new(reason: result.error_kind.timeout? ? "timeout" : "request_failed") if result.error?
 
         status = result.status

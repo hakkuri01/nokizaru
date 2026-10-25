@@ -50,6 +50,22 @@ module Nokizaru
       end
     end
 
+    # Per-run state, never stored on the shared provider adapters
+    class Operation
+      getter names = [] of String
+
+      def initialize(@pool : Http::Pool, @deadline : Time::Instant, @clock : Proc(Time::Instant))
+      end
+
+      def execute(request : Request) : Http::Result
+        remaining = (@deadline - @clock.call).total_seconds
+        raise IO::TimeoutError.new("provider execution deadline exceeded") unless remaining > 0
+
+        options = Http::Options.new(headers: request.headers, timeout_s: remaining, follow_redirects: false, body: request.body)
+        @pool.request(request.method, request.url, options)
+      end
+    end
+
     # A subdomain source. Concrete providers supply a name, any required keys,
     # the request to make, and how to parse the response body into candidate
     # names. The base run() resolves keys (skipping when any is absent), executes
@@ -68,31 +84,32 @@ module Nokizaru
       # Runs the provider with `keys` already resolved by the enumerator.
       # Complexity: O(1) requests (fetch overrides may page a bounded count),
       # plus O(body) to parse.
-      def run(host : String, pool : Http::Pool, keys : Hash(String, String), timeout : Float64) : Outcome
-        started = Time.instant
+      def run(host : String, pool : Http::Pool, keys : Hash(String, String), timeout : Float64, *, clock : Proc(Time::Instant) = -> { Time.instant }, deadline : Time::Instant? = nil) : Outcome
+        started = clock.call
+        operation = Operation.new(pool, {started + timeout.seconds, deadline || started + timeout.seconds}.min, clock)
         begin
           mine = resolve_keys(keys)
-          return Outcome.new(name, STATUS_SKIPPED, [] of String, "API key not found!", elapsed(started)) if mine.nil?
+          return outcome(operation, STATUS_SKIPPED, "API key not found!", (clock.call - started)) if mine.nil?
 
-          names = fetch(host, pool, mine, timeout)
-          Outcome.new(name, STATUS_HEALTHY, names, elapsed_s: elapsed(started), result_count: names.size)
+          fetch(host, operation, mine)
+          outcome(operation, STATUS_HEALTHY, nil, clock.call - started)
         rescue ex : ProviderError
-          Outcome.new(name, error_status(ex), [] of String, ex.detail || ex.label, elapsed(started))
+          outcome(operation, error_status(ex), ex.detail || ex.label, clock.call - started)
         rescue IO::TimeoutError
-          Outcome.new(name, STATUS_TIMEOUT, [] of String, "provider execution deadline exceeded", elapsed(started))
+          outcome(operation, STATUS_TIMEOUT, "provider execution deadline exceeded", clock.call - started)
         rescue ex
-          Outcome.new(name, STATUS_ERROR, [] of String, ex.message || ex.class.name, elapsed(started))
+          outcome(operation, STATUS_ERROR, ex.message || ex.class.name, clock.call - started)
         end
       end
 
       # One request then parse; paginating providers override. Statuses in
       # empty_statuses are treated as a successful empty result (AnubisDB).
-      def fetch(host : String, pool : Http::Pool, keys : Hash(String, String), timeout : Float64) : Array(String)
-        result = execute(pool, build(host, keys), timeout)
-        return [] of String if empty_statuses.includes?(result.status)
+      def fetch(host : String, operation : Operation, keys : Hash(String, String)) : Nil
+        result = operation.execute(build(host, keys))
+        return if empty_statuses.includes?(result.status)
         raise ProviderError.new(status_label(result), failure_reason(result)) unless result.status == 200
 
-        parse(host, result.body || "")
+        operation.names.concat(parse(host, result.body || ""))
       end
 
       # Non-200 statuses that mean "no results" rather than an error.
@@ -106,12 +123,8 @@ module Nokizaru
         array ? array.compact_map(&.as_s?) : [] of String
       end
 
-      protected def execute(pool : Http::Pool, request : Request, timeout : Float64) : Http::Result
-        options = Http::Options.new(headers: request.headers, timeout_s: timeout, follow_redirects: false, body: request.body)
-        pool.request(request.method, request.url, options)
-      end
-
       protected def status_label(result : Http::Result) : String
+        return STATUS_TIMEOUT if result.error_kind.timeout?
         return STATUS_RATE_LIMITED if result.status == 429
 
         result.status.try(&.to_s) || "ERR"
@@ -150,8 +163,10 @@ module Nokizaru
         STATUS_ERROR
       end
 
-      private def elapsed(started : Time::Instant) : Float64
-        (Time.instant - started).total_seconds.round(4)
+      private def outcome(operation : Operation, status : String, reason : String?, elapsed : Time::Span) : Outcome
+        names = operation.names.uniq!
+        count = status == STATUS_HEALTHY || !names.empty? ? names.size : nil
+        Outcome.new(name, status, names, reason, elapsed.total_seconds.round(4), count)
       end
     end
   end

@@ -55,6 +55,45 @@ describe Nokizaru::Modules::DirectoryEnum do
     end
   end
 
+  it "uses the initial reflected redirect probes without runtime learning" do
+    wordlist = File.tempname("nok-dir-reflected", ".txt")
+    File.write(wordlist, "unseen\n")
+    probes = [] of String
+    handler = ->(context : ::HTTP::Server::Context) do
+      path = context.request.path
+      context.response.content_type = "text/html"
+      if path == "/unseen" || path.matches?(/\A\/[0-9a-f]{20}\z/)
+        probes << path unless path == "/unseen"
+        context.response.status_code = 302
+        context.response.headers["Location"] = "/missing#{path}"
+        context.response.print("<html><body>Missing #{path}</body></html>")
+      elsif path == "/admin"
+        context.response.print(ADMIN)
+      else
+        context.response.status_code = 404
+      end
+    end
+
+    begin
+      HttpTestServer.with_server(handler) do |base|
+        config = Nokizaru::Modules::DirectoryEnum::Config.new(wordlist: wordlist, threads: 1, timeout_s: 3.0)
+        result = Nokizaru::Modules::DirectoryEnum.collect(base, config)
+
+        probes.size.should eq(3)
+        probes.uniq.size.should eq(3)
+        # Only /admin and /unseen are sampleable, below the eight-sample promotion threshold
+        result.by_status["200"].should eq(["#{base}/admin"])
+        result.by_status["302"].should eq(["#{base}/unseen"])
+        result.stats.confidence_reasons["soft_404_signature_match"]?.should eq(1)
+        result.low_confidence_found.should eq(["#{base}/unseen"])
+        result.prioritized_found.should eq(["#{base}/admin"])
+        result.confirmed_found.should eq(["#{base}/admin"])
+      end
+    ensure
+      File.delete(wordlist) rescue nil
+    end
+  end
+
   it "stores the typed result on the run" do
     run = Nokizaru::RunState.new(Nokizaru::Meta.new(version: "1.0.0", target: "x", started_at: "t"))
     info = Nokizaru::DirRec::Target.new(original: "http://x", effective: "http://x", reanchored: false, reason: "")
@@ -92,5 +131,21 @@ describe "Nokizaru::Modules::DirectoryEnum.present" do
     text.should contain("45.2")
     text.should contain("Directories found")
     text.should contain("Low confidence")
+    text.should_not contain("Stopped early")
+    text.should_not contain("Response shape")
+  end
+
+  it "makes an adaptive early stop visible in normal output" do
+    info = Nokizaru::DirRec::Target.new("http://x/", "http://x/", false, "")
+    result = Nokizaru::DirRec::Result.new(info)
+    result.stats.stop_reason_display = "Uniform redirects or soft-404s detected"
+    result.stats.stop_status_code_shape = "302=320/320 (100.0%)"
+
+    text = present_capture { Nokizaru::Modules::DirectoryEnum.present(result) }
+
+    text.should contain("Stopped early")
+    text.should contain("Uniform redirects or soft-404s detected")
+    text.should contain("Response shape")
+    text.should contain("302=320/320 (100.0%)")
   end
 end

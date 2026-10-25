@@ -8,10 +8,6 @@ binary built from the standard library only: zero runtime shards, with its data
 embedded at compile time. Contributions are accepted through GitHub issues and
 pull requests, then reviewed by the maintainer.
 
-> Nokizaru is in the middle of a Ruby-to-Crystal rewrite. The Crystal source is
-> at the root (`src/`, `spec/`); the original Ruby tree is frozen under `archive/`
-> as a reference and is not accepted for changes.
-
 ## Maintainer Merge Policy
 
 - This repository integrates changes into `main` using **squash merges only**.
@@ -24,8 +20,8 @@ pull requests, then reviewed by the maintainer.
 - Do not include secrets, private target data, or non-public scan results in
   issues or PRs.
 - Do not submit code intended for unauthorized or illegal activity.
-- Do not edit `archive/`, and do not add a runtime shard: the shipped binary is
-  standard-library only (see `AGENTS.md`).
+- Do not add a runtime shard: the shipped binary is standard-library only (see
+  `AGENTS.md`).
 
 ## Contribution Flow
 
@@ -52,6 +48,32 @@ just verify                  # the canonical gate
 `just verify` runs, stopping at the first failure: `crystal tool format --check`,
 `bin/ameba`, `crystal spec`, `crystal tool unreachable --check`, and a release
 build. It never touches the network; test fixtures bind `127.0.0.1` only.
+
+### Nix
+
+On `aarch64-linux` or `x86_64-linux`, the root flake pins nixpkgs with Crystal
+1.21.1 and provides Crystal, shards, `just`, OpenSSL for TLS fixtures, and Ameba
+at the commit in `shard.lock`:
+
+```bash
+nix develop
+just verify
+exit
+nix build
+nix flake check
+```
+
+Entering the shell installs the Nix-built pinned linter into `bin/ameba`, so
+`just setup` is not needed. Nix may fetch inputs, toolchain binaries, and Ameba
+during setup; `just verify` and the sandboxed checks run offline. `nix flake check`
+runs the canonical gate plus the release package and CLI smoke tests (help,
+version, invalid invocation, config creation, and private key-store writes).
+`nix build` produces `result/bin/nokizaru`, with embedded data and no runtime
+shards; Nix manages its linked system libraries.
+
+After changing the Ameba pin in `shard.lock`, update its source hash in
+`flake.nix` and rerun the checks. To evaluate both supported architectures without
+building the non-native one, use `nix flake check --all-systems --no-build`.
 
 ## Coding Expectations
 
