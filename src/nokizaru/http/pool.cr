@@ -20,6 +20,10 @@ module Nokizaru
       getter max_redirects : Int32
       getter body : String?
       getter scope_check : Proc(String, String, Bool)?
+      # Per-request read timeout; nil uses the client's default READ_TIMEOUT. A
+      # slow provider (crt.sh) sets this so a single slow read is not killed by
+      # the global 15s cap before its own budget is spent.
+      getter read_timeout_s : Float64?
 
       def initialize(
         @headers : ::HTTP::Headers = ::HTTP::Headers.new,
@@ -29,11 +33,12 @@ module Nokizaru
         @max_redirects : Int32 = DEFAULT_MAX_REDIRECTS,
         @body : String? = nil,
         @scope_check : Proc(String, String, Bool)? = nil,
+        @read_timeout_s : Float64? = nil,
       )
       end
 
       def with_headers(headers : ::HTTP::Headers) : Options
-        Options.new(headers, @timeout_s, @verify_ssl, @follow_redirects, @max_redirects, @body, @scope_check)
+        Options.new(headers, @timeout_s, @verify_ssl, @follow_redirects, @max_redirects, @body, @scope_check, @read_timeout_s)
       end
     end
 
@@ -134,7 +139,7 @@ module Nokizaru
       private def perform_once(method : String, url : String, options : Options) : Result
         uri = URI.parse(url)
         client = client_for(uri, options.verify_ssl?)
-        client.request(method, request_target(uri), options.headers, options.timeout_s, options.body)
+        client.request(method, request_target(uri), options.headers, options.timeout_s, options.body, options.read_timeout_s)
       rescue error : ArgumentError
         Result.failure(ErrorKind::Other, error.message || "Invalid URL: #{url}")
       end

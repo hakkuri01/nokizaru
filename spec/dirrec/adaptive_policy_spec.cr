@@ -88,34 +88,55 @@ describe Nokizaru::DirRec::AdaptivePolicy do
     policy.stats.pressure_window_transport_ratio.should eq(0.0)
   end
 
-  it "does not turn thousands of sub-three-second responses into pressure windows" do
-    baseline = Nokizaru::DirRec::Baseline.new(200, content_type: "text/html", fingerprint: "wildcard")
-    sample = Nokizaru::DirRec::Sample.new(200, content_type: "text/html", fingerprint: "wildcard")
+  it "does not turn sub-three-second bursts into pressure windows" do
     now = Time.instant
-    policy = Nokizaru::DirRec::AdaptivePolicy.new(50, 10.0, baseline, clock: -> { now }, extensions: true)
+    policy = Nokizaru::DirRec::AdaptivePolicy.new(50, 10.0, nil, clock: -> { now }, extensions: true)
     context = adaptive_context
     4_000.times do
-      context.update!(200, sample, baseline)
-      policy.observe(200, nil, false, context.snapshot)
+      policy.observe(404, nil, false, context.snapshot)
     end
     policy.stopped?(4_000).should be_false
     policy.stats.pressure_events.should eq(0)
     policy.stats.low_yield_events.should eq(0)
     policy.stats.extension_phase_enabled?.should be_true
+  end
 
-    3.times do |window|
-      now += 3.seconds
-      count = window == 0 ? 1 : 80
-      count.times do
-        context.update!(200, sample, baseline)
-        policy.observe(200, nil, false, context.snapshot)
-      end
-      policy.stopped?(4_000 + 1 + window * 80).should eq(window == 2)
+  it "adapts to a block wall and stops once blocking persists despite the adaptation" do
+    baseline = Nokizaru::DirRec::Baseline.new(403, content_type: "text/html", fingerprint: "block")
+    sample = Nokizaru::DirRec::Sample.new(403, content_type: "text/html", fingerprint: "block")
+    now = Time.instant
+    policy = Nokizaru::DirRec::AdaptivePolicy.new(50, 10.0, baseline, clock: -> { now }, extensions: true)
+    context = adaptive_context
+    120.times do
+      context.update!(403, sample, baseline)
+      policy.observe(403, nil, false, context.snapshot)
     end
-    policy.stats.stop_reason.should eq("marginal directory value collapsed under dominant target shape")
-    policy.stats.stop_status_code_shape.should eq("200=4161/4161 (100.0%)")
-    policy.stats.low_yield_events.should eq(3)
-    policy.stats.pressure_window_prioritized_gain.should eq(0)
+    policy.stopped?(120).should be_false
+    policy.stats.adversary_adaptation.not_nil!.should contain("cut concurrency")
+
+    120.times do
+      context.update!(403, sample, baseline)
+      policy.observe(403, nil, false, context.snapshot)
+    end
+    policy.stopped?(240).should be_true
+    policy.stats.adversary_persisted?.should be_true
+    policy.stats.stop_reason.not_nil!.should contain("persisted")
+  end
+
+  it "stops a soft-404 wildcard once further probing yields nothing new" do
+    baseline = Nokizaru::DirRec::Baseline.new(200, content_type: "text/html", fingerprint: "wildcard")
+    sample = Nokizaru::DirRec::Sample.new(200, content_type: "text/html", fingerprint: "wildcard")
+    now = Time.instant
+    policy = Nokizaru::DirRec::AdaptivePolicy.new(50, 10.0, baseline, clock: -> { now }, extensions: true)
+    context = adaptive_context
+    240.times do
+      context.update!(200, sample, baseline)
+      policy.observe(200, nil, false, context.snapshot)
+    end
+    policy.stopped?(240).should be_true
+    policy.stats.adversary_persisted?.should be_true
+    policy.stats.adversary_adaptation.not_nil!.should contain("wildcard")
+    policy.stats.stop_reason.not_nil!.should contain("wildcard")
   end
 
   it "normalizes ratios by the accumulated window count and keeps the 80-candidate floor" do

@@ -98,9 +98,10 @@ module Nokizaru
         pool : Http::Pool = Http::Pool.new,
         request_headers : ::HTTP::Headers = ::HTTP::Headers.new,
         profile : TargetIntel::Profile? = nil,
+        wayback_seeds : Array(String) = [] of String,
       ) : Result
         resolved = profile || compute_profile(target, pool, request_headers)
-        Nokizaru::Crawler::Engine.new(pool, request_headers).run(target, resolved)
+        Nokizaru::Crawler::Engine.new(pool, request_headers, wayback_seeds).run(target, resolved)
       end
 
       # When the runner has not already profiled the target (via Headers), fetch

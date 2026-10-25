@@ -61,7 +61,11 @@ module Nokizaru
         remaining = (@deadline - @clock.call).total_seconds
         raise IO::TimeoutError.new("provider execution deadline exceeded") unless remaining > 0
 
-        options = Http::Options.new(headers: request.headers, timeout_s: remaining, follow_redirects: false, body: request.body)
+        # Align the per-read timeout with this provider's own budget so a slow but
+        # legitimate source (crt.sh) is not cut off by the global 15s read cap
+        # before its vendor budget is spent; the deadline still bounds the total.
+        options = Http::Options.new(headers: request.headers, timeout_s: remaining,
+          follow_redirects: false, body: request.body, read_timeout_s: remaining)
         @pool.request(request.method, request.url, options)
       end
     end

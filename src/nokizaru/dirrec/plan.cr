@@ -28,8 +28,13 @@ module Nokizaru
 
       # Complexity: O(S) to build seeds, O(W log W) to prioritize the words (one
       # sort), O(E) for extensions; the per-word key is computed once each.
-      def build(normalized_target : String, words : Array(String), filext : String, crawler_paths : Array(String)) : UrlPlan
-        seeds = build_seed_urls(normalized_target, crawler_paths)
+      # context_paths are extra seeds from cross-module feeds (wayback history,
+      # JS routes). extra_seed_urls are absolute URLs on a different origin (an
+      # alt web port the port scan found), added to the seed set as-is.
+      def build(normalized_target : String, words : Array(String), filext : String, crawler_paths : Array(String), context_paths : Array(String) = [] of String, extra_seed_urls : Array(String) = [] of String) : UrlPlan
+        seeds = build_seed_urls(normalized_target, crawler_paths, context_paths)
+        seeds.concat(extra_seed_urls)
+        seeds.uniq!
         prioritized = prioritized_words(normalized_target, words, seeds)
         extensions = file_extensions(filext)
         total = seeds.size + prioritized.size + prioritized.size * extensions.size
@@ -43,9 +48,9 @@ module Nokizaru
         value.split(',').map(&.strip).reject(&.empty?)
       end
 
-      private def build_seed_urls(target : String, crawler_paths : Array(String)) : Array(String)
+      private def build_seed_urls(target : String, crawler_paths : Array(String), context_paths : Array(String)) : Array(String)
         base = Fields.normalize_target_base(target)
-        paths = HIGH_SIGNAL_PATHS + crawler_paths
+        paths = HIGH_SIGNAL_PATHS + crawler_paths + context_paths
         paths.uniq!
         seeds = paths.map { |path| PathHelpers.join_url(base, path) }
         seeds.uniq!

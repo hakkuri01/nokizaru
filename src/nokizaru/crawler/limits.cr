@@ -10,10 +10,12 @@ module Nokizaru
     TIMEOUT          = 10.0
     MAX_HTTP_RETRIES =    2
 
-    # The primary user-agent and the browser-shaped fallback tried after a bot
-    # block (403/405/429). active_user_agent records which one reached the page.
-    USER_AGENT          = "Nokizaru"
-    FALLBACK_USER_AGENT = "Mozilla/5.0 (compatible; Nokizaru/1.0; +https://github.com/hakkuri01/nokizaru)"
+    # The primary user-agent and the fallback tried after a bot block
+    # (403/405/429). Both are real browser strings (never our own tool name,
+    # which gets WAF-blocked); the retry varies the fingerprint Chrome->Firefox.
+    # active_user_agent records which one reached the page.
+    USER_AGENT          = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    FALLBACK_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:126.0) Gecko/20100101 Firefox/126.0"
 
     # How many sitemap/JS fetches run at once.
     MAX_FETCH_WORKERS = 8

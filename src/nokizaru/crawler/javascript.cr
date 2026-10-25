@@ -19,6 +19,12 @@ module Nokizaru
       # absolute URL embedded in a script body.
       URL_PATTERN = /https?:\/\/[\w\-.~:\/?#\[\]@!$&'()*+,;=%]+/
 
+      # A root-relative endpoint path in a quoted script literal, e.g.
+      # fetch("/api/v1/users"). The first char after the leading slash must be a
+      # word char so "//cdn" (protocol-relative) and "/./" noise do not match.
+      # Character classes only, no backtracking construct: safe on untrusted JS.
+      REL_PATTERN = /["'`](\/[A-Za-z0-9_][\w\-.~\/]*)/
+
       # Trailing string/structure punctuation to trim off a captured URL.
       TRAILING = /["'`,;)\]]+\z/
 
@@ -74,8 +80,27 @@ module Nokizaru
         result = fetcher.get(js_url, headers, USER_AGENT)
         return [] of String unless success_2xx?(result)
 
-        found = (result.body || "").scan(URL_PATTERN).map(&.[0])
-        normalize_extracted(found, page_url)
+        body = result.body || ""
+        absolute = body.scan(URL_PATTERN).map(&.[0])
+        normalize_extracted(absolute + relative_endpoints(body, page_url), page_url)
+      rescue
+        [] of String
+      end
+
+      # Resolves root-relative endpoint paths found in a script body against the
+      # page origin, so fetch("/api/v1/users") becomes a scoped absolute URL that
+      # normalize_extracted can scope-check and dedupe alongside the absolute
+      # hits. O(bytes) over the already-capped body.
+      private def relative_endpoints(body : String, page_url : String) : Array(String)
+        base = URI.parse(UrlRules.base_url_for(page_url))
+        resolved = [] of String
+        body.scan(REL_PATTERN) do |match|
+          path = match[1]?
+          next if path.nil?
+
+          resolved << base.resolve(path).to_s
+        end
+        resolved
       rescue
         [] of String
       end

@@ -63,10 +63,13 @@ describe Nokizaru::CLI::Workflow do
       ENV["NK_WAPPALYZER_KEY"] = "env-only-wappalyzer-credential"
       pool = ArchitecturePool.new
       workflow.architecture(plan, pool)
-      pool.requests.size.should eq(1)
-      url, headers = pool.requests.first
-      headers["x-api-key"].should eq("env-only-wappalyzer-credential")
-      url.should eq(Nokizaru::Modules::Arch.request_url("https://example.com/path"))
+      pool.requests.size.should eq(2)
+      page = pool.requests.find! { |(url, _)| !url.includes?("wappalyzer") }
+      wapp = pool.requests.find! { |(url, _)| url.includes?("wappalyzer") }
+      page[1]["x-api-key"]?.should be_nil # the page fetch never carries the key
+      page[0].should eq("https://example.com/path")
+      wapp[1]["x-api-key"].should eq("env-only-wappalyzer-credential")
+      wapp[0].should eq(Nokizaru::Modules::Arch.request_url("https://example.com/path"))
       plan.state.modules.arch.not_nil!.status.should eq("ok")
     end
     json = JSON.parse(reports["json"])

@@ -41,10 +41,55 @@ describe Nokizaru::Modules::Arch do
   end
 
   describe ".collect" do
-    it "skips without an API key and makes no request" do
+    it "fingerprints locally with no API key and makes no Wappalyzer request" do
       pool = Nokizaru::Http::Pool.new
-      Nokizaru::Modules::Arch.collect("https://example.com", pool, nil, 10.0).status.should eq("skipped_no_key")
-      Nokizaru::Modules::Arch.collect("https://example.com", pool, "   ", 10.0).status.should eq("skipped_no_key")
+      wp = Nokizaru::Http::Result.ok(200, HTTP::Headers{"Server" => "Apache", "X-Powered-By" => "PHP/8.2"},
+        %(<html><head><meta name="generator" content="WordPress 6.4.2"></head><body><link href="/wp-content/themes/x/s.css"></body></html>), false)
+      transport = ->(_url : String, _options : Nokizaru::Http::Options) { wp }
+      result = Nokizaru::Modules::Arch.collect("https://example.com", pool, nil, 10.0, transport)
+      result.status.should eq("ok")
+      names = result.technologies.map(&.name)
+      names.should contain("WordPress")
+      names.should contain("PHP")
+      names.should contain("Apache")
+    end
+
+    it "merges local fingerprint with Wappalyzer results when a key is present" do
+      pool = Nokizaru::Http::Pool.new
+      transport = ->(url : String, _options : Nokizaru::Http::Options) {
+        if url.includes?("wappalyzer")
+          Nokizaru::Http::Result.ok(200, HTTP::Headers.new, WAPPALYZER_BODY, false)
+        else
+          Nokizaru::Http::Result.ok(200, HTTP::Headers{"Server" => "Apache"}, "<html></html>", false)
+        end
+      }
+      names = Nokizaru::Modules::Arch.collect("https://example.com", pool, "key", 10.0, transport).technologies.map(&.name)
+      names.should contain("Apache") # local fingerprint
+      names.should contain("nginx")  # from the Wappalyzer response
+      names.should contain("React")
+    end
+
+    it "reports an error when the page cannot be fetched and no key is set" do
+      pool = Nokizaru::Http::Pool.new
+      transport = ->(_url : String, _options : Nokizaru::Http::Options) { Nokizaru::Http::Result.failure(Nokizaru::Http::ErrorKind::Timeout, "x") }
+      Nokizaru::Modules::Arch.collect("https://example.com", pool, nil, 10.0, transport).status.should eq("error")
+    end
+  end
+
+  describe Nokizaru::Modules::Arch::Fingerprint do
+    it "detects a stack from headers and body with no network" do
+      result = Nokizaru::Http::Result.ok(200,
+        HTTP::Headers{"Server" => "nginx/1.25.3", "X-Powered-By" => "PHP/8.2.1"},
+        %(<meta name="generator" content="WordPress 6.4.2"> /wp-content/themes/x), false)
+      names = Nokizaru::Modules::Arch::Fingerprint.detect(result).map(&.name)
+      names.should contain("Nginx")
+      names.should contain("PHP")
+      names.should contain("WordPress")
+    end
+
+    it "detects a framework from a Set-Cookie name" do
+      result = Nokizaru::Http::Result.ok(200, HTTP::Headers{"Set-Cookie" => "JSESSIONID=abc; Path=/"}, "", false)
+      Nokizaru::Modules::Arch::Fingerprint.detect(result).map(&.name).should contain("Java")
     end
   end
 

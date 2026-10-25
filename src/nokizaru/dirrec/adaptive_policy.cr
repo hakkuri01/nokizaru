@@ -6,6 +6,9 @@ module Nokizaru::DirRec
   class AdaptivePolicy
     WINDOW     = 80
     MIN_WINDOW = 3.seconds
+    # Requests between wall checks: one collapsed stride triggers adaptation, a
+    # second collapsed stride (after adapting) means the adversary persisted.
+    WALL_STRIDE = 120
 
     getter stats = Stats.new
     getter timeout_s : Float64
@@ -36,7 +39,12 @@ module Nokizaru::DirRec
     @window_throttled = 0
     @window_candidates = 0
     @window_gain = 0
-    @marginal_streak = 0
+    @gain_total = 0
+    @candidate_total = 0
+    @candidates_at_check = 0
+    @wall_adapted = false
+    @wall_check_at = 0
+    @gain_at_check = 0
     @successful = 0
     @concurrency_pressure = false
     @concurrency_clean = true
@@ -62,17 +70,30 @@ module Nokizaru::DirRec
     end
 
     def observe(status : Int32?, error_kind : String?, prioritized : Bool, snap : ConfidenceContext::Snapshot) : Nil
+      accumulate(status, error_kind, prioritized)
+      evaluate(snap) if @window_count >= WINDOW
+      track_wall(snap)
+    end
+
+    private def accumulate(status : Int32?, error_kind : String?, prioritized : Bool) : Nil
       @count += 1
       @window_count += 1
-      @statuses[status] += 1 if status
-      @successful += 1 if status
+      if status
+        @statuses[status] += 1
+        @successful += 1
+      end
       @window_errors += 1 if error_kind
       @window_transport += 1 if {"timeout", "connection", "tls"}.includes?(error_kind)
       @window_timeouts += 1 if error_kind == "timeout"
       @window_throttled += 1 if status == 429 || status == 503
-      @window_candidates += 1 if status && FINDING_CANDIDATE_STATUSES.includes?(status)
-      @window_gain += 1 if prioritized
-      evaluate(snap) if @window_count >= WINDOW
+      if status && FINDING_CANDIDATE_STATUSES.includes?(status)
+        @window_candidates += 1
+        @candidate_total += 1
+      end
+      if prioritized
+        @window_gain += 1
+        @gain_total += 1
+      end
     end
 
     private def evaluate(snap : ConfidenceContext::Snapshot) : Nil
@@ -145,17 +166,85 @@ module Nokizaru::DirRec
       lower_timeout(Math.max(@timeout_s * 0.6, 1.5))
     end
 
+    # Extension-phase tuning only: a dominant low-information shape (or hostile
+    # transport) turns off the extension pass so we do not multiply dead probes.
+    # The old marginal-value stop here is replaced by the request-strided wall
+    # tracker (track_wall), which adapts before it quits and reports what it tried.
     private def tune_shape(snap : ConfidenceContext::Snapshot, low : Bool) : Nil
-      dominant = snap.soft_404_dominance_ratio >= 0.92 || snap.redirect_cluster_dominance_ratio >= 0.92
-      @marginal_streak = dominant && low && @window_gain <= 1 ? @marginal_streak + 1 : 0
-      if @extensions
-        enabled = !(dominant && low) && @stats.mode != "hostile"
-        @stats.extension_phase_enabled = enabled
-        @stats.extension_phase_reason = enabled ? "useful extension phase" : "dominant low-information target shape or hostile transport"
-      end
-      return unless @count >= 320 && @marginal_streak >= 3
+      return unless @extensions
 
-      stop("marginal directory value collapsed under dominant target shape", "Uniform redirects or soft-404s detected")
+      dominant = snap.soft_404_dominance_ratio >= 0.92 || snap.redirect_cluster_dominance_ratio >= 0.92
+      enabled = !(dominant && low) && @stats.mode != "hostile"
+      @stats.extension_phase_enabled = enabled
+      @stats.extension_phase_reason = enabled ? "useful extension phase" : "dominant low-information target shape or hostile transport"
+    end
+
+    # The adversarial lifecycle (classify -> adapt -> verify -> quit). Checked once
+    # per stride of requests, not per time window, so it works against a fast
+    # target where no 3-second window ever closes. A collapsed stride (a dominant
+    # wall yielding at most one new finding) first triggers adaptation: a block
+    # wall gets concurrency cut and the rate lowered, a wildcard is just noted.
+    # If the next stride is still collapsed, the adversary persisted despite the
+    # adaptation, so the scan stops and the finding reports exactly what was tried.
+    private def track_wall(snap : ConfidenceContext::Snapshot) : Nil
+      return if @stats.stop_reason
+      stride = @count - @wall_check_at
+      return if stride < WALL_STRIDE
+
+      # The wall is only CURRENTLY active if this stride was actually full of
+      # candidate responses (a receded wall leaves honest 404s, which are not
+      # candidates), yielded no new finding, and the shape is dominant.
+      candidate_share = (@candidate_total - @candidates_at_check) / stride.to_f
+      collapsed = wall_dominant?(snap) && candidate_share >= 0.5 && (@gain_total - @gain_at_check) <= 1
+      if collapsed && @wall_adapted
+        stop_wall_persisted
+      elsif collapsed
+        adapt_to_wall
+      else
+        @wall_adapted = false
+      end
+      @wall_check_at = @count
+      @gain_at_check = @gain_total
+      @candidates_at_check = @candidate_total
+    end
+
+    private def wall_dominant?(snap : ConfidenceContext::Snapshot) : Bool
+      snap.soft_404_dominance_ratio >= 0.92 || snap.redirect_cluster_dominance_ratio >= 0.92
+    end
+
+    private def adapt_to_wall : Nil
+      @wall_adapted = true
+      if block_wall?
+        downgrade("hostile")
+        @stats.adversary_adaptation = "cut concurrency from #{@maximum} to #{@stats.adaptive_concurrency} and lowered the request rate"
+      else
+        @stats.adversary_adaptation = "recognized a catch-all/soft-404 wildcard and suppressed matching responses"
+      end
+    end
+
+    private def block_wall? : Bool
+      top = @statuses.max_by? { |(_code, count)| count }
+      return false if top.nil?
+
+      {403, 406, 429, 503}.includes?(top[0])
+    end
+
+    private def stop_wall_persisted : Nil
+      @stats.adversary_persisted = true
+      if block_wall?
+        stop("defensive wall persisted after adaptation", "Blocking persisted after the scan slowed down")
+      elsif redirect_wall?
+        stop("uniform redirect wall; directory enumeration exhausted", "Uniform redirects: further probing yields no new paths")
+      else
+        stop("soft-404 wildcard; directory enumeration exhausted", "Soft-404 wildcard: further probing yields no new paths")
+      end
+    end
+
+    private def redirect_wall? : Bool
+      top = @statuses.max_by? { |(_code, count)| count }
+      return false if top.nil?
+
+      REDIRECT_STATUSES.includes?(top[0])
     end
 
     private def downgrade(mode : String) : Nil

@@ -30,6 +30,11 @@ module Nokizaru
       @[JSON::Field(emit_null: true)]
       property stop_reason_display : String? = nil
 
+      property? adversary_persisted : Bool = false
+
+      @[JSON::Field(emit_null: true)]
+      property adversary_adaptation : String? = nil
+
       property budget_seconds : Float64 = 0.0
       property max_requests : Int32 = 0
 

@@ -1,6 +1,7 @@
 require "json"
 require "uri"
 require "../http/pool"
+require "../arch/fingerprint"
 require "../ui"
 
 module Nokizaru
@@ -84,8 +85,24 @@ module Nokizaru
         "#{tech.name}#{suffix}"
       end
 
-      def collect(target : String, pool : Http::Pool, api_key : String?, timeout_s : Float64) : Result
-        return Result.skipped if api_key.nil? || api_key.strip.empty?
+      def collect(target : String, pool : Http::Pool, api_key : String?, timeout_s : Float64, transport : Proc(String, Http::Options, Http::Result)? = nil) : Result
+        page = fetch(target, page_options(timeout_s), pool, transport)
+        local = page.success? ? Fingerprint.detect(page) : [] of Technology
+        remote = wappalyzer(target, pool, api_key, timeout_s, transport)
+        merged = Parser.dedupe(local + remote)
+        return Result.ok(merged) unless merged.empty?
+        return Result.error if page.error?
+
+        Result.ok([] of Technology)
+      rescue
+        Result.error
+      end
+
+      # Queries the Wappalyzer lookup API when a key is present, returning its
+      # technologies; with no key it is a no-op so local fingerprinting stands
+      # alone. A non-200 or transport error yields nothing (local still applies).
+      private def wappalyzer(target : String, pool : Http::Pool, api_key : String?, timeout_s : Float64, transport : Proc(String, Http::Options, Http::Result)?) : Array(Technology)
+        return [] of Technology if api_key.nil? || api_key.strip.empty?
 
         options = Http::Options.new(
           headers: ::HTTP::Headers{"x-api-key" => api_key},
@@ -93,15 +110,20 @@ module Nokizaru
           verify_ssl: true,
           follow_redirects: true,
         )
-        result = pool.get(request_url(target), options)
-        return Result.error if result.error? || result.status != 200
+        result = fetch(request_url(target), options, pool, transport)
+        return [] of Technology if result.error? || result.status != 200
 
-        body = result.body || ""
-        return Result.ok([] of Technology) if body.empty?
-
-        Result.ok(Parser.parse(body))
+        Parser.parse(result.body || "")
       rescue
-        Result.error
+        [] of Technology
+      end
+
+      private def page_options(timeout_s : Float64) : Http::Options
+        Http::Options.new(timeout_s: {timeout_s, MAX_TIMEOUT}.min, verify_ssl: true, follow_redirects: true)
+      end
+
+      private def fetch(url : String, options : Http::Options, pool : Http::Pool, transport : Proc(String, Http::Options, Http::Result)?) : Http::Result
+        transport ? transport.call(url, options) : pool.get(url, options)
       end
 
       # The lookup URL carrying the target as the `urls` query parameter.
@@ -160,7 +182,10 @@ module Nokizaru
           field.nil? ? "" : (field.as_s? || field.raw.to_s)
         end
 
-        private def dedupe(technologies : Array(Technology)) : Array(Technology)
+        # Merges duplicate technologies by name (case-insensitive), unioning
+        # categories and keeping the first non-empty version. Public so local
+        # fingerprinting and the Wappalyzer parse can be deduped together.
+        def dedupe(technologies : Array(Technology)) : Array(Technology)
           table = {} of String => Technology
           technologies.each { |entry| merge_entry(table, entry) }
           table.values.sort_by!(&.name.downcase)

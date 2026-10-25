@@ -47,6 +47,37 @@ describe Nokizaru::Modules::Subdomains do
       providers_health.first.result_count.should eq(3)
     end
 
+    it "seeds subdomains from in-scope certificate SANs (sslinfo -> sub)" do
+      cert = Nokizaru::Modules::SSLInfo::CertInfo.new(
+        "TLSv1.3", nil, {} of String => String, {} of String => String, 3,
+        "01", "t", "t", ["vpn-legacy.example.com", "*.example.com", "other.net", "example.com"])
+      ssl = Nokizaru::Modules::SSLInfo::Result.new(cert)
+      providers = [CannedProvider.new("A", ["www.example.com"])] of Nokizaru::Subdom::Provider
+
+      result = Nokizaru::Modules::Subdomains.collect("example.com", 10.0, Nokizaru::Http::Pool.new, providers, sslinfo: ssl)
+
+      result.subdomains.should contain("vpn-legacy.example.com") # cert-SAN-only sub surfaced
+      result.subdomains.should contain("www.example.com")        # provider sub
+      result.subdomains.should_not contain("other.net")          # out of scope dropped
+      result.subdomains.should_not contain("example.com")        # the apex is not a subdomain
+    end
+
+    it "seeds subdomains from DNS NS/MX/CNAME records (dns -> sub)" do
+      dns = Nokizaru::Modules::DnsEnumeration::Result.new({
+        "NS"    => ["ns1.example.com", "ns2.example.com"],
+        "MX"    => ["10 mail.example.com"],
+        "CNAME" => ["assets.example.com"],
+        "A"     => ["1.2.3.4"],
+      })
+      providers = [CannedProvider.new("A", ["www.example.com"])] of Nokizaru::Subdom::Provider
+
+      result = Nokizaru::Modules::Subdomains.collect("example.com", 10.0, Nokizaru::Http::Pool.new, providers, dns: dns)
+
+      %w[ns1.example.com ns2.example.com mail.example.com assets.example.com www.example.com].each do |name|
+        result.subdomains.should contain(name)
+      end
+    end
+
     it "reports per-provider progress to the rail" do
       providers = [
         CannedProvider.new("A", ["www.example.com"]),

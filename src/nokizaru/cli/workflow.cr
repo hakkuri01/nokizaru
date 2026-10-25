@@ -96,9 +96,11 @@ module Nokizaru::CLI
       Plan.new(info, Runtime.initial_run_state(info, started), ProgressRail.new(enabled), started, enabled)
     end
 
-    # Runs each enabled module in MODULE_ORDER against a shared HTTP pool,
-    # storing each typed result on the run and rendering it. Skips honor the
-    # Ruby rules (port scan needs an IP, subdomains need a non-IP host).
+    # Runs each enabled module against a shared HTTP pool, storing each typed
+    # result on the run and rendering it. Wayback runs before the crawler and
+    # directory scan so its historic URLs can seed them (the modules inform each
+    # other rather than running in isolation). Skips honor the rules (port scan
+    # needs an IP, subdomains need a non-IP host).
     def execute!(plan : Plan) : Nil
       pool = Http::Pool.new
       begin
@@ -109,9 +111,9 @@ module Nokizaru::CLI
         run_subdomains(plan)
         run_arch(plan, pool)
         run_portscan(plan)
+        run_wayback(plan, pool)
         run_crawler(plan, pool)
         run_directory(plan)
-        run_wayback(plan, pool)
       ensure
         pool.shutdown
       end
@@ -218,7 +220,7 @@ module Nokizaru::CLI
       return skip(plan, "sub", "Skipping Sub-Domain Enumeration : Not Supported for private addresses") if info.private_ip?
 
       result = run_guarded(plan, "sub", module_timeout_s(info, "sub")) do
-        Modules::Subdomains.collect(info.hostname, info.timeout, progress: plan.rail.reporter("sub"))
+        Modules::Subdomains.collect(info.hostname, info.timeout, progress: plan.rail.reporter("sub"), sslinfo: plan.state.modules.sslinfo, dns: plan.state.modules.dns)
       end
       return if result.nil?
 
@@ -256,7 +258,7 @@ module Nokizaru::CLI
     private def run_crawler(plan : Plan, pool : Http::Pool) : Nil
       info = plan.info
       result = run_module(plan, "crawl", module_timeout_s(info, "crawl")) do
-        Modules::Crawler.collect(info.target, pool, info.request_headers, header_profile(plan.state))
+        Modules::Crawler.collect(info.target, pool, info.request_headers, header_profile(plan.state), wayback_seeds(plan.state))
       end
       return if result.nil?
 
@@ -439,6 +441,10 @@ module Nokizaru::CLI
       state.modules.headers.try(&.target_profile)
     end
 
+    private def wayback_seeds(state : RunState) : Array(String)
+      state.modules.wayback.try(&.urls) || [] of String
+    end
+
     private def directory_config(info : TargetInfo, state : RunState) : Modules::DirectoryEnum::Config
       Modules::DirectoryEnum::Config.new(
         wordlist: info.wordlist,
@@ -451,6 +457,9 @@ module Nokizaru::CLI
         crawler: state.modules.crawler,
         headers: state.modules.headers,
         profile: header_profile(state),
+        wayback: state.modules.wayback,
+        arch: state.modules.arch,
+        portscan: state.modules.portscan,
       )
     end
 

@@ -4,11 +4,13 @@ require "../subdom/enumerator"
 require "../http/pool"
 require "../keystore"
 require "../progress_reporter"
+require "./sslinfo"
+require "./dns"
 require "../ui"
 
 module Nokizaru
   module Modules
-    # Subdomain enumeration across 15 sources (Nokizaru::Modules::Subdomains),
+    # Subdomain enumeration across 16 sources (Nokizaru::Modules::Subdomains),
     # driving the Nokizaru::Subdom engine. Ports modules/subdom.rb. The JSON
     # result matches the Ruby run hash (parity): the sorted unique subdomains
     # plus a provider_health summary. The event-capture/replay machinery that
@@ -52,9 +54,12 @@ module Nokizaru
         end
       end
 
-      # Ruby job order, also the provider health order; quarantined adapters stay out
+      # Job order, also the provider health order. crt.sh sits with the other CT
+      # source (CertSpotter); it was quarantined during its 2024-25 backend
+      # rebuild and is restored now that the endpoint has stabilized. Only
+      # ThreatMiner remains quarantined (chronic outage, no successor endpoint).
       PROVIDERS = [
-        Subdom::AnubisDB.new, Subdom::CertSpotter.new, Subdom::HackerTarget.new,
+        Subdom::AnubisDB.new, Subdom::CertSpotter.new, Subdom::CrtSh.new, Subdom::HackerTarget.new,
         Subdom::UrlScan.new, Subdom::AlienVault.new, Subdom::BeVigil.new,
         Subdom::FacebookCT.new, Subdom::VirusTotal.new, Subdom::Shodan.new, Subdom::BinaryEdge.new,
         Subdom::ZoomEye.new, Subdom::Netlas.new, Subdom::Hunter.new, Subdom::Chaos.new, Subdom::Censys.new,
@@ -78,10 +83,51 @@ module Nokizaru
         UI.row(:info, TOTAL_LABEL, found.size.to_s, label_width: width)
       end
 
-      def collect(host : String, timeout : Float64, pool : Http::Pool = Http::Pool.new, providers : Array(Subdom::Provider) = PROVIDERS, progress : ProgressReporter = ProgressReporter::NULL) : Result
+      def collect(host : String, timeout : Float64, pool : Http::Pool = Http::Pool.new, providers : Array(Subdom::Provider) = PROVIDERS, progress : ProgressReporter = ProgressReporter::NULL, sslinfo : Modules::SSLInfo::Result? = nil, dns : Modules::DnsEnumeration::Result? = nil) : Result
         keys = resolve_keys(providers)
-        names, outcomes = Subdom::Enumerator.new(providers).run(host, pool, keys, timeout, progress)
+        seeds = certificate_seeds(sslinfo, host)
+        seeds.concat(dns_seeds(dns, host))
+        seeds.uniq!
+        names, outcomes = Subdom::Enumerator.new(providers).run(host, pool, keys, timeout, progress, seeds)
         Result.new(names, build_health(outcomes))
+      end
+
+      # Subdomains harvested from the DNS zone: NS, CNAME, and MX hostnames are
+      # real infrastructure subdomains that certificate transparency and the
+      # passive providers often miss. MX values carry a preference prefix, so the
+      # hostname is the last token. Only strict subdomains of the target host are
+      # kept (the enumerator re-applies scope). dns runs before this module.
+      private def dns_seeds(dns : Modules::DnsEnumeration::Result?, host : String) : Array(String)
+        return [] of String if dns.nil?
+
+        records = dns.records
+        names = [] of String
+        names.concat(records["NS"]? || [] of String)
+        names.concat(records["CNAME"]? || [] of String)
+        names.concat((records["MX"]? || [] of String).compact_map(&.split.last?))
+        suffix = ".#{host}"
+        names.compact_map do |raw|
+          cleaned = raw.strip.rchop('.')
+          cleaned if cleaned.ends_with?(suffix)
+        end.uniq!
+      end
+
+      # Subdomains harvested from the TLS certificate's SAN list (certificate
+      # transparency is the passive source subfinder-class tools lean on). Only
+      # strict subdomains of the target host are kept; a wildcard SAN is reduced to
+      # its base, and the apex and out-of-scope names are dropped (the enumerator
+      # re-applies scope, this keeps the seed set tight). sslinfo runs before this
+      # module, so its result is already on the run state.
+      private def certificate_seeds(sslinfo : Modules::SSLInfo::Result?, host : String) : Array(String)
+        cert = sslinfo.try(&.cert)
+        return [] of String if cert.nil?
+
+        suffix = ".#{host}"
+        names = cert.subject_alt_name || [] of String
+        names.compact_map do |name|
+          cleaned = name.lchop("*.").strip.rchop('.')
+          cleaned if cleaned.ends_with?(suffix)
+        end.uniq!
       end
 
       # Resolves every provider's keys once (env first, then the key store), so

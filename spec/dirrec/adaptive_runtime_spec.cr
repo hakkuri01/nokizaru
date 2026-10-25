@@ -118,7 +118,7 @@ describe "Directory adaptive admission" do
     runtime.peak_in_flight.should eq(50)
   end
 
-  it "stops uniform low-value redirects from current summaries and drains bounded work" do
+  it "adapts to a uniform redirect wall and stops once it persists" do
     response = Nokizaru::Http::Result.ok(302, HTTP::Headers{"Location" => "/"}, "", false)
     sample = Nokizaru::DirRec::Sampler.sample(response, "http://fixture/random").not_nil!
     baseline = Nokizaru::DirRec::Soft404.build_from_samples([sample, sample, sample])
@@ -134,14 +134,11 @@ describe "Directory adaptive admission" do
     runtime = Nokizaru::DirRec::Runtime.new("http://fixture", "http://fixture", baseline,
       Nokizaru::DirRec::ConfidenceContext.new(nil, nil), policy: policy, transport: transport)
     runtime.run(Nokizaru::DirRec::LazyQueue.new(adaptive_plan(2000, ["txt"]), "http://fixture"), 10, Nokizaru::Http::Options.new)
-    calls.should be >= 320
-    calls.should be <= 329
+    calls.should be <= 280
     runtime.count.should eq(calls)
-    policy.stats.stop_reason.should eq("marginal directory value collapsed under dominant target shape")
+    policy.stats.adversary_persisted?.should be_true
+    policy.stats.stop_reason.not_nil!.should contain("redirect")
     policy.stats.extension_phase_enabled?.should be_false
-    policy.stats.pressure_window_prioritized_gain.should eq(0)
-    policy.stats.low_yield_events.should eq(4)
-    policy.stats.pressure_events.should eq(4)
   end
 
   it "dispatches extensions reenabled by the last in-flight base response" do

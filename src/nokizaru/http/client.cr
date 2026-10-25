@@ -3,7 +3,11 @@ require "../version"
 
 module Nokizaru
   module Http
-    USER_AGENT = "Nokizaru/#{Nokizaru::VERSION} (+https://github.com/hakkuri01)"
+    # Always present as a mainstream browser. A self-identifying agent string
+    # (our own tool name) gets 403'd by Cloudflare-fronted and WAF'd targets and
+    # passive APIs, so every request looks like Chrome on macOS by default; the
+    # crawler varies to a Firefox string on a bot-block retry (crawler/limits).
+    USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
     # Accept-Encoding is deliberately omitted: `compress = true` manages it and
     # decompresses the body, which is what lets the cap bind the decoded size.
@@ -38,15 +42,16 @@ module Nokizaru
         @client = build_client
       end
 
-      def request(method : String, path : String, headers : ::HTTP::Headers, timeout_s : Float64, body : String? = nil) : Result
-        @mutex.synchronize { perform(method, path, headers, timeout_s, body) }
+      def request(method : String, path : String, headers : ::HTTP::Headers, timeout_s : Float64, body : String? = nil, read_timeout_s : Float64? = nil) : Result
+        @mutex.synchronize { perform(method, path, headers, timeout_s, body, read_timeout_s) }
       end
 
       def close : Nil
         @mutex.synchronize { close_client }
       end
 
-      private def perform(method : String, path : String, headers : ::HTTP::Headers, timeout_s : Float64, body : String?) : Result
+      private def perform(method : String, path : String, headers : ::HTTP::Headers, timeout_s : Float64, body : String?, read_timeout_s : Float64?) : Result
+        @client.read_timeout = (read_timeout_s || READ_TIMEOUT).seconds
         done = Channel(Nil).new(1)
         # fired is read in the rescue to tell a deadline close from a peer close.
         # Atomic is a struct, so it stays a closured local shared with the inline

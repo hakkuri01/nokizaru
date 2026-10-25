@@ -5,7 +5,7 @@ require "../../src/nokizaru/modules/subdomains"
 describe Nokizaru::Subdom::Enumerator do
   it "pins the exact ordered default jobs and never dispatches quarantined sources" do
     providers = Nokizaru::Modules::Subdomains::PROVIDERS
-    expected = %w[AnubisDB CertSpotter HackerTarget UrlScan AlienVault BeVigil Facebook VirusTotal Shodan BinaryEdge ZoomEye Netlas Hunter Chaos Censys]
+    expected = %w[AnubisDB CertSpotter crt.sh HackerTarget UrlScan AlienVault BeVigil Facebook VirusTotal Shodan BinaryEdge ZoomEye Netlas Hunter Chaos Censys]
     providers.map(&.name).should eq(expected)
     keys = {} of String => String
     providers.each { |provider| provider.key_names.each { |(name, _env)| keys[name] = "key" } }
@@ -14,10 +14,9 @@ describe Nokizaru::Subdom::Enumerator do
     _, outcomes = Nokizaru::Subdom::Enumerator.new(providers).run("example.com", pool, keys, 30.0)
 
     outcomes.map(&.name).should eq(expected)
-    pool.requests.size.should eq(15)
+    pool.requests.size.should eq(16)
     pool.requests.each do |request|
       request.url.should_not contain("threatminer.org")
-      request.url.should_not contain("crt.sh")
     end
   end
 
@@ -61,15 +60,34 @@ describe Nokizaru::Subdom::Enumerator do
     pool.requests.size.should eq(1)
   end
 
-  it "retains the quarantined adapters for explicit use only" do
-    [Nokizaru::Subdom::ThreatMiner.new, Nokizaru::Subdom::CrtSh.new].each do |provider|
-      body = provider.name == "ThreatMiner" ? %q({"results":["a.example.com"]}) : %q([{"name_value":"a.example.com"}])
-      pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) { subdom_response(200, body) })
-      result = provider.run("example.com", pool, {} of String => String, 5.0)
-      result.status.should eq("healthy")
-      result.names.should eq(["a.example.com"])
-      pool.requests.size.should eq(1)
-    end
+  it "retains ThreatMiner as a quarantined adapter for explicit use only" do
+    provider = Nokizaru::Subdom::ThreatMiner.new
+    pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) { subdom_response(200, %q({"results":["a.example.com"]})) })
+    result = provider.run("example.com", pool, {} of String => String, 5.0)
+    result.status.should eq("healthy")
+    result.names.should eq(["a.example.com"])
+    pool.requests.size.should eq(1)
+  end
+
+  it "runs crt.sh by default and retries its gateway 5xx within the deadline" do
+    calls = 0
+    pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) {
+      calls += 1
+      calls < 3 ? subdom_response(503) : subdom_response(200, %q([{"name_value":"a.example.com\nb.example.com"}]))
+    })
+
+    result = Nokizaru::Subdom::CrtSh.new.run("example.com", pool, {} of String => String, 30.0)
+
+    result.status.should eq("healthy")
+    result.names.sort.should eq(["a.example.com", "b.example.com"])
+    pool.requests.size.should eq(3) # two 503s retried, third 200 succeeds
+  end
+
+  it "stops crt.sh retrying after the bounded attempt cap on persistent 5xx" do
+    pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) { subdom_response(502) })
+    result = Nokizaru::Subdom::CrtSh.new.run("example.com", pool, {} of String => String, 30.0)
+    result.status.should eq("error")
+    pool.requests.size.should eq(Nokizaru::Subdom::CrtSh::MAX_ATTEMPTS)
   end
 
   it "gives later single-request providers only the scan time remaining" do

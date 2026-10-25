@@ -79,13 +79,36 @@ module Nokizaru
     end
 
     # https://crt.sh - public CT log search; name_value may be newline-joined.
+    # The single highest-value keyless source, but slow and prone to gateway
+    # load-shedding, so it carries a browser-ish UA and retries a bounded number
+    # of times on 5xx within the shared deadline.
     class CrtSh < Provider
+      RETRYABLE    = {502, 503, 504}
+      MAX_ATTEMPTS = 3
+
       def name : String
         "crt.sh"
       end
 
       def build(host : String, keys : Hash(String, String)) : Request
-        Request.new("https://crt.sh/?dNSName=%25.#{host}&output=json")
+        headers = ::HTTP::Headers{"Accept" => "application/json"}
+        Request.new("https://crt.sh/?dNSName=%25.#{host}&output=json", headers: headers)
+      end
+
+      # Retries on gateway 5xx (crt.sh load-sheds under query build); no wall
+      # sleep so the retry count is deterministic in specs, and each execute
+      # re-checks the shared deadline so retries cannot outrun the scan budget.
+      def fetch(host : String, operation : Operation, keys : Hash(String, String)) : Nil
+        attempts = 0
+        loop do
+          attempts += 1
+          result = operation.execute(build(host, keys))
+          if result.status == 200
+            operation.names.concat(parse(host, result.body || ""))
+            return
+          end
+          raise ProviderError.new(status_label(result), failure_reason(result)) unless RETRYABLE.includes?(result.status) && attempts < MAX_ATTEMPTS
+        end
       end
 
       def parse(host : String, body : String) : Array(String)
@@ -252,7 +275,7 @@ module Nokizaru
       end
 
       def build(host : String, keys : Hash(String, String)) : Request
-        headers = ::HTTP::Headers{"API-KEY" => keys["zoomeye"], "User-Agent" => "curl"}
+        headers = ::HTTP::Headers{"API-KEY" => keys["zoomeye"]}
         Request.new(with_params("https://api.zoomeye.hk/domain/search", [{"q", host}, {"type", "0"}]), headers: headers)
       end
 

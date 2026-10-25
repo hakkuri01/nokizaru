@@ -16,6 +16,9 @@ require "../wordlist"
 require "../progress_reporter"
 require "./crawler"
 require "./headers"
+require "./wayback"
+require "./arch"
+require "./portscan"
 require "../ui"
 
 module Nokizaru
@@ -38,6 +41,9 @@ module Nokizaru
         getter timeout_s : Float64
         getter crawler : Modules::Crawler::Result?
         getter headers : Modules::Headers::Result?
+        getter wayback : Modules::Wayback::Result?
+        getter arch : Modules::Arch::Result?
+        getter portscan : Modules::PortScan::Result?
         getter profile : TargetIntel::Profile?
 
         def initialize(
@@ -50,6 +56,9 @@ module Nokizaru
           @timeout_s : Float64 = Nokizaru::DirRec::DEFAULT_TIMEOUT,
           @crawler : Modules::Crawler::Result? = nil,
           @headers : Modules::Headers::Result? = nil,
+          @wayback : Modules::Wayback::Result? = nil,
+          @arch : Modules::Arch::Result? = nil,
+          @portscan : Modules::PortScan::Result? = nil,
           @profile : TargetIntel::Profile? = nil,
         )
         end
@@ -113,7 +122,10 @@ module Nokizaru
         scan_target = anchor.effective_target
         normalized = DirRec::Fields.normalize_target_base(scan_target)
 
-        plan = DirRec::Plan.build(normalized, Nokizaru::Wordlist.load(config.wordlist), config.extensions, crawler_seed_paths(config.crawler, normalized))
+        context = wayback_seed_paths(config.wayback, normalized)
+        context.concat(tech_seed_paths(config.arch))
+        context.uniq!
+        plan = DirRec::Plan.build(normalized, Nokizaru::Wordlist.load(config.wordlist), config.extensions, crawler_seed_paths(config.crawler, normalized), context, alt_origin_seeds(config.portscan, scan_target))
         concurrency = Math.max(config.threads, 1)
         extension_enabled = !plan.extensions.empty?
         baseline = build_initial_baseline(normalized, config)
@@ -164,9 +176,75 @@ module Nokizaru
         return [] of String if crawler.nil?
 
         base_uri = URI.parse(base_target)
-        paths = crawler_seed_urls(crawler).compact_map { |url| crawler_seed_path(url, base_uri) }
+        paths = crawler_seed_urls(crawler).compact_map { |url| seed_path_in_scope(url, base_uri) }
         paths.uniq!
         paths
+      end
+
+      # Historic URLs from the Wayback module become directory-scan seeds: a path
+      # the site served before but that is no longer linked, in the sitemap, or in
+      # the wordlist is reachable only because wayback remembered it. Same-scope
+      # and relativized exactly like the crawler feed.
+      private def wayback_seed_paths(wayback : Modules::Wayback::Result?, base_target : String) : Array(String)
+        return [] of String if wayback.nil?
+
+        base_uri = URI.parse(base_target)
+        paths = wayback.urls.compact_map { |url| seed_path_in_scope(url, base_uri) }
+        paths.uniq!
+        paths
+      end
+
+      # Curated, tech-specific paths injected when architecture fingerprinting
+      # identified the stack: a WordPress target gets its wp-* surface probed even
+      # when those paths are absent from the generic wordlist. This is the
+      # directory scanner using the arch module's conclusion rather than brute
+      # force, the "well-informed" half of an all-in-one snapshot.
+      TECH_PATHS = {
+        "wordpress" => %w[/wp-admin/ /wp-login.php /wp-content/ /wp-includes/ /wp-json/ /wp-json/wp/v2/users /xmlrpc.php /wp-config.php /wp-content/debug.log /wp-content/uploads/],
+        "drupal"    => %w[/user/login /admin /core/CHANGELOG.txt /CHANGELOG.txt /sites/default/files/ /sites/default/settings.php],
+        "joomla"    => %w[/administrator/ /configuration.php /administrator/manifests/files/joomla.xml],
+        "php"       => %w[/phpinfo.php /info.php],
+      }
+
+      private def tech_seed_paths(arch : Modules::Arch::Result?) : Array(String)
+        return [] of String if arch.nil?
+
+        paths = [] of String
+        arch.technologies.each do |tech|
+          name = tech.name.downcase
+          TECH_PATHS.each { |needle, list| paths.concat(list) if name.includes?(needle) }
+        end
+        paths.uniq!
+        paths
+      end
+
+      # When the port scan found a web service on a non-standard port (8080, 8443,
+      # ...), probe that origin too: an app on an alternate port is a common
+      # recon pivot that a target-root-only scan misses. The scanner's own
+      # http/tls hints pick the ports and scheme; each origin contributes its
+      # root and the high-signal paths as absolute seeds, same-host so in scope.
+      private def alt_origin_seeds(portscan : Modules::PortScan::Result?, scan_target : String) : Array(String)
+        return [] of String if portscan.nil?
+
+        uri = URI.parse(scan_target)
+        host = uri.host
+        return [] of String if host.nil? || host.empty?
+
+        seeds = [] of String
+        portscan.ports.each do |record|
+          next unless alt_web_port?(record)
+
+          base = "#{record.tls_likely? ? "https" : "http"}://#{host}:#{record.port}"
+          seeds << "#{base}/"
+          DirRec::HIGH_SIGNAL_PATHS.each { |path| seeds << "#{base}#{path}" }
+        end
+        seeds.uniq!
+        seeds
+      end
+
+      private def alt_web_port?(record : Nokizaru::Portscan::PortRecord) : Bool
+        record.state == "open" && record.port != 80 && record.port != 443 &&
+          (record.http_likely? || record.tls_likely?)
       end
 
       private def crawler_seed_urls(crawler : Modules::Crawler::Result) : Array(String)
@@ -179,7 +257,7 @@ module Nokizaru
         urls
       end
 
-      private def crawler_seed_path(url : String, base_uri : URI) : String?
+      private def seed_path_in_scope(url : String, base_uri : URI) : String?
         uri = URI.parse(url)
         return nil unless TargetIntel.same_scope_host?(base_uri.host || "", uri.host || "")
 

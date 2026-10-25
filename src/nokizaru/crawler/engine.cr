@@ -20,7 +20,9 @@ module Nokizaru
     # worth of work: the page is parsed once, every collection is capped, and the
     # budget bounds the deep crawl.
     class Engine
-      def initialize(@pool : Http::Pool, @request_headers : ::HTTP::Headers)
+      WAYBACK_SEED_CAP = 10
+
+      def initialize(@pool : Http::Pool, @request_headers : ::HTTP::Headers, @wayback_seeds : Array(String) = [] of String)
         @fetcher = Fetcher.new(@pool)
         @budget = Budget.new
       end
@@ -62,6 +64,7 @@ module Nokizaru
         counts = surface_of(result)
         @budget.apply(counts)
         populate_deep_links(result, page_url, headers, counts)
+        populate_wayback_seeds(result, page_url, headers)
 
         result.high_signal_urls = Statistics.high_signal(result)
         result.stats = Statistics.calculate(result, @budget.crawl_mode, @budget.notes.dup)
@@ -97,6 +100,39 @@ module Nokizaru
           js: result.js_links.size,
           robots: result.robots_links.size,
         )
+      end
+
+      # Historic URLs from the Wayback module are crawled as extra same-scope
+      # seeds: a page the site served before but no longer links is fetched here,
+      # confirmed live, and its own links extracted and merged, so the crawl
+      # reaches surface the current link graph has dropped. Bounded by a small
+      # seed cap and the shared budget; same-scope only (no off-site fetches).
+      private def populate_wayback_seeds(result : Result, page_url : String, headers : ::HTTP::Headers) : Nil
+        return if @wayback_seeds.empty?
+
+        scope_host = URI.parse(page_url).host || ""
+        @wayback_seeds.first(WAYBACK_SEED_CAP).each do |url|
+          next unless same_scope_seed?(url, scope_host)
+
+          fetch = @fetcher.fetch_following(url, headers)
+          next unless fetch.success?
+
+          live = fetch.effective_url
+          result.internal_links << live unless result.internal_links.includes?(live)
+          body = fetch.result.try(&.body)
+          next if body.nil?
+
+          links = Links.new(@fetcher, headers, @budget).extract(XML.parse_html(body), live, UrlRules.base_url_for(live))
+          result.internal_links.concat(links.internal_links)
+        end
+        result.internal_links.uniq!
+      end
+
+      private def same_scope_seed?(url : String, scope_host : String) : Bool
+        host = URI.parse(url).host
+        !host.nil? && TargetIntel.same_scope_host?(scope_host, host)
+      rescue
+        false
       end
 
       private def apply_fetch_envelope(result : Result, status : FetchStatus) : Nil
