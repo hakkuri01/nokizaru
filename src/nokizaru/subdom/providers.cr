@@ -203,6 +203,13 @@ module Nokizaru
         "Wayback"
       end
 
+      # Excluded from the health summary: the Internet Archive throttles this
+      # service aggressively server-side, so its frequent timeouts reflect their
+      # load management, not our module's health. It still enriches the results.
+      def report_health? : Bool
+        false
+      end
+
       def build(host : String, keys : Hash(String, String)) : Request
         Request.new("http://web.archive.org/cdx/search/cdx?url=*.#{host}/*&output=txt&fl=original&collapse=urlkey")
       end

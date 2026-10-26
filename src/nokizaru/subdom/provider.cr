@@ -92,6 +92,14 @@ module Nokizaru
         [] of {String, String}
       end
 
+      # Whether this source counts toward the provider-health summary. A source
+      # whose flakiness is known to be server-side (Wayback: the Internet Archive
+      # now throttles aggressively, by their own account) still contributes names
+      # but is a poor signal of the module's health, so it opts out.
+      def report_health? : Bool
+        true
+      end
+
       # Runs the provider with `keys` already resolved by the enumerator.
       # Complexity: O(1) requests (fetch overrides may page a bounded count),
       # plus O(body) to parse.

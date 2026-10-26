@@ -5,11 +5,15 @@ require "../../src/nokizaru/context"
 # Returns a canned outcome without any network, so the enumerator's scope/dedup
 # and the module's health aggregation can be tested offline.
 private class CannedProvider < Nokizaru::Subdom::Provider
-  def initialize(@pname : String, @found : Array(String), @state : String = "healthy")
+  def initialize(@pname : String, @found : Array(String), @state : String = "healthy", @health : Bool = true)
   end
 
   def name : String
     @pname
+  end
+
+  def report_health? : Bool
+    @health
   end
 
   def build(host : String, keys : Hash(String, String)) : Nokizaru::Subdom::Request
@@ -45,6 +49,20 @@ describe Nokizaru::Modules::Subdomains do
       providers_health.map(&.name).should eq(["A", "B"])
       providers_health.first.status.should eq("healthy")
       providers_health.first.result_count.should eq(3)
+    end
+
+    it "excludes a health-opted-out source (Wayback) from the summary but keeps its names" do
+      providers = [
+        CannedProvider.new("A", ["www.example.com"]),
+        CannedProvider.new("Wayback", ["archive.example.com"], "timeout", health: false),
+      ] of Nokizaru::Subdom::Provider
+
+      result = Nokizaru::Modules::Subdomains.collect("example.com", 10.0, Nokizaru::Http::Pool.new, providers)
+
+      result.subdomains.should contain("archive.example.com")       # still enriches results
+      result.provider_health.providers.map(&.name).should eq(["A"]) # not in the health report
+      result.provider_health.counts["total"].should eq(1)
+      result.provider_health.counts["timeout"]?.should be_nil # its timeout does not count
     end
 
     it "seeds subdomains from in-scope certificate SANs (sslinfo -> sub)" do

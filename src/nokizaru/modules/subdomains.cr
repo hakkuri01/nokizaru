@@ -88,7 +88,12 @@ module Nokizaru
         seeds.concat(dns_seeds(dns, host))
         seeds.uniq!
         names, outcomes = Subdom::Enumerator.new(providers).run(host, pool, keys, timeout, progress, seeds)
-        Result.new(names, build_health(outcomes))
+        # Sources that opt out of health reporting (Wayback) still contribute
+        # names but are left out of the summary so their server-side flakiness
+        # does not misrepresent the module's health.
+        silent = providers.reject(&.report_health?).map(&.name)
+        reported = outcomes.reject { |outcome| silent.includes?(outcome.name) }
+        Result.new(names, build_health(reported))
       end
 
       # Subdomains harvested from the DNS zone: NS, CNAME, and MX hostnames are
