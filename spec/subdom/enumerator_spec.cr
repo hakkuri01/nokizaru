@@ -8,7 +8,7 @@ EMPTY_PG = ->(_host : String, _remaining : Float64) { [] of String }
 
 describe Nokizaru::Subdom::Enumerator do
   it "pins the exact ordered default jobs and never dispatches quarantined sources" do
-    expected = %w[AnubisDB CertSpotter crt.sh HackerTarget UrlScan AlienVault BeVigil Facebook VirusTotal Shodan BinaryEdge ZoomEye Netlas Hunter Chaos Censys]
+    expected = %w[AnubisDB CertSpotter crt.sh Digitorus HackerTarget RapidDNS UrlScan Wayback AlienVault BeVigil VirusTotal Shodan Chaos Censys SecurityTrails GitHub GitLab]
     Nokizaru::Modules::Subdomains::PROVIDERS.map(&.name).should eq(expected)
     # network-safe equivalent for the run: crt.sh with Postgres stubbed empty
     providers = Nokizaru::Modules::Subdomains::PROVIDERS.map do |provider|
@@ -21,10 +21,7 @@ describe Nokizaru::Subdom::Enumerator do
     _, outcomes = Nokizaru::Subdom::Enumerator.new(providers).run("example.com", pool, keys, 30.0)
 
     outcomes.map(&.name).should eq(expected)
-    pool.requests.size.should eq(16)
-    pool.requests.each do |request|
-      request.url.should_not contain("threatminer.org")
-    end
+    pool.requests.size.should eq(17)
   end
 
   it "runs independent calls on a bounded pool and joins all workers" do
@@ -64,15 +61,6 @@ describe Nokizaru::Subdom::Enumerator do
     outcomes.last.reason.should eq("shared provider deadline exceeded before start")
     names.should eq(["a.example.com"])
     Fiber.yield
-    pool.requests.size.should eq(1)
-  end
-
-  it "retains ThreatMiner as a quarantined adapter for explicit use only" do
-    provider = Nokizaru::Subdom::ThreatMiner.new
-    pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) { subdom_response(200, %q({"results":["a.example.com"]})) })
-    result = provider.run("example.com", pool, {} of String => String, 5.0)
-    result.status.should eq("healthy")
-    result.names.should eq(["a.example.com"])
     pool.requests.size.should eq(1)
   end
 

@@ -58,7 +58,7 @@ module Nokizaru
       # crt.sh is slow (its backend can take 15-30s) but the highest-value
       # keyless source, so it gets a longer per-provider cap than the default;
       # it still shares the overall scan deadline and runs concurrently.
-      VENDOR_CAPS = {"AnubisDB" => 10.0, "ThreatMiner" => 8.0, "crt.sh" => 25.0, "AlienVault" => 8.0, "Chaos" => 8.0}
+      VENDOR_CAPS = {"AnubisDB" => 10.0, "crt.sh" => 25.0, "AlienVault" => 8.0, "Chaos" => 8.0}
 
       def initialize(@providers : Array(Provider), @clock : Proc(Time::Instant) = -> { Time.instant })
       end

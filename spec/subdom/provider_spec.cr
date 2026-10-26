@@ -106,16 +106,34 @@ describe Nokizaru::Subdom::Provider do
       Nokizaru::Subdom::Censys.new.parse("example.com", body).should eq(["a.example.com"])
     end
 
-    it "Hunter raises on an application-level error code" do
-      expect_raises(Nokizaru::Subdom::ProviderError) do
-        Nokizaru::Subdom::Hunter.new.parse("example.com", %q({"code":401,"message":"invalid key"}))
-      end
+    it "SecurityTrails qualifies labels with the host" do
+      Nokizaru::Subdom::SecurityTrails.new.parse("example.com", %q({"subdomains":["www","mail"]})).should eq(["www.example.com", "mail.example.com"])
+    end
+
+    it "extracts in-scope hosts from arbitrary text (Wayback URLs)" do
+      body = "http://a.example.com/x\nhttps://b.example.com:443/y\nhttp://evil.com/example.com\n"
+      Nokizaru::Subdom::WaybackArchive.new.parse("example.com", body).sort.should eq(["a.example.com", "b.example.com"])
+    end
+
+    it "extracts hosts mentioned in source code (GitHub match text)" do
+      body = %q({"items":[{"text_matches":[{"fragment":"host: api.example.com and cdn.example.com"}]}]})
+      Nokizaru::Subdom::Github.new.parse("example.com", body).sort.should eq(["api.example.com", "cdn.example.com"])
     end
   end
 
   describe "request building" do
     it "HackerTarget puts the host in the q parameter" do
       Nokizaru::Subdom::HackerTarget.new.build("example.com", {} of String => String).url.should contain("q=example.com")
+    end
+
+    it "SecurityTrails carries the APIKEY header" do
+      request = Nokizaru::Subdom::SecurityTrails.new.build("example.com", {"securitytrails" => "k"})
+      request.headers["APIKEY"].should eq("k")
+    end
+
+    it "GitHub authorizes with a token" do
+      request = Nokizaru::Subdom::Github.new.build("example.com", {"github" => "tok"})
+      request.headers["Authorization"].should eq("token tok")
     end
 
     it "Censys starts with an empty cursor" do

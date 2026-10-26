@@ -10,7 +10,7 @@ require "../ui"
 
 module Nokizaru
   module Modules
-    # Subdomain enumeration across 16 sources (Nokizaru::Modules::Subdomains),
+    # Subdomain enumeration across a curated 17-source set (Nokizaru::Modules::Subdomains),
     # driving the Nokizaru::Subdom engine. Ports modules/subdom.rb. The JSON
     # result matches the Ruby run hash (parity): the sorted unique subdomains
     # plus a provider_health summary. The event-capture/replay machinery that
@@ -54,15 +54,14 @@ module Nokizaru
         end
       end
 
-      # Job order, also the provider health order. crt.sh sits with the other CT
-      # source (CertSpotter); it was quarantined during its 2024-25 backend
-      # rebuild and is restored now that the endpoint has stabilized. Only
-      # ThreatMiner remains quarantined (chronic outage, no successor endpoint).
+      # Job order, also the provider health order: a trusted keyless core (CT,
+      # passive DNS, URL-derived) then key-enriched sources that self-skip without
+      # a key. Curated, not exhaustive: the mature providers, not every source.
       PROVIDERS = [
-        Subdom::AnubisDB.new, Subdom::CertSpotter.new, Subdom::CrtSh.new, Subdom::HackerTarget.new,
-        Subdom::UrlScan.new, Subdom::AlienVault.new, Subdom::BeVigil.new,
-        Subdom::FacebookCT.new, Subdom::VirusTotal.new, Subdom::Shodan.new, Subdom::BinaryEdge.new,
-        Subdom::ZoomEye.new, Subdom::Netlas.new, Subdom::Hunter.new, Subdom::Chaos.new, Subdom::Censys.new,
+        Subdom::AnubisDB.new, Subdom::CertSpotter.new, Subdom::CrtSh.new, Subdom::Digitorus.new,
+        Subdom::HackerTarget.new, Subdom::RapidDNS.new, Subdom::UrlScan.new, Subdom::WaybackArchive.new,
+        Subdom::AlienVault.new, Subdom::BeVigil.new, Subdom::VirusTotal.new, Subdom::Shodan.new,
+        Subdom::Chaos.new, Subdom::Censys.new, Subdom::SecurityTrails.new, Subdom::Github.new, Subdom::Gitlab.new,
       ] of Subdom::Provider
 
       TOTAL_LABEL = "Total unique subdomains found"

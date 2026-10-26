@@ -1,5 +1,6 @@
 require "uri"
 require "json"
+require "set"
 require "../http/pool"
 
 module Nokizaru
@@ -39,8 +40,8 @@ module Nokizaru
     end
 
     # Raised when a provider's API answered with a non-success status, or an
-    # application-level error (e.g. Hunter's JSON `code`). label is the status
-    # token, detail the human reason.
+    # application-level error (a JSON error code in a 200 body). label is the
+    # status token, detail the human reason.
     class ProviderError < Exception
       getter label : String
       getter detail : String?
@@ -131,6 +132,16 @@ module Nokizaru
       protected def as_strings(value : JSON::Any?) : Array(String)
         array = value.try(&.as_a?)
         array ? array.compact_map(&.as_s?) : [] of String
+      end
+
+      # Pulls target hostnames out of arbitrary text (HTML, source code, URL
+      # lists): every label chain ending in ".host". Scope and charset are
+      # re-checked downstream by ResultSet. Host-anchored and character-class only
+      # (no lookaround/backreference), so it stays linear on untrusted bodies.
+      protected def hosts_in(text : String, host : String) : Array(String)
+        seen = Set(String).new
+        text.scan(/[a-zA-Z0-9][a-zA-Z0-9._\-]*\.#{Regex.escape(host)}/i) { |match| seen << match[0].downcase }
+        seen.to_a
       end
 
       protected def status_label(result : Http::Result) : String
