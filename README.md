@@ -85,8 +85,25 @@ Nokizaru queries a curated set of mature, reliable sources rather than every
 source in existence. The keyless core runs out of the box; key-enriched sources
 run only when their key is present, and a missing key skips just that source.
 
-- **Keyless core:** crt.sh, AnubisDB, CertSpotter, Digitorus, HackerTarget, RapidDNS, UrlScan, Wayback.
-- **Key-enriched:** AlienVault, BeVigil, VirusTotal, Shodan, Chaos, Censys, SecurityTrails, GitHub, GitLab.
+| Provider | Source | API key |
+| --- | --- | --- |
+| crt.sh | Certificate Transparency (Postgres) | none |
+| AnubisDB | Passive DNS | none |
+| CertSpotter | Certificate Transparency | none |
+| Digitorus | Certificate Transparency | none |
+| HackerTarget | Passive DNS | none |
+| RapidDNS | Passive DNS | none |
+| UrlScan | URL / scan search | none |
+| Wayback | Archived URLs | none |
+| AlienVault | Passive DNS (OTX) | `NK_ALIENVAULT_KEY` |
+| BeVigil | Mobile-app OSINT | `NK_BEVIGIL_KEY` |
+| VirusTotal | Passive DNS | `NK_VT_KEY` |
+| Shodan | Internet scan | `NK_SHODAN_KEY` |
+| Chaos | ProjectDiscovery DNS | `NK_CHAOS_KEY` |
+| Censys | Certificate search | `NK_CENSYS_API_ID` + `NK_CENSYS_API_SECRET` |
+| SecurityTrails | DNS dataset | `NK_SECURITYTRAILS_KEY` |
+| GitHub | Public code search | `NK_GITHUB_TOKEN` |
+| GitLab | Public code search | `NK_GITLAB_TOKEN` |
 
 crt.sh is queried over its certificate-transparency Postgres backend
 (`crt.sh:5432`) for reliable, complete results, falling back to its HTTP endpoint
