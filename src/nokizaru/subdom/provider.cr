@@ -57,6 +57,12 @@ module Nokizaru
       def initialize(@pool : Http::Pool, @deadline : Time::Instant, @clock : Proc(Time::Instant))
       end
 
+      # Seconds left before the shared deadline; a non-HTTP path (crt.sh Postgres)
+      # uses it to bound its own connect and reads.
+      def remaining : Float64
+        (@deadline - @clock.call).total_seconds
+      end
+
       def execute(request : Request) : Http::Result
         remaining = (@deadline - @clock.call).total_seconds
         raise IO::TimeoutError.new("provider execution deadline exceeded") unless remaining > 0

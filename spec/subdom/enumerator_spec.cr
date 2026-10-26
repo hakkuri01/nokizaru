@@ -2,11 +2,18 @@ require "../spec_helper"
 require "../support/subdom_transport"
 require "../../src/nokizaru/modules/subdomains"
 
+# crt.sh tries Postgres first; a stub that returns empty makes it fall to HTTP
+# so specs exercise the HTTP path without ever opening a socket to crt.sh:5432.
+EMPTY_PG = ->(_host : String, _remaining : Float64) { [] of String }
+
 describe Nokizaru::Subdom::Enumerator do
   it "pins the exact ordered default jobs and never dispatches quarantined sources" do
-    providers = Nokizaru::Modules::Subdomains::PROVIDERS
     expected = %w[AnubisDB CertSpotter crt.sh HackerTarget UrlScan AlienVault BeVigil Facebook VirusTotal Shodan BinaryEdge ZoomEye Netlas Hunter Chaos Censys]
-    providers.map(&.name).should eq(expected)
+    Nokizaru::Modules::Subdomains::PROVIDERS.map(&.name).should eq(expected)
+    # network-safe equivalent for the run: crt.sh with Postgres stubbed empty
+    providers = Nokizaru::Modules::Subdomains::PROVIDERS.map do |provider|
+      provider.name == "crt.sh" ? Nokizaru::Subdom::CrtSh.new(EMPTY_PG).as(Nokizaru::Subdom::Provider) : provider
+    end
     keys = {} of String => String
     providers.each { |provider| provider.key_names.each { |(name, _env)| keys[name] = "key" } }
     pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) { subdom_response(429) })
@@ -69,23 +76,34 @@ describe Nokizaru::Subdom::Enumerator do
     pool.requests.size.should eq(1)
   end
 
-  it "runs crt.sh by default and retries its gateway 5xx within the deadline" do
+  it "falls back to HTTP and retries gateway 5xx when Postgres yields nothing" do
     calls = 0
     pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) {
       calls += 1
       calls < 3 ? subdom_response(503) : subdom_response(200, %q([{"name_value":"a.example.com\nb.example.com"}]))
     })
 
-    result = Nokizaru::Subdom::CrtSh.new.run("example.com", pool, {} of String => String, 30.0)
+    result = Nokizaru::Subdom::CrtSh.new(EMPTY_PG).run("example.com", pool, {} of String => String, 30.0)
 
     result.status.should eq("healthy")
     result.names.sort.should eq(["a.example.com", "b.example.com"])
     pool.requests.size.should eq(3) # two 503s retried, third 200 succeeds
   end
 
+  it "uses the Postgres result and never touches HTTP when it succeeds" do
+    pg = ->(_host : String, _remaining : Float64) { ["a.example.com", "b.example.com"] }
+    pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) { subdom_response(500) })
+
+    result = Nokizaru::Subdom::CrtSh.new(pg).run("example.com", pool, {} of String => String, 30.0)
+
+    result.status.should eq("healthy")
+    result.names.sort.should eq(["a.example.com", "b.example.com"])
+    pool.requests.size.should eq(0) # Postgres satisfied it; HTTP never called
+  end
+
   it "stops crt.sh retrying after the bounded attempt cap on persistent 5xx" do
     pool = SubdomPool.new(->(_request : Nokizaru::Subdom::Request) { subdom_response(502) })
-    result = Nokizaru::Subdom::CrtSh.new.run("example.com", pool, {} of String => String, 30.0)
+    result = Nokizaru::Subdom::CrtSh.new(EMPTY_PG).run("example.com", pool, {} of String => String, 30.0)
     result.status.should eq("error")
     pool.requests.size.should eq(Nokizaru::Subdom::CrtSh::MAX_ATTEMPTS)
   end

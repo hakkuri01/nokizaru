@@ -1,5 +1,6 @@
 require "base64"
 require "./provider"
+require "./crtsh_pg"
 
 module Nokizaru
   module Subdom
@@ -78,13 +79,17 @@ module Nokizaru
       end
     end
 
-    # https://crt.sh - public CT log search; name_value may be newline-joined.
-    # The single highest-value keyless source, but slow and prone to gateway
-    # load-shedding, so it carries a browser-ish UA and retries a bounded number
-    # of times on 5xx within the shared deadline.
+    # https://crt.sh - public CT log search. Primary path is the certwatch
+    # Postgres backend (reliable, rich); the HTTP JSON frontend is a fallback
+    # because it load-sheds (502s) and is slow. name_value may be newline-joined.
     class CrtSh < Provider
       RETRYABLE    = {502, 503, 504}
       MAX_ATTEMPTS = 3
+      # The live Postgres query; injectable so specs never touch the network.
+      LIVE_PG = ->(host : String, remaining : Float64) { CrtShPg.query(host, remaining) }
+
+      def initialize(@pg_query : Proc(String, Float64, Array(String)) = LIVE_PG)
+      end
 
       def name : String
         "crt.sh"
@@ -95,10 +100,27 @@ module Nokizaru
         Request.new("https://crt.sh/?dNSName=%25.#{host}&output=json", headers: headers)
       end
 
-      # Retries on gateway 5xx (crt.sh load-sheds under query build); no wall
-      # sleep so the retry count is deterministic in specs, and each execute
-      # re-checks the shared deadline so retries cannot outrun the scan budget.
+      # Try Postgres first; on any connection or protocol failure fall through to
+      # the HTTP endpoint so crt.sh still contributes when the DB is unreachable.
       def fetch(host : String, operation : Operation, keys : Hash(String, String)) : Nil
+        if names = pg_names(host, operation.remaining)
+          operation.names.concat(names)
+          return unless names.empty?
+        end
+        http_fetch(host, operation, keys)
+      end
+
+      private def pg_names(host : String, remaining : Float64) : Array(String)?
+        return nil if remaining <= 0
+
+        @pg_query.call(host, remaining)
+      rescue
+        nil
+      end
+
+      # Retries on gateway 5xx (crt.sh load-sheds); no wall sleep so the retry
+      # count is deterministic in specs, and each execute re-checks the deadline.
+      private def http_fetch(host : String, operation : Operation, keys : Hash(String, String)) : Nil
         attempts = 0
         loop do
           attempts += 1
