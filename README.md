@@ -25,8 +25,8 @@ Nokizaru runs a full web recon pass with shared target context, bounded or adapt
 - **Headers -> Target Profile:** response headers shape later scan behavior, including redirect and canonical host hints
 - **Custom Headers:** repeatable `-H/--header` values are reused across in-scope web requests without printing secrets back to stdout
 - **Re-Anchoring:** crawler and directory scans can automatically move to the effective in-scope URL, such as HTTP -> HTTPS or canonical same-scope hosts
-- **Crawler -> Dir Enum:** crawler discoveries seed directory checks so high-signal paths are tested before lower-value wordlist noise
-- **Dir Enum Noise Control:** WAF/soft-404-heavy responses are kept inspectable in exports, but stdout favors actionable paths over bulk false positives
+- **Cross-Module Feeds:** modules inform each other instead of running in isolation. Wayback history, architecture-fingerprinted tech paths, crawler finds, and open alternate-origin web ports all seed directory and crawler checks; TLS certificate SANs and DNS records (NS/MX/CNAME) seed subdomain enumeration
+- **Adversarial Awareness:** directory enumeration names the defense it meets (WAF, soft-404 wildcard, rate limiting, auth wall), adapts to a detected wall, and stops early when it persists rather than flooding the wordlist. Defensive noise stays inspectable in exports while stdout favors actionable paths
 - **Port Scan Context:** port checks are native TCP probes with lightweight service/category/TLS/HTTP/exposure hints
 - **Wayback Snapshots:** host-scoped archive history selects up to five snapshots each near 3 months, 6 months, and 1 year, then fills a 50-result cap with high-signal changes
 
@@ -36,66 +36,80 @@ Nokizaru runs a full web recon pass with shared target context, bounded or adapt
 
 Nokizaru builds to a single binary with no runtime dependencies.
 
+### Nix (recommended)
+
+The root flake targets `aarch64-linux` and `x86_64-linux` with nixpkgs pinned to
+a Crystal 1.21.1 toolchain, giving a reproducible binary with its data embedded
+and its system libraries managed by Nix.
+
+Install it permanently into your profile:
+
+```bash
+nix profile install github:hakkuri01/nokizaru
+nokizaru --help
+```
+
+Or run it once without installing:
+
+```bash
+nix run github:hakkuri01/nokizaru -- --full --target https://example.com
+```
+
+For development in Nix, `nix develop` provides Crystal, shards, `just`, OpenSSL,
+and the pinned Ameba; the gate (`just verify`) and `nix flake check` run offline.
+See [CONTRIBUTING.md](CONTRIBUTING.md#nix) for the full development workflow.
+
 ### Build From Source (Git Clone)
 
-Requires [Crystal](https://crystal-lang.org/install/) `>= 1.21.1`. The toolchain and the `just` task runner are pinned with [mise](https://mise.jdx.dev/).
+On platforms without Nix (including macOS), build the binary with the Crystal
+compiler. Requires [Crystal](https://crystal-lang.org/install/) `>= 1.21.1`.
 
 ```bash
 git clone https://github.com/hakkuri01/nokizaru.git
 cd nokizaru
-mise trust && mise install   # pins crystal + just
-just setup                   # builds the pinned Ameba linter (dev only)
-just build                   # produces bin/nokizaru
+crystal build --release src/nokizaru.cr -o bin/nokizaru
 ./bin/nokizaru --help
 ```
 
-Without mise, build directly with the Crystal compiler:
-
-```bash
-crystal build --release src/nokizaru.cr -o bin/nokizaru
-```
-
-Put `bin/nokizaru` on your `PATH`.
-
-### Nix
-
-The root flake supports `aarch64-linux` and `x86_64-linux`, with nixpkgs pinned
-to a Crystal 1.21.1 toolchain:
-
-```bash
-nix build
-./result/bin/nokizaru --help
-nix develop       # Crystal, shards, just, OpenSSL, and the pinned Ameba
-just verify       # offline; the shell installs bin/ameba, no just setup needed
-```
-
-`nix flake check` runs formatting, lint, specs, unreachable-code detection, the
-release build, and offline CLI smoke tests. Nix may fetch the pinned inputs and
-build dependencies first. The package embeds its data and has no runtime shards;
-its linked system libraries are managed by Nix. See [CONTRIBUTING.md](CONTRIBUTING.md#nix)
-for the development workflow.
+Put `bin/nokizaru` on your `PATH`. That is all an operator needs; contributors
+setting up a development environment should follow the pinned toolchain in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## Configuration
 
-### Provider Availability
+### Subdomain Providers
 
-- **crt.sh:** Quarantined from default scans due to its documented backend/database rebuild and expected degraded service until the upstream rebuild stabilizes. Nokizaru retains the adapter, tracks recovery, and will re-enable it only after a reliability and unique-value canary passes.
-- **ThreatMiner:** Quarantined after a chronic API outage with no successor endpoint.
+Nokizaru queries a curated set of mature, reliable sources rather than every
+source in existence. The keyless core runs out of the box; key-enriched sources
+run only when their key is present, and a missing key skips just that source.
+
+- **Keyless core:** crt.sh, AnubisDB, CertSpotter, Digitorus, HackerTarget, RapidDNS, UrlScan, Wayback.
+- **Key-enriched:** AlienVault, BeVigil, VirusTotal, Shodan, Chaos, Censys, SecurityTrails, GitHub, GitLab.
+
+crt.sh is queried over its certificate-transparency Postgres backend
+(`crt.sh:5432`) for reliable, complete results, falling back to its HTTP endpoint
+if the database is unreachable (operators behind restrictive egress should allow
+that port for best results). Wayback still enriches results but is left out of
+the provider-health summary: the Internet Archive throttles it aggressively
+server-side, so its frequent timeouts reflect their load management, not a
+Nokizaru fault.
 
 ### API Keys
 
-Some providers use optional API keys. Missing credentials skip only that provider; architecture fingerprinting is skipped entirely without a Wappalyzer key.
+Key-enriched providers use optional API keys; a missing key skips only that
+provider. Architecture fingerprinting runs locally with no key and is simply
+enriched by a Wappalyzer key when one is present.
 
 #### Environment Variables
 
 Keys are read from environment variables if they are set; otherwise they are loaded from `${XDG_DATA_HOME:-$HOME/.local/share}/nokizaru/keys.json`.
 
 ```bash
-NK_ALIENVAULT_KEY, NK_BEVIGIL_KEY, NK_BINEDGE_KEY, NK_CENSYS_API_ID, NK_CENSYS_API_SECRET,
-NK_CHAOS_KEY, NK_FB_KEY, NK_HUNTER_KEY, NK_NETLAS_KEY,
-NK_SHODAN_KEY, NK_VT_KEY, NK_WAPPALYZER_KEY, NK_ZOOMEYE_KEY
+NK_ALIENVAULT_KEY, NK_BEVIGIL_KEY, NK_CENSYS_API_ID, NK_CENSYS_API_SECRET, NK_CHAOS_KEY,
+NK_GITHUB_TOKEN, NK_GITLAB_TOKEN, NK_SECURITYTRAILS_KEY, NK_SHODAN_KEY, NK_VT_KEY,
+NK_WAPPALYZER_KEY
 
 # Example :
 export NK_SHODAN_KEY="kl32lcdqwcdfv"
@@ -109,7 +123,7 @@ Use **`-k`** to add keys, saved automatically in the user data directory. With o
 # Usage
 nokizaru -k '<API NAME>'
 
-Valid Keys : 'alienvault', 'bevigil', 'binedge', 'censys_api_id', 'censys_api_secret', 'chaos', 'facebook', 'hunter', 'netlas', 'shodan', 'virustotal', 'wappalyzer', 'zoomeye'
+Valid Keys : 'alienvault', 'bevigil', 'censys_api_id', 'censys_api_secret', 'chaos', 'github', 'gitlab', 'securitytrails', 'shodan', 'virustotal', 'wappalyzer'
 
 # Example :
 nokizaru -k shodan
