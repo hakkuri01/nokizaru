@@ -57,14 +57,14 @@ module Nokizaru
 
       private def present_counts(result : Result) : Nil
         UI.rows(:info, [
-          {"Extracting robots links", result.robots_links.size.to_s.as(String?)},
-          {"Extracting CSS links", result.css_links.size.to_s.as(String?)},
-          {"Extracting JavaScript links", result.js_links.size.to_s.as(String?)},
-          {"Extracting internal links", result.internal_links.size.to_s.as(String?)},
-          {"Extracting external links", result.external_links.size.to_s.as(String?)},
-          {"Extracting image links", result.images.size.to_s.as(String?)},
-          {"Crawling Sitemaps", result.urls_inside_sitemap.size.to_s.as(String?)},
-          {"Crawling Javascripts", result.urls_inside_js.size.to_s.as(String?)},
+          {"Extracting robots links", result.robots_links.size.to_s},
+          {"Extracting CSS links", result.css_links.size.to_s},
+          {"Extracting JavaScript links", result.js_links.size.to_s},
+          {"Extracting internal links", result.internal_links.size.to_s},
+          {"Extracting external links", result.external_links.size.to_s},
+          {"Extracting image links", result.images.size.to_s},
+          {"Crawling Sitemaps", result.urls_inside_sitemap.size.to_s},
+          {"Crawling Javascripts", result.urls_inside_js.size.to_s},
         ])
       end
 
@@ -87,9 +87,9 @@ module Nokizaru
         return if values.empty?
 
         UI.tree_header("#{label} Preview")
-        rows = values.first(PREVIEW_LIMIT).map { |link| {"URL", link.as(String?)} }
+        rows = values.first(PREVIEW_LIMIT).map { |link| {"URL", link} }
         remaining = values.size - PREVIEW_LIMIT
-        rows << {"More", remaining.to_s.as(String?)} if remaining > 0
+        rows << {"More", remaining.to_s} if remaining > 0
         UI.tree_rows(rows)
       end
 
@@ -111,7 +111,6 @@ module Nokizaru
         options = Http::Options.new(
           headers: request_headers,
           timeout_s: Nokizaru::Crawler::TIMEOUT,
-          verify_ssl: false,
           follow_redirects: false,
         )
         TargetIntel.profile(target, pool.get(target, options))

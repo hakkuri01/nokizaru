@@ -1,3 +1,4 @@
+require "digest/crc32"
 require "../finding"
 require "../modules/headers"
 
@@ -57,7 +58,7 @@ module Nokizaru
           next if missing.empty?
 
           Finding.new(
-            id: "cookies.missing_flags.#{cookie.hash}",
+            id: "cookies.missing_flags.#{Digest::CRC32.checksum(cookie_name(cookie)).to_s(16)}",
             severity: "low",
             title: "Cookie missing recommended flags",
             source_module: "headers",
@@ -75,6 +76,13 @@ module Nokizaru
         missing << "HttpOnly" unless value.includes?("httponly")
         missing << "SameSite" unless value.includes?("samesite")
         missing
+      end
+
+      # The cookie's name, so a finding id is stable across runs. String#hash is
+      # seeded per process, which made the same cookie report a different id on
+      # every scan and every export diff noisy.
+      private def cookie_name(cookie : String) : String
+        cookie.split('=', 2).first.strip.downcase
       end
     end
   end

@@ -112,6 +112,19 @@ module Nokizaru
         capped
       end
 
+      # Families whose bytes are never a document the crawler parses. A missing or
+      # unfamiliar type still parses: live targets serve HTML as text/plain or
+      # with no type at all, and the body caps bound the work either way. This is
+      # about not building a tree out of a PNG, not about trusting the label.
+      BINARY_TYPES = %w[image/ audio/ video/ font/ application/octet-stream application/pdf application/zip]
+
+      def parseable_text?(content_type : String?) : Bool
+        type = content_type.to_s.split(';', 2).first.strip.downcase
+        return true if type.empty?
+
+        BINARY_TYPES.none? { |family| type.starts_with?(family) }
+      end
+
       # Security: custom headers can carry session cookies, so only the page's
       # own origin receives them; a sibling host in scope (a CDN, a status page)
       # is fetched without them. Cost: one origin compare per fetch.

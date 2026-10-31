@@ -100,6 +100,13 @@ module Nokizaru
       end
     end
 
+    # Plain string pairs, so a caller whose values are never nil does not widen
+    # every tuple at the call site. The cast is the whole point of the overload:
+    # a Tuple(String, String) is not a Tuple(String, String?).
+    def rows(kind : Kind, pairs : Array(Tuple(String, String)), min_dots : Int32 = 3) : Nil
+      rows(kind, pairs.map { |(label, value)| {label, value.as(String?)} }, min_dots)
+    end
+
     def tree_header(label : String) : Nil
       output.puts("#{prefix(:info)} #{W}#{safe(label)}#{W}")
     end
@@ -109,6 +116,11 @@ module Nokizaru
       pairs.each_with_index do |pair, idx|
         output.puts(format_tree_row(pair, idx, pairs.size, width, min_dots))
       end
+    end
+
+    # The same convenience as `rows` for callers with plain string values.
+    def tree_rows(pairs : Array(Tuple(String, String)), min_dots : Int32 = 3) : Nil
+      tree_rows(pairs.map { |(label, value)| {label, value.as(String?)} }, min_dots)
     end
 
     def format_tree_row(pair : Tuple(String, String?), idx : Int32, total : Int32, width : Int32, min_dots : Int32) : String

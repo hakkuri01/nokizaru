@@ -21,7 +21,7 @@ module Nokizaru
       # NXDOMAIN rcode: the one outcome that means the name itself is absent.
       NXDOMAIN = 3_u8
       # A last-resort resolver pair when the system config names none. Any DNS
-      # query reaches some resolver; the user overrides with -ns.
+      # query reaches some resolver; the operator overrides with -d.
       DEFAULT_NAMESERVERS = %w[8.8.8.8 1.1.1.1]
 
       # The per-module result. `records` keeps insertion order, and the module
@@ -50,7 +50,7 @@ module Nokizaru
 
         pairs = [] of Tuple(String, String?)
         result.records.each do |record_type, values|
-          values.each { |value| pairs << {record_type, value.as(String?)} }
+          values.each { |value| pairs << {record_type, value} }
         end
         UI.rows(:info, pairs) unless pairs.empty?
       end
@@ -73,24 +73,17 @@ module Nokizaru
           next if code.nil?
 
           values = query_values(domain, code, nameservers, client)
-          records[name] = values unless values.empty?
+          records[name] = sanitized(values) unless values.empty?
         end
-        records["DMARC"] = dmarc(domain, nameservers, client)
+        records["DMARC"] = sanitized(dmarc(domain, nameservers, client))
         Result.new(records)
       end
 
-      # Reads the system resolver list (the `nameserver` lines of resolv.conf),
-      # falling back to the public pair when none are configured. The path is a
-      # parameter so the parsing is testable without the live file. O(lines).
-      def system_nameservers(path : String = "/etc/resolv.conf") : Array(String)
-        servers = [] of String
-        if File.exists?(path)
-          File.each_line(path) do |line|
-            fields = line.strip.split
-            servers << fields[1] if fields.size >= 2 && fields[0] == "nameserver"
-          end
-        end
-        servers.empty? ? DEFAULT_NAMESERVERS.dup : servers
+      # Presented rdata reaches the terminal and the report files, and a resolver
+      # answer is server data, so escapes and bidi overrides come out here, at the
+      # one point values enter the result. O(rdata bytes) over a bounded message.
+      private def sanitized(values : Array(String)) : Array(String)
+        values.map { |value| TerminalText.plain(value) }
       end
 
       # The Ruby gate: a name that answers NXDOMAIN to an A query does not

@@ -1,7 +1,53 @@
 require "../spec_helper"
 require "../support/http_test_server"
+require "../support/tls_test_server"
 require "../../src/nokizaru/http/pool"
 require "compress/gzip"
+
+describe "Nokizaru::Http::Pool TLS and destination policy" do
+  it "verifies a certificate by default and excuses only the host the operator named" do
+    TlsTestServer.with_server do |host, port|
+      url = "https://#{host}:#{port}/"
+      # The fixture completes a TLS handshake but does not speak HTTP, so the
+      # evidence is the error kind: a verified request is refused at the
+      # certificate, while the excused host gets past the handshake.
+      Nokizaru::Http::Pool.new.get(url).error_kind.tls?.should be_true
+      Nokizaru::Http::Pool.new(insecure_host: host).get(url).error_kind.tls?.should be_false
+      # A derived pool (one crawler or directory worker) carries the same excuse.
+      Nokizaru::Http::Pool.new(insecure_host: host).derive.get(url).error_kind.tls?.should be_false
+      # The excuse is per host: another name on the same pool stays verified.
+      Nokizaru::Http::Pool.new(insecure_host: "example.com").get(url).error_kind.tls?.should be_true
+    end
+  end
+
+  it "refuses a destination the policy rejects before any connection" do
+    asked = [] of String
+    policy = ->(host : String) { asked << host; false }
+    result = Nokizaru::Http::Pool.new(destination: policy).get("http://127.0.0.1:1/")
+    result.error?.should be_true
+    result.error_message.to_s.should contain("not a public destination")
+    asked.should eq(["127.0.0.1"])
+  end
+
+  it "asks the destination policy once per host" do
+    asked = 0
+    policy = ->(_host : String) { asked += 1; true }
+    HttpTestServer.with_server(->(context : ::HTTP::Server::Context) { context.response.print("ok"); nil }) do |base|
+      pool = Nokizaru::Http::Pool.new(destination: policy)
+      3.times { pool.get("#{base}/").success?.should be_true }
+      pool.shutdown
+    end
+    asked.should eq(1)
+  end
+
+  it "carries the destination policy into a derived pool" do
+    asked = [] of String
+    pool = Nokizaru::Http::Pool.new(destination: ->(host : String) { asked << host; false })
+    result = pool.derive.get("http://127.0.0.1:1/")
+    result.error_message.to_s.should contain("not a public destination")
+    asked.should eq(["127.0.0.1"])
+  end
+end
 
 private def ok_handler : ::HTTP::Server::Context ->
   ->(context : ::HTTP::Server::Context) do
@@ -52,7 +98,7 @@ describe Nokizaru::Http::Pool do
   it "performs a HEAD request" do
     HttpTestServer.with_server(ok_handler) do |base|
       pool = Nokizaru::Http::Pool.new
-      result = pool.head("#{base}/head")
+      result = pool.request("HEAD", "#{base}/head")
       result.success?.should be_true
       result.headers["X-Marker"]?.should eq("present")
       pool.shutdown

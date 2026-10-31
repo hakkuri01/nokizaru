@@ -49,4 +49,21 @@ describe Nokizaru::Crawler::UrlRules do
       Nokizaru::Crawler::UrlRules.cap_links(["a", "b", "a", "c", "d"], 3).should eq(["a", "b", "c"])
     end
   end
+
+  describe ".parseable_text?" do
+    it "parses a document type, a missing type, and an unfamiliar one" do
+      ["text/html; charset=utf-8", "application/xml", "text/plain", "application/javascript",
+       "application/gzip", "", "weird/thing"].each do |type|
+        Nokizaru::Crawler::UrlRules.parseable_text?(type).should be_true
+      end
+      Nokizaru::Crawler::UrlRules.parseable_text?(nil).should be_true
+    end
+
+    it "refuses the families that are never a document" do
+      ["image/png", "application/octet-stream", "application/pdf", "video/mp4",
+       "font/woff2", "application/zip; x=1"].each do |type|
+        Nokizaru::Crawler::UrlRules.parseable_text?(type).should be_false
+      end
+    end
+  end
 end

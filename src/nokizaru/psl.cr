@@ -1,7 +1,7 @@
 module Nokizaru
   # The Mozilla Public Suffix List (MPL-2.0), embedded at compile time so the
-  # single binary carries it with no runtime fetch. The matcher that walks it
-  # arrives in a later phase; this module is the embed and its integrity pin.
+  # single binary carries it with no runtime fetch. PSL::List walks it; this
+  # module is the embed and its integrity pin.
   #
   # The list is refreshed only by the maintainer, via tools/refresh_psl.cr; it is
   # never fetched at build or scan time. spec/psl_pin_spec.cr fails the gate if

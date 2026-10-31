@@ -3,7 +3,7 @@ module Nokizaru
   # binary carries them (the same convention as the PSL list and the banner). A
   # -w size name resolves to its embedded list; any other value is a path read
   # from disk. Replaces the Ruby Settings.curated_wordlist, which joined
-  # project_root/wordlists/<file> — a compiled binary has no such directory, so
+  # project_root/wordlists/<file>: a compiled binary has no such directory, so
   # the lists ride inside it.
   module Wordlist
     extend self
@@ -16,13 +16,12 @@ module Nokizaru
 
     # The words for a -w value: the embedded curated list for a size name, or the
     # lines of a custom file otherwise. Blank lines are dropped and duplicates
-    # removed with first-seen order kept. A missing or unreadable custom file
-    # yields an empty list (the dir module treats that as "seeds only"), matching
-    # the Ruby fallback. Complexity: one O(n) pass over the list plus the O(n)
-    # dedupe, once per scan.
+    # removed with first-seen order kept. A path that cannot be read raises, so a
+    # mistyped -w fails the module instead of quietly scanning seeds only.
+    # Complexity: one O(n) pass over the list plus the O(n) dedupe, once per scan.
     def load(value : String) : Array(String)
       embedded = EMBEDDED[value.downcase]?
-      embedded ? split(embedded) : read_path(value)
+      embedded ? split(embedded) : split(File.read(value))
     end
 
     private def split(content : String) : Array(String)
@@ -33,12 +32,6 @@ module Nokizaru
       end
       words.uniq!
       words
-    end
-
-    private def read_path(path : String) : Array(String)
-      split(File.read(path))
-    rescue
-      [] of String
     end
   end
 end

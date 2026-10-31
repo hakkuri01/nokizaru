@@ -6,7 +6,7 @@ module Nokizaru::CLI
   module Help
     extend self
 
-    USAGE = "usage: nokizaru [-h] [-v] [--target TARGET] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--ps]\n                [--full] [--no-MODULE] [--export] [--tui] [-nb] [-dt DT] [-pt PT] [-p PORTS] [-T T] [-w W] [-H HEADER] [-r] [-s] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]"
+    USAGE = "usage: nokizaru [-h] [-v] [--target TARGET] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--ps]\n                [--full] [--no-MODULE] [--export] [--tui] [-nb] [-dt DT] [-pt PT] [-p PORTS] [-T T] [-w W] [-H HEADER] [-r] [--insecure] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]"
 
     ARGUMENT_ROWS = [
       {"-h, --help", "Show this help message and exit"}, {"-v, --version", "Show version number and exit"},
@@ -17,7 +17,7 @@ module Nokizaru::CLI
       {"--ps", "Fast Port Scan"}, {"--full", "Full Recon"},
       {"--no-[MODULE]", "Skip specified modules above during full scan (eg. --no-dir)"},
       {"--export", "Write results to export directory [ Default : False ]"},
-      {"--tui", "Interactive dashboard (default on a terminal)"},
+      {"--tui", "Force the command form instead of the running dashboard"},
     ]
 
     EXTRA_ROWS = [
@@ -28,7 +28,7 @@ module Nokizaru::CLI
       {"-w W", "Wordlist size (small, medium, large) or custom path [ Default : medium ]"},
       {"-H, --header HEADER", "Add custom request header (repeatable)"},
       {"-r", "Follow redirects during directory enum [ Default : False ]"},
-      {"-s", "Enable SSL verification for directory enum [ Default : False ]"},
+      {"--insecure", "Skip TLS certificate verification for the target [ Default : False ]"},
       {"-sp SP", "Specify SSL Port [ Default : 443 ]"},
       {"-d D", "Custom DNS Servers [ Default : 8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1 ]"},
       {"-e E", "File Extensions [ Example : txt, xml, php, etc. ]"},

@@ -143,7 +143,7 @@ describe Nokizaru::Crawler::Concurrency do
     cap = Nokizaru::Crawler::MAX_FETCH_WORKERS
     begin
       urls = Array.new(cap * 3) { |i| "#{server.base}/ok?i=#{i}" }
-      Nokizaru::Crawler::Concurrency.each_concurrently(urls) do |url, fetcher|
+      Nokizaru::Crawler::Concurrency.each_concurrently(urls, Nokizaru::Http::Pool.new) do |url, fetcher|
         fetcher.get(url, HTTP::Headers.new, "probe").body.should eq("ok")
       end
       server.accepted.should eq(cap)
@@ -158,13 +158,13 @@ describe Nokizaru::Crawler::Concurrency do
     server = CrawlSockets.new
     begin
       expect_raises(Exception, "probe failure") do
-        Nokizaru::Crawler::Concurrency.each_concurrently(["#{server.base}/ok"]) do |url, fetcher|
+        Nokizaru::Crawler::Concurrency.each_concurrently(["#{server.base}/ok"], Nokizaru::Http::Pool.new) do |url, fetcher|
           fetcher.get(url, HTTP::Headers.new, "probe").success?.should be_true
           raise "probe failure"
         end
       end
       server.wait_closed(1)
-      Nokizaru::Crawler::Concurrency.each_concurrently(["#{server.base}/ok"]) do |url, fetcher|
+      Nokizaru::Crawler::Concurrency.each_concurrently(["#{server.base}/ok"], Nokizaru::Http::Pool.new) do |url, fetcher|
         fetcher.get(url, HTTP::Headers.new, "probe").success?.should be_true
       end
       server.wait_closed(1)
@@ -178,7 +178,7 @@ describe Nokizaru::Crawler::Concurrency do
     first = CrawlSockets.new
     second = CrawlSockets.new
     begin
-      Nokizaru::Crawler::Concurrency.each_concurrently(["#{first.base}/ok"]) do |url, fetcher|
+      Nokizaru::Crawler::Concurrency.each_concurrently(["#{first.base}/ok"], Nokizaru::Http::Pool.new) do |url, fetcher|
         fetcher.get(url, HTTP::Headers.new, "probe").body.should eq("ok")
         fetcher.get("#{second.base}/ok", HTTP::Headers.new, "probe").body.should eq("ok")
         first.wait_closed(1)
@@ -197,7 +197,7 @@ describe Nokizaru::Crawler::Concurrency do
   it "returns connections after transport errors and deadlines so later requests succeed" do
     server = CrawlSockets.new
     begin
-      Nokizaru::Crawler::Concurrency.each_concurrently(["#{server.base}/fresh"]) do |url, fetcher|
+      Nokizaru::Crawler::Concurrency.each_concurrently(["#{server.base}/fresh"], Nokizaru::Http::Pool.new) do |url, fetcher|
         ["broken", "timeout"].each do |path|
           result = fetcher.get("#{server.base}/#{path}", HTTP::Headers.new, "probe", timeout: 0.02)
           result.error?.should be_true

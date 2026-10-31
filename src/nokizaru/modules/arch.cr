@@ -6,13 +6,12 @@ require "../ui"
 
 module Nokizaru
   module Modules
-    # Architecture fingerprinting via the Wappalyzer lookup API. Requires an API
-    # key (from the key store); with none, the module records a skipped result and
-    # makes no request. Field names and shape match the Ruby JSON: the module
-    # stores {technologies:[{name,version,categories}], status}. The result is
-    # keyed "architecture_fingerprinting" in the run (see ModuleResults). Ports
-    # modules/arch.rb. The API key is fetched by the runner and passed in; the UI
-    # and artifact wiring attach with the runner.
+    # Architecture fingerprinting: a local, keyless fingerprint read from the
+    # target's own response (Arch::Fingerprint), enriched by the Wappalyzer lookup
+    # API when a key is present, so the module is useful with no key at all.
+    # Field names and shape match the Ruby JSON: the module stores
+    # {technologies:[{name,version,categories}], status}. The result is keyed
+    # "architecture_fingerprinting" in the run (see ModuleResults).
     module Arch
       extend self
 
@@ -43,10 +42,6 @@ module Nokizaru
           new(technologies, "ok")
         end
 
-        def self.skipped : Result
-          new([] of Technology, "skipped_no_key")
-        end
-
         def self.error : Result
           new([] of Technology, "error")
         end
@@ -54,13 +49,12 @@ module Nokizaru
 
       # Renders the detected technologies for the classic output and the dashboard
       # capture: a list (first 20) with version/categories, a truncation note, and
-      # the total; or a skip/error/none line. Header bar dropped in TUI mode.
+      # the total; or an error/none line. Header bar dropped in TUI mode.
       def present(result : Result) : Nil
         UI.module_header("Architecture Fingerprinting")
         case result.status
-        when "skipped_no_key" then UI.row(:error, "Skipping Architecture Fingerprinting", "API key not found!")
-        when "error"          then UI.line(:error, "Architecture Fingerprinting Exception")
-        else                       present_technologies(result.technologies)
+        when "error" then UI.line(:error, "Architecture Fingerprinting Exception")
+        else              present_technologies(result.technologies)
         end
       end
 
@@ -85,8 +79,8 @@ module Nokizaru
         "#{tech.name}#{suffix}"
       end
 
-      def collect(target : String, pool : Http::Pool, api_key : String?, timeout_s : Float64, transport : Proc(String, Http::Options, Http::Result)? = nil) : Result
-        page = fetch(target, page_options(timeout_s), pool, transport)
+      def collect(target : String, pool : Http::Pool, api_key : String?, timeout_s : Float64, transport : Proc(String, Http::Options, Http::Result)? = nil, request_headers : ::HTTP::Headers = ::HTTP::Headers.new) : Result
+        page = fetch(target, page_options(timeout_s, request_headers), pool, transport)
         local = page.success? ? Fingerprint.detect(page) : [] of Technology
         remote = wappalyzer(target, pool, api_key, timeout_s, transport)
         merged = Parser.dedupe(local + remote)
@@ -107,7 +101,6 @@ module Nokizaru
         options = Http::Options.new(
           headers: ::HTTP::Headers{"x-api-key" => api_key},
           timeout_s: {timeout_s, MAX_TIMEOUT}.min,
-          verify_ssl: true,
           follow_redirects: true,
         )
         result = fetch(request_url(target), options, pool, transport)
@@ -118,8 +111,11 @@ module Nokizaru
         [] of Technology
       end
 
-      private def page_options(timeout_s : Float64) : Http::Options
-        Http::Options.new(timeout_s: {timeout_s, MAX_TIMEOUT}.min, verify_ssl: true, follow_redirects: true)
+      # The target page fetch carries the operator's -H headers, as every other
+      # in-scope request does; the Wappalyzer call above is a third party and
+      # never sees them.
+      private def page_options(timeout_s : Float64, request_headers : ::HTTP::Headers) : Http::Options
+        Http::Options.new(headers: request_headers, timeout_s: {timeout_s, MAX_TIMEOUT}.min, follow_redirects: true)
       end
 
       private def fetch(url : String, options : Http::Options, pool : Http::Pool, transport : Proc(String, Http::Options, Http::Result)?) : Http::Result

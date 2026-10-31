@@ -10,7 +10,10 @@ module Nokizaru
     module Concurrency
       extend self
 
-      def each_concurrently(items : Array(String), &block : String, Fetcher ->) : Nil
+      # `template` carries the parent transport's policy (TLS choice, scope check,
+      # client factory) into each worker's own pool, so a worker never widens what
+      # the operator chose.
+      def each_concurrently(items : Array(String), template : Http::Pool, &block : String, Fetcher ->) : Nil
         return if items.empty?
 
         concurrency = {MAX_FETCH_WORKERS, items.size}.min
@@ -27,7 +30,7 @@ module Nokizaru
         waiter = WaitGroup.new(concurrency)
         concurrency.times do
           spawn do
-            run_worker(next_item, &block)
+            run_worker(next_item, template, &block)
           rescue error
             errors.send(error)
           ensure
@@ -41,8 +44,8 @@ module Nokizaru
         end
       end
 
-      private def run_worker(next_item : Proc(String?), &block : String, Fetcher ->) : Nil
-        pool = Http::Pool.new
+      private def run_worker(next_item : Proc(String?), template : Http::Pool, &block : String, Fetcher ->) : Nil
+        pool = template.derive
         fetcher = Fetcher.new(pool, worker_local: true)
         begin
           while item = next_item.call

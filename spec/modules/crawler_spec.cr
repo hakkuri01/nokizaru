@@ -3,7 +3,7 @@ require "../support/http_test_server"
 require "compress/gzip"
 require "io/memory"
 require "../../src/nokizaru/modules/crawler"
-require "../../src/nokizaru/context"
+require "../../src/nokizaru/run_state"
 
 private LANDING = %(<html><body><a href="/admin/panel">a</a><a href="https://evil.com/x">e</a><link rel="stylesheet" href="/style.css"><script src="/app.js"></script><img src="/logo.png"></body></html>)
 private SITEMAP = %(<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>http://127.0.0.1/page1</loc></url></urlset>)

@@ -2,7 +2,7 @@ require "../spec_helper"
 require "../support/whois_test_server"
 require "../support/http_test_server"
 require "../../src/nokizaru/modules/whois"
-require "../../src/nokizaru/context"
+require "../../src/nokizaru/run_state"
 
 private RDAP_DOMAIN_JSON = %q({"objectClassName":"domain","ldhName":"example.test","handle":"H-123","status":["active","clientTransferProhibited"],"events":[{"eventAction":"registration","eventDate":"2020-01-01T00:00:00Z"}],"nameservers":[{"ldhName":"ns1.example.test"},{"ldhName":"ns2.example.test"},{"ldhName":"ns1.example.test"}]})
 
@@ -15,7 +15,10 @@ private def rdap_handler(status : Int32, body : String) : ::HTTP::Server::Contex
 end
 
 private def whois_client(port : Int32) : Nokizaru::Whois::Client
-  Nokizaru::Whois::Client.new(timeout_s: 2.0, port: port, iana_host: "127.0.0.1")
+  # The fixture serves both IANA and the registry on loopback, which the default
+  # destination policy refuses, so this one is permissive.
+  Nokizaru::Whois::Client.new(timeout_s: 2.0, port: port, iana_host: "127.0.0.1",
+    destination: ->(_host : String) { true })
 end
 
 describe Nokizaru::Modules::WhoisLookup do

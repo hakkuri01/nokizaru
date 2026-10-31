@@ -1,7 +1,7 @@
 require "../spec_helper"
 require "../support/http_test_server"
 require "../../src/nokizaru/modules/portscan"
-require "../../src/nokizaru/context"
+require "../../src/nokizaru/run_state"
 
 # Returns a fixed set of open ports regardless of input, so the result-shaping
 # and tarpit classification can be tested without 25+ real listeners.

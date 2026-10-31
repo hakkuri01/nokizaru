@@ -51,6 +51,20 @@ describe Nokizaru::PSL::List do
     it "normalizes case and a trailing dot" do
       synthetic.registrable_domain("WWW.Example.CO.UK.").should eq("example.co.uk")
     end
+
+    it "refuses a host longer than the DNS maximum" do
+      # Hosts arrive from server data, and the suffix walk is quadratic in the
+      # label count, so an over-long name is refused before it is split.
+      long = ("a." * 100_000) + "example.com"
+      synthetic.registrable_domain(long).should be_nil
+      synthetic.public_suffix(long).should be_nil
+    end
+
+    it "accepts a host at the DNS maximum" do
+      host = "#{"a." * 120}example.com"
+      host.bytesize.should eq(251)
+      synthetic.registrable_domain(host).should eq("example.com")
+    end
   end
 
   describe "the embedded list" do

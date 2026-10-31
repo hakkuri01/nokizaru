@@ -85,4 +85,25 @@ describe Nokizaru::Subdom::CrtShPg do
       Nokizaru::Subdom::CrtShPg.query("evil' OR '1'='1", 5.0)
     end
   end
+
+  it "refuses a message longer than the cap before allocating its payload" do
+    oversized = IO::Memory.new
+    oversized.write_byte('D'.ord.to_u8)
+    oversized.write_bytes((Nokizaru::Subdom::CrtShPg::MAX_MESSAGE_BYTES + 5).to_i32, IO::ByteFormat::BigEndian)
+    stream = cat(pg_msg('R', i32(0)), pg_msg('Z', Bytes['I'.ord.to_u8]), oversized.to_slice)
+    expect_raises(Nokizaru::Subdom::CrtShPg::ProtocolError, "exceeds") do
+      run_canned(stream)
+    end
+  end
+
+  it "stops collecting at the name cap and keeps the names it read" do
+    # One row whose SAN list never ends: the cap stops the read mid-row.
+    column = String.build do |io|
+      (Nokizaru::Subdom::CrtShPg::MAX_NAMES + 1).times { |i| io << "a" << i << "\n" }
+    end
+    stream = cat(pg_msg('R', i32(0)), pg_msg('Z', Bytes['I'.ord.to_u8]), data_row(column))
+    names = run_canned(stream)
+    names.size.should eq(Nokizaru::Subdom::CrtShPg::MAX_NAMES)
+    names.first.should eq("a0")
+  end
 end

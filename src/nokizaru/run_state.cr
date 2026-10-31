@@ -117,7 +117,7 @@ module Nokizaru
       list = (@artifacts[kind] ||= [] of String)
       seen = list.to_set
       values.each do |value|
-        safe = TerminalText.strip_sgr(TerminalText.sanitize(value))
+        safe = TerminalText.plain(value)
         list << safe if seen.add?(safe)
       end
     end

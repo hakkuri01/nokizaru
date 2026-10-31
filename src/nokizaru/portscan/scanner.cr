@@ -1,5 +1,6 @@
 require "socket"
 require "wait_group"
+require "../scan_stop"
 
 module Nokizaru
   # The low-level TCP connect scanner (Nokizaru::Portscan), distinct from the
@@ -26,6 +27,7 @@ module Nokizaru
       getter retries : Int32
       getter? verify : Bool
       getter rate_per_second : Float64
+      getter stop : ScanStop
 
       def initialize(
         @concurrency : Int32,
@@ -33,6 +35,7 @@ module Nokizaru
         @retries : Int32 = 1,
         @verify : Bool = true,
         @rate_per_second : Float64 = 0.0,
+        @stop : ScanStop = ScanStop.new,
       )
       end
     end
@@ -56,10 +59,15 @@ module Nokizaru
         slots = Channel(Nil).new(options.concurrency)
         options.concurrency.times { slots.send(nil) }
         throttle = Throttle.new(options.rate_per_second)
-        waiter = WaitGroup.new(entries.size)
+        waiter = WaitGroup.new
 
         entries.each do |(port, name)|
+          # A stopped scan starts no further probe; the ones in flight finish
+          # within their connect timeout and release their sockets.
+          break if options.stop.stopped?
+
           slots.receive
+          waiter.add(1)
           spawn do
             probe(ip, port, name, options, throttle, opens, mutex)
           ensure

@@ -1,6 +1,6 @@
 require "../spec_helper"
 require "../../src/nokizaru/modules/subdomains"
-require "../../src/nokizaru/context"
+require "../../src/nokizaru/run_state"
 
 # Returns a canned outcome without any network, so the enumerator's scope/dedup
 # and the module's health aggregation can be tested offline.

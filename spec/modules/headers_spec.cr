@@ -3,6 +3,35 @@ require "../support/http_test_server"
 require "../../src/nokizaru/modules/headers"
 
 describe Nokizaru::Modules::Headers do
+  it "redacts a credential the target echoes back into a response header" do
+    handler = ->(context : ::HTTP::Server::Context) do
+      # An ordinary session refresh is enough: the value the operator supplied
+      # comes back in a response header that stdout and every export would carry.
+      context.response.headers["Set-Cookie"] = context.request.headers["Cookie"]? || ""
+      context.response.print("hi")
+    end
+    HttpTestServer.with_server(handler) do |base|
+      supplied = ::HTTP::Headers{"Cookie" => "PHPSESSID=s3cr3t-operator-value"}
+      result = Nokizaru::Modules::Headers.collect("#{base}/", Nokizaru::Http::Pool.new, supplied)
+      result.success?.should be_true
+      result.headers["set-cookie"].should eq("[redacted]")
+      result.headers.values.any?(&.includes?("s3cr3t-operator-value")).should be_false
+    end
+  end
+
+  it "strips a bidi override from a header value before storing it" do
+    handler = ->(context : ::HTTP::Server::Context) do
+      # A control byte cannot travel in a real header value (the server refuses
+      # it), but a bidi override can, and it would reverse text in a report file.
+      context.response.headers["X-Hostile"] = "ok\u202ereversed"
+      context.response.print("hi")
+    end
+    HttpTestServer.with_server(handler) do |base|
+      result = Nokizaru::Modules::Headers.collect("#{base}/", Nokizaru::Http::Pool.new)
+      result.headers["x-hostile"].should eq("okreversed")
+    end
+  end
+
   it "collects lowercased headers and a no-redirect profile" do
     handler = ->(context : ::HTTP::Server::Context) do
       context.response.headers["X-Frame-Options"] = "DENY"

@@ -95,7 +95,7 @@ module Nokizaru
         batch.each_with_index { |url, index| positions[url] = index }
         # ponytail: at most 200 capped document slots per level; stream ordered merges if caps grow
         documents = Array.new(batch.size) { SitemapDocument.new }
-        Concurrency.each_concurrently(batch) do |sitemap_url, fetcher|
+        Concurrency.each_concurrently(batch, @fetcher.pool) do |sitemap_url, fetcher|
           next if @budget.exhausted?
 
           headers = UrlRules.origin_headers(sitemap_url, state.page_url, @request_headers)
@@ -126,6 +126,7 @@ module Nokizaru
 
         fetch = @fetcher.take_sitemap(sitemap_url) || fetcher.fetch_following(sitemap_url, headers)
         return SitemapDocument.new unless fetch.success?
+        return SitemapDocument.new unless UrlRules.parseable_text?(fetch.result.try(&.headers["Content-Type"]?))
 
         body = decode_body(fetch.result.try(&.body) || "", sitemap_url)
         return SitemapDocument.new if body.empty?

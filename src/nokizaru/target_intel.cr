@@ -81,6 +81,10 @@ module Nokizaru
       PSL::List.default.registrable_domain(host)
     end
 
+    private def redirect_status?(status : Int32?) : Bool
+      !status.nil? && status >= 300 && status < 400
+    end
+
     def ip_address?(host : String) : Bool
       Socket::IPAddress.new(host, 0)
       true
@@ -129,6 +133,9 @@ module Nokizaru
     def profile(target : String, result : Http::Result?) : Profile
       prof = default_profile(target)
       return prof if result.nil? || result.error?
+      # Only a 3xx response redirects: a Location on a 200 or a 201 names a
+      # resource, and treating it as a hop would re-anchor the scan on it.
+      return prof unless redirect_status?(result.status)
 
       location = result.headers["Location"]?.try(&.strip)
       return prof if location.nil? || location.empty?

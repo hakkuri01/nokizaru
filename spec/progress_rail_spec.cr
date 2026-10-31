@@ -38,4 +38,14 @@ describe Nokizaru::ProgressRail do
   it "has a no-op null reporter" do
     Nokizaru::ProgressReporter::NULL.report(detail: "ignored").should be_nil
   end
+
+  it "leaves the current module alone when an abandoned module reports late" do
+    rail = ProgressRail.new(["ps", "wayback"])
+    rail.module_started("ps", "Port Scan")
+    rail.module_failed("ps")
+    rail.module_started("wayback", "Wayback")
+    rail.reporter("ps").report(detail: "late 900/1000")
+    rail.current_module.should eq("wayback")
+    rail.snapshot.modules["ps"].detail.should eq("late 900/1000")
+  end
 end

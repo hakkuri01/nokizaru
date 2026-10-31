@@ -1,4 +1,5 @@
 require "socket"
+require "../destination"
 
 module Nokizaru
   module Whois
@@ -11,7 +12,7 @@ module Nokizaru
     class ConnectionError < Exception
     end
 
-    # A hand-rolled WHOIS client over TCP port 43 (D5), replacing the Ruby
+    # A hand-rolled WHOIS client over TCP port 43, replacing the Ruby
     # `whois` gem. Server selection asks whois.iana.org for the TLD's referral,
     # with a small table for suffixes that need a direct server or a query flag;
     # like the Ruby client (referral: false) it does not chase the thin->thick
@@ -41,7 +42,7 @@ module Nokizaru
       # server => a query prefix that server needs for a full record.
       QUERY_PREFIX = {"whois.denic.de" => "-T dn,ace "}
 
-      def initialize(@timeout_s : Float64 = DEFAULT_TIMEOUT, @port : Int32 = WHOIS_PORT, @iana_host : String = IANA_HOST)
+      def initialize(@timeout_s : Float64 = DEFAULT_TIMEOUT, @port : Int32 = WHOIS_PORT, @iana_host : String = IANA_HOST, @destination : Proc(String, Bool) = Destination.public_policy)
       end
 
       # The raw WHOIS text for a query, with the trailing terms-of-use footer
@@ -59,10 +60,15 @@ module Nokizaru
       end
 
       # Asks whois.iana.org for the suffix and reads its "whois:" referral line.
+      # The answer arrives over plaintext TCP 43, so it is server data: a referral
+      # that is not a public registry host is refused rather than dialed.
       private def iana_referral(tld : String) : String?
         exchange(@iana_host, tld).each_line do |line|
           stripped = line.strip
-          return stripped[6..].strip if stripped.downcase.starts_with?("whois:")
+          next unless stripped.downcase.starts_with?("whois:")
+
+          server = stripped[6..].strip
+          return @destination.call(server) ? server : nil
         end
         nil
       rescue ConnectionError

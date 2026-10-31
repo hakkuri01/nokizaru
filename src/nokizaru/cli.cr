@@ -53,7 +53,7 @@ module Nokizaru
       run_classic(options, settings)
     end
 
-    # The power-user gate (§12a, T6): a --target on a terminal, without the --tui
+    # The power-user gate: a --target on a terminal, without the --tui
     # opt-out that keeps the interactive form.
     private def self.power_user_args?(options : Options) : Bool
       !options.tui? && !(options.target || "").strip.empty?

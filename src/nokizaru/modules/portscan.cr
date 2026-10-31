@@ -101,10 +101,10 @@ module Nokizaru
         UI.blank_line
       end
 
-      def collect(ip : String, threads : Int32, spec : String? = nil, scanner : Portscan::Scanner = Portscan::Scanner.new, progress : ProgressReporter = ProgressReporter::NULL) : Result
+      def collect(ip : String, threads : Int32, spec : String? = nil, scanner : Portscan::Scanner = Portscan::Scanner.new, progress : ProgressReporter = ProgressReporter::NULL, stop : ScanStop = ScanStop.new) : Result
         entries = port_entries(spec)
         total = entries.size
-        opens = scanner.scan(ip, entries, scan_options(threads, spec), progress_callback(progress, total))
+        opens = scanner.scan(ip, entries, scan_options(threads, spec, stop), progress_callback(progress, total))
         build_result(ip, total, opens)
       end
 
@@ -126,8 +126,8 @@ module Nokizaru
         parse_spec(spec).map { |port| {port, PORT_LIST[port]? || "unknown"} }
       end
 
-      private def scan_options(threads : Int32, spec : String?) : Portscan::Options
-        return large_scan_options(threads) unless default_spec?(spec)
+      private def scan_options(threads : Int32, spec : String?, stop : ScanStop) : Portscan::Options
+        return large_scan_options(threads, stop) unless default_spec?(spec)
 
         Portscan::Options.new(
           concurrency: {threads, 1}.max,
@@ -135,16 +135,18 @@ module Nokizaru
           retries: DEFAULT_RETRIES,
           verify: true,
           rate_per_second: DEFAULT_RATE_PER_SECOND,
+          stop: stop,
         )
       end
 
-      private def large_scan_options(threads : Int32) : Portscan::Options
+      private def large_scan_options(threads : Int32, stop : ScanStop) : Portscan::Options
         Portscan::Options.new(
           concurrency: Portscan::Scanner.large_scan_concurrency(threads),
           connect_timeout: CUSTOM_CONNECT_TIMEOUT,
           retries: 0,
           verify: false,
           rate_per_second: 0.0,
+          stop: stop,
         )
       end
 

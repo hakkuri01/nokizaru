@@ -56,23 +56,48 @@ module RefreshPSL
     client.connect_timeout = 10.seconds
     client.read_timeout = 30.seconds
     begin
-      response = client.get(uri.request_target)
+      client.get(uri.request_target) do |response|
+        return nil unless acceptable?(response)
+
+        read_capped(response)
+      end
     ensure
       client.close
     end
+  end
 
+  private def self.acceptable?(response : HTTP::Client::Response) : Bool
     unless response.status.success?
       STDERR.puts "refuse: HTTP #{response.status_code} from #{URL}"
-      return nil
+      return false
     end
 
     content_type = response.headers["Content-Type"]?
     unless content_type && content_type.includes?("text/plain")
       STDERR.puts "refuse: unexpected content-type #{content_type.inspect}"
-      return nil
+      return false
     end
 
-    body = response.body
+    true
+  end
+
+  # Reads at most one chunk past the cap, so an endless or oversized body is
+  # refused while it is being read rather than after it is buffered.
+  private def self.read_capped(response : HTTP::Client::Response) : String?
+    io = response.body_io?
+    return nil if io.nil?
+
+    limit = MAX_BYTES + 1
+    buffer = IO::Memory.new
+    chunk = Bytes.new(64 * 1024)
+    while buffer.size < limit
+      read = io.read(chunk)
+      break if read.zero?
+
+      buffer.write(chunk[0, read])
+    end
+
+    body = buffer.to_s
     unless (MIN_BYTES..MAX_BYTES).includes?(body.bytesize)
       STDERR.puts "refuse: body size #{body.bytesize} out of bounds"
       return nil

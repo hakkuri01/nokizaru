@@ -28,7 +28,7 @@ module Nokizaru
           {"--whois", "Whois / RDAP lookup"},
           {"--dns", "DNS enumeration"},
           {"--sub", "Sub-domain enumeration"},
-          {"--arch", "Architecture fingerprinting (needs a Wappalyzer key)"},
+          {"--arch", "Local tech fingerprint, enriched by a Wappalyzer key"},
           {"--crawl", "Crawl the target"},
           {"--dir", "Directory enumeration"},
           {"--wayback", "Wayback Machine snapshots"},
@@ -42,7 +42,7 @@ module Nokizaru
           {"-p", "Ports: 80,443,1000-65535 or all"},
           {"-T", "Base timeout / module budget seconds [30]"},
           {"-r", "Follow redirects during directory enum"},
-          {"-s", "Verify SSL during directory enum"},
+          {"--insecure", "Skip TLS certificate verification for the target"},
         ]},
         {"EXPORT", [
           {"--export", "Write results to the export directory"},

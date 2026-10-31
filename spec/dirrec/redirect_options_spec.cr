@@ -45,7 +45,7 @@ describe "Directory redirect options" do
     end
     scope = Nokizaru::TargetIntel.scope_check
     headers = HTTP::Headers{"Authorization" => "Bearer secret"}
-    options = Nokizaru::Http::Options.new(headers: headers, timeout_s: 12.0, verify_ssl: false,
+    options = Nokizaru::Http::Options.new(headers: headers, timeout_s: 12.0,
       follow_redirects: true, max_redirects: 2, body: "payload", scope_check: scope)
     runtime = Nokizaru::DirRec::Runtime.new("http://a.example.com", "http://a.example.com", nil,
       Nokizaru::DirRec::ConfidenceContext.new(nil, nil), transport: transport)
@@ -55,7 +55,6 @@ describe "Directory redirect options" do
     copy = received.first
     copy.headers.should eq(headers)
     copy.timeout_s.should eq(runtime.policy.timeout_s)
-    copy.verify_ssl?.should be_false
     copy.follow_redirects?.should be_true
     copy.max_redirects.should eq(2)
     copy.body.should eq("payload")

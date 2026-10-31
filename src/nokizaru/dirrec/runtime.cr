@@ -6,6 +6,7 @@ require "./soft404"
 require "./context"
 require "./adaptive_policy"
 require "./queue"
+require "../scan_stop"
 require "../http/pool"
 require "../progress_reporter"
 
@@ -38,7 +39,7 @@ module Nokizaru
       getter policy : AdaptivePolicy
       getter peak_in_flight = 0
 
-      def initialize(@scan_target : String, @normalized_target : String, @soft_404_baseline : Baseline?, @context : ConfidenceContext, *, policy : AdaptivePolicy? = nil, @transport : Proc(String, Http::Options, Http::Result)? = nil)
+      def initialize(@scan_target : String, @normalized_target : String, @soft_404_baseline : Baseline?, @context : ConfidenceContext, *, policy : AdaptivePolicy? = nil, @transport : Proc(String, Http::Options, Http::Result)? = nil, @stop : ScanStop = ScanStop.new, @pool_template : Http::Pool = Http::Pool.new)
         @state = Soft404::State.new
         @learning = Soft404::Learning.new
         @policy = policy || AdaptivePolicy.new(1, DEFAULT_TIMEOUT, @soft_404_baseline)
@@ -55,7 +56,9 @@ module Nokizaru
         waiter = WaitGroup.new(concurrency)
         concurrency.times do
           spawn do
-            pool = Http::Pool.new
+            # Each worker needs its own connections, but not its own policy: the
+            # template carries the scan's TLS choice and destination guard.
+            pool = @pool_template.derive
             begin
               worker_loop(jobs, completed, pool)
             ensure
@@ -91,7 +94,9 @@ module Nokizaru
       private def dispatch(queue, jobs, completed, options : Http::Options) : Nil
         active = dispatched = 0
         loop do
-          while active < @policy.stats.adaptive_concurrency && !@policy.stopped?(dispatched)
+          # A stopped scan admits no further candidates; the probes already in
+          # flight are drained below so every worker socket still closes.
+          until @stop.stopped? || active >= @policy.stats.adaptive_concurrency || @policy.stopped?(dispatched)
             queue.extension_enabled = @policy.stats.extension_phase_enabled?
             url = queue.pop
             break if url.nil?
@@ -111,7 +116,7 @@ module Nokizaru
 
       private def request_options(options : Http::Options) : Http::Options
         Http::Options.new(headers: options.headers, timeout_s: @policy.timeout_s,
-          verify_ssl: options.verify_ssl?, follow_redirects: options.follow_redirects?,
+          follow_redirects: options.follow_redirects?,
           max_redirects: options.max_redirects, body: options.body, scope_check: options.scope_check)
       end
 

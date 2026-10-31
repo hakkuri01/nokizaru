@@ -196,7 +196,7 @@ module Nokizaru
       end
     end
 
-    # http://web.archive.org - CDX of archived URLs for *.host; subdomains are
+    # https://web.archive.org - CDX of archived URLs for *.host; subdomains are
     # the hostnames of the returned URLs.
     class WaybackArchive < Provider
       def name : String
@@ -211,7 +211,7 @@ module Nokizaru
       end
 
       def build(host : String, keys : Hash(String, String)) : Request
-        Request.new("http://web.archive.org/cdx/search/cdx?url=*.#{host}/*&output=txt&fl=original&collapse=urlkey")
+        Request.new("https://web.archive.org/cdx/search/cdx?url=*.#{host}/*&output=txt&fl=original&collapse=urlkey")
       end
 
       def parse(host : String, body : String) : Array(String)

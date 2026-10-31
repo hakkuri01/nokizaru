@@ -25,10 +25,11 @@ module Nokizaru
       @enabled.each { |key| @modules[key] = Live.new(Tui::Progress::Phase::Pending, key) }
     end
 
-    # The handle a module publishes through; reporting marks the module current.
+    # The handle a module publishes through. Reporting updates the module's own
+    # stage without claiming focus; only a lifecycle event moves the rail.
     def reporter(key : String) : ProgressReporter
       ProgressReporter.new(->(stage : String, detail : String) {
-        set(key) { |live| live.stage = stage; live.detail = detail }
+        update(key) { |live| live.stage = stage; live.detail = detail }
       })
     end
 
@@ -37,11 +38,11 @@ module Nokizaru
     end
 
     def module_finished(key : String) : Nil
-      set(key, &.phase=(Tui::Progress::Phase::Done))
+      update(key, &.phase=(Tui::Progress::Phase::Done))
     end
 
     def module_failed(key : String) : Nil
-      set(key, &.phase=(Tui::Progress::Phase::Failed))
+      update(key, &.phase=(Tui::Progress::Phase::Failed))
     end
 
     def module_skipped(key : String, label : String) : Nil
@@ -66,6 +67,16 @@ module Nokizaru
     private def set(key : String, & : Live -> _) : Nil
       @mutex.synchronize do
         @current = key
+        live = @modules[key] ||= Live.new(Tui::Progress::Phase::Pending, key)
+        yield live
+      end
+    end
+
+    # Phase and stage changes that must not move the current module: a module
+    # abandoned after its timeout can still report, and its late lines must not
+    # retag the output of the module running now.
+    private def update(key : String, & : Live -> _) : Nil
+      @mutex.synchronize do
         live = @modules[key] ||= Live.new(Tui::Progress::Phase::Pending, key)
         yield live
       end

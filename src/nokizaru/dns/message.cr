@@ -5,8 +5,8 @@ module Nokizaru
     class MalformedMessage < Exception
     end
 
-    # One answer resource record, kept with its rdata still raw. Presentation
-    # (E2) decodes rdata per type; the types whose rdata embeds a domain name
+    # One answer resource record, kept with its rdata still raw. Dns::Presentation
+    # decodes rdata per type; the types whose rdata embeds a domain name
     # (NS, CNAME, SOA, MX, ...) decompress it against `message` starting at
     # `rdata_offset`, so the whole message buffer travels with the record. The
     # owner name, class, and TTL are parsed to advance the cursor but not kept:
@@ -21,7 +21,7 @@ module Nokizaru
       end
     end
 
-    # DNS wire-format message encode/decode (RFC 1035 §4), hand-rolled per D3b
+    # DNS wire-format message encode/decode (RFC 1035 §4), hand-rolled
     # (no shard). Builds a query and parses a response down to its answer
     # section, which is all enumeration reads (the Ruby dnsruby path used
     # `response.answer`). Every length and offset off the wire is bounds-checked

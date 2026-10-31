@@ -1,7 +1,7 @@
 require "../spec_helper"
 require "../support/http_test_server"
 require "../../src/nokizaru/modules/wayback"
-require "../../src/nokizaru/context"
+require "../../src/nokizaru/run_state"
 
 private CDX_JSON = %q([["timestamp","original","mimetype","statuscode","digest"],["20230101000000","http://example.com/admin","text/html","200","AAA"],["20230601000000","http://example.com/api/v1/users","application/json","200","BBB"]])
 

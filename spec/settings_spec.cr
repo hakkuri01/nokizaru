@@ -19,7 +19,6 @@ describe Nokizaru::Settings do
     s.port_scan.threads.should eq(50)
     s.dir_enum.threads.should eq(50)
     s.dir_enum.redirect?.should be_false
-    s.dir_enum.verify_ssl?.should be_false
     s.dir_enum.extension.should eq("")
   end
 

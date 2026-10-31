@@ -1,4 +1,5 @@
 require "../run_state"
+require "../scan_stop"
 require "../target_info"
 require "../settings"
 require "../banner"
@@ -30,6 +31,7 @@ module Nokizaru::CLI
     @feed : Tui::Feed?
     @plan : Workflow::Plan?
     @launched_workflow : Workflow?
+    @stop : ScanStop?
     @clock : -> Float64
 
     def initialize(
@@ -40,6 +42,7 @@ module Nokizaru::CLI
     )
       @wake_channel = Channel(Nil).new(1)
       @scanning = false
+      @generation = 0
       @feed = nil
       @plan = nil
       @launched_workflow = nil
@@ -47,7 +50,7 @@ module Nokizaru::CLI
       @clock = clock || -> { (Time.instant - epoch).total_seconds }
     end
 
-    # Marks this a power-user launch (§12a): the dashboard opens directly on the
+    # Marks this a power-user launch: the dashboard opens directly on the
     # pre-validated plan and the scan auto-starts, with no opener or form. The
     # caller has already run plan! (so a bad invocation failed classically before
     # the terminal opened); this session reuses that plan rather than re-planning.
@@ -91,46 +94,72 @@ module Nokizaru::CLI
       {plan.rail.snapshot, module_statuses(plan.state)}
     end
 
-    # Launches a scan for the app's composed options on a background fiber. Module
-    # output flows through a Capture into the Feed; setup output (target context)
-    # is held as prelude until the scan goes live and opens the dashboard.
+    # Launches a scan for the app's composed options on a background fiber.
     def run_scan(app : Tui::App) : Nil
       return if @scanning
 
-      feed = Tui::Feed.new(-> { @plan.try(&.rail.current_module) }, -> { nudge })
-      @feed = feed
-      UI.output = Tui::Capture.new(->(line : String) { feed.line(line) })
+      generation = @generation += 1
+      stop = ScanStop.new
+      @stop = stop
+      feed = install_feed(generation)
       @scanning = true
       options = app.scan_options
-      spawn { scan(options, feed) }
+      spawn do
+        scan(options, feed, stop, generation)
+      ensure
+        finish(generation)
+      end
     end
 
-    # Crystal has no fiber cancellation, so stop only flips the scanning flag; a
-    # mid-flight scan fiber runs to completion in the background (its output goes
-    # to a Feed the closed dashboard no longer drains). Harmless for a short-lived
-    # interactive process, and the next launch installs a fresh Feed and capture.
+    # Module output flows through a Capture into this scan's Feed; setup output
+    # (target context) is held as prelude until the scan goes live. UI.output is
+    # process wide and a stopped scan's fiber can still be winding down, so a line
+    # from an older generation is dropped rather than mixed into this scan.
+    private def install_feed(generation : Int32) : Tui::Feed
+      feed = Tui::Feed.new(-> { @plan.try(&.rail.current_module) }, -> { nudge })
+      @feed = feed
+      UI.output = Tui::Capture.new(->(line : String) { feed.line(line) if generation == @generation })
+      feed
+    end
+
+    # Stopping is cooperative, because Crystal has no fiber cancellation: the flag
+    # the long loops poll goes up, the module runner starts nothing further, and
+    # the generation moves so a late line from the stopped fiber is dropped
+    # instead of landing in the next scan's dashboard.
     def stop_scan : Nil
+      @stop.try(&.stop!)
+      @generation += 1
       @scanning = false
     end
 
-    private def scan(options : Options, feed : Tui::Feed) : Nil
-      workflow = Workflow.new(options, @settings, @resolve_ip)
+    private def scan(options : Options, feed : Tui::Feed, stop : ScanStop, generation : Int32) : Nil
+      workflow = Workflow.new(options, @settings, @resolve_ip, stop)
       plan = workflow.plan!
-      @plan = plan
+      @plan = plan if generation == @generation
       feed.event(Tui::Messages::ScanStarted.new(dashboard_profile(plan)))
+      run_plan(workflow, plan, feed, stop)
+    rescue error
+      report_failure(feed, error)
+    end
+
+    # The shared scan body. A scan the operator stopped skips finalize, so an
+    # abandoned run writes no export and prints no completion line.
+    private def run_plan(workflow : Workflow, plan : Workflow::Plan, feed : Tui::Feed, stop : ScanStop) : Nil
       feed.live!
       workflow.execute!(plan)
+      return if stop.stopped?
+
       feed.tag = "summary" # findings and the completion line belong to Summary
       elapsed, export_dir = workflow.finalize!(plan)
       feed.event(Tui::Messages::ScanDone.new(elapsed, export_dir, 0))
-    rescue error
-      report_failure(feed, error)
-    ensure
-      @scanning = false
+    end
+
+    private def finish(generation : Int32) : Nil
+      @scanning = false if generation == @generation
       nudge
     end
 
-    # Starts the pre-planned power-user scan (§12a). The dashboard is already open
+    # Starts the pre-planned power-user scan. The dashboard is already open
     # on the plan's profile, so the feed goes live immediately and no ScanStarted
     # is emitted; the fiber runs execute!/finalize! on the plan built up front. A
     # no-op unless launch! armed the session.
@@ -139,24 +168,21 @@ module Nokizaru::CLI
       plan = @plan
       return if workflow.nil? || plan.nil?
 
-      feed = Tui::Feed.new(-> { @plan.try(&.rail.current_module) }, -> { nudge })
-      @feed = feed
-      UI.output = Tui::Capture.new(->(line : String) { feed.line(line) })
+      generation = @generation += 1
+      @stop = workflow.stop
+      feed = install_feed(generation)
       @scanning = true
-      spawn { launched_scan(workflow, plan, feed) }
+      spawn do
+        launched_scan(workflow, plan, feed)
+      ensure
+        finish(generation)
+      end
     end
 
     private def launched_scan(workflow : Workflow, plan : Workflow::Plan, feed : Tui::Feed) : Nil
-      feed.live!
-      workflow.execute!(plan)
-      feed.tag = "summary" # findings and the completion line belong to Summary
-      elapsed, export_dir = workflow.finalize!(plan)
-      feed.event(Tui::Messages::ScanDone.new(elapsed, export_dir, 0))
+      run_plan(workflow, plan, feed, workflow.stop)
     rescue error
       report_failure(feed, error)
-    ensure
-      @scanning = false
-      nudge
     end
 
     # reason; one that raised after going live fails on the dashboard. A fatal
@@ -189,7 +215,7 @@ module Nokizaru::CLI
     private def switches_summary(info : TargetInfo) : String
       parts = [] of String
       parts << "redirects" if info.allow_redirects?
-      parts << "verify-ssl" if info.verify_ssl?
+      parts << "insecure-tls" unless info.verify_ssl?
       parts << "export" if @options.export?
       parts << "headers:#{info.request_headers.size}" unless info.request_headers.empty?
       parts << "wordlist:#{info.wordlist}"

@@ -4,7 +4,7 @@ require "openssl"
 # (issuer, version, serial, validity), read through a small LibCrypto FFI binding
 # over the functions the already-linked C library provides. The stdlib covers
 # subject, extensions, and the socket's protocol/cipher; this fills the gap the
-# sslinfo module needs (design section 5). Pointers returned by the X509_get0_*
+# sslinfo module needs. Pointers returned by the X509_get0_*
 # functions are borrowed from the certificate (not freed here); OpenSSL::X509::Name
 # dups its argument, so wrapping the borrowed issuer name is safe.
 lib LibCrypto

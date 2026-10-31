@@ -18,7 +18,6 @@ module Nokizaru
     # moves that hide results) is mitigated by keeping only SGR color and dropping every other escape, C0/C1
     # control, and bidi override in one linear pass. No backreference or lookaround, so it matches in linear time.
     CONTROL = /\e\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|\x{9b}[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|\e[\]PX^_][^\a\e\x{9c}]*(?:\a|\e\\|\x{9c})?|[\x{90}\x{98}\x{9d}\x{9e}\x{9f}][^\a\e\x{9c}]*(?:\a|\e\\|\x{9c})?|\e[\x20-\x2f]*[\x30-\x7e]?|[\x00-\x1f\x7f\x{80}-\x{9f}\x{202a}-\x{202e}\x{2066}-\x{2069}]/
-
     # Cells taken by East Asian wide and fullwidth characters and emoji, sorted for binary search.
     # ponytail: no grapheme clustering, so a ZWJ emoji sequence can mismeasure by a cell; target text is mostly
     # ASCII, and a width-table shard is the upgrade path if that ever matters.
@@ -41,12 +40,27 @@ module Nokizaru
       {0xFE00, 0xFE0F}, {0xFE20, 0xFE2F}, {0xFEFF, 0xFEFF}, {0xE0100, 0xE01EF},
     ] of Tuple(Int32, Int32)
 
-    def sanitize(text : String) : String
+    # Renders one line of untrusted text: a newline would forge a second line, so
+    # it goes with the other controls. `keep_newline` is for text whose breaks are
+    # content (a WHOIS record), which AGENTS Security 1 preserves.
+    def sanitize(text : String, keep_newline : Bool = false) : String
       utf8(text).gsub(CONTROL) do |match|
         next TAB if match == "\t"
+        next match if keep_newline && match == "\n"
 
         match.matches?(SGR) ? match : ""
       end
+    end
+
+    # A value on its way into a result, a report file, or a filename. Color goes
+    # too: a stored value is read back as data, not rendered.
+    def plain(text : String) : String
+      strip_sgr(sanitize(text))
+    end
+
+    # The same for a multi-line record, keeping its line breaks.
+    def plain_block(text : String) : String
+      strip_sgr(sanitize(text, keep_newline: true))
     end
 
     def utf8(text : String) : String

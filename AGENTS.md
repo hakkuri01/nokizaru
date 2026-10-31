@@ -8,7 +8,7 @@ time.
 
 Nokizaru is implemented in Crystal. Source lives at the root (`src/`, `spec/`),
 and the original Ruby implementation through 2.7.12 remains available in Git
-history and at the `v2.7.12` tag.
+history, at commit `f07456c`.
 
 ## Mandatory Rules
 
@@ -109,19 +109,29 @@ touches untrusted data is reasoned through before it is written.
    external text (bodies, headers, status reasons, titles, extracted links,
    redirect targets, WHOIS text, filenames) passes a sanitize pass before it
    touches the terminal or the filesystem: strip escape sequences, C0 and C1
-   controls except newline and tab, and bidirectional overrides. A malicious or
-   compromised target must not inject terminal escapes into the TUI or the classic
-   output; styles are applied after sanitizing.
+   controls, and bidirectional overrides. A rendered line drops newline with the
+   other controls, because a newline in a value forges a second line; text whose
+   breaks are content (a WHOIS record) keeps them (`TerminalText.plain_block`).
+   A value stored on the run is sanitized where it enters the result, so the
+   report files carry no escapes either. A malicious or compromised target must
+   not inject terminal escapes into the TUI or the classic output; styles are
+   applied after sanitizing.
 2. **Validate at the boundary, never repair.** A redirect `Location`, a crawled
-   link's host, a DNS name, a provider-returned hostname are validated (scheme,
-   host, scope) and refused when unsafe, not rewritten. No outbound request is
+   link's host, a DNS name, a provider-returned hostname, a WHOIS referral are
+   validated (scheme, host, scope) and refused when unsafe, not rewritten. Scope
+   decides which names a scan may follow; `Destination` decides which addresses
+   those names may resolve to, so a target cannot steer a request at the
+   operator's own network. A scan aimed at an internal target allows internal
+   destinations; one aimed at a public target does not. No outbound request is
    built from unvalidated server data.
 3. **Network limits.** Every request has connect and read timeouts and a total
    operation deadline. Every response has its status, content type, and size
    (against a cap) checked before use; bodies, including transparent gzip/deflate,
-   stop at the decoded cap. Retries are bounded. TLS verification is on by default;
-   the operator may disable it explicitly for directory enumeration (`-s`), and
-   that choice is theirs.
+   stop at the decoded cap. Retries are bounded. TLS verification is on for every
+   request; the operator may turn it off for the target they named with
+   `--insecure`, and that choice is theirs. Third-party services (subdomain
+   providers, the archive, RDAP) stay verified regardless. The one exception is
+   the sslinfo module, whose job is to read a certificate that may be invalid.
 4. **No shell.** Subprocesses, if ever needed, use argument arrays, never a shell,
    with a timeout and a cleaned environment. Nothing of any provenance is
    shell-interpolated.
@@ -201,8 +211,9 @@ doc-commented library (Ameba's documentation rule stays off).
 - **Zero runtime shards.** `shard.yml` has no `dependencies` key; the binary uses
   the standard library only. Every former Ruby gem (thor, json, erb, nokogiri,
   httpx, dnsruby, whois, public_suffix, concurrent-ruby/async, zlib) is hand-rolled
-  or covered by the standard library. HTTP/2 is hand-rolled; Gori (`hahwul/gori`)
-  may be read for structural insight only, never copied.
+  or covered by the standard library. An HTTP/2 client, when it lands, is
+  hand-rolled too; Gori (`hahwul/gori`) may be read for structural insight only,
+  never copied.
 - **Embedded data is not a dependency.** The Public Suffix List and the curated
   wordlists under `data/` are compile-time `read_file` embeds, carried in the
   binary, not linked code.

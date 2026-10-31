@@ -13,6 +13,23 @@ private def adaptive_runtime(policy, transport)
 end
 
 describe "Directory adaptive admission" do
+  it "admits no candidate once the scan is stopped" do
+    now = Time.instant
+    requests = 0
+    transport = ->(_url : String, _options : Nokizaru::Http::Options) do
+      requests += 1
+      Nokizaru::Http::Result.ok(404, HTTP::Headers.new, "missing", false)
+    end
+    stop = Nokizaru::ScanStop.new
+    stop.stop!
+    policy = Nokizaru::DirRec::AdaptivePolicy.new(4, 3.0, nil, clock: -> { now })
+    runtime = Nokizaru::DirRec::Runtime.new("http://fixture", "http://fixture", nil,
+      Nokizaru::DirRec::ConfidenceContext.new(nil, nil), policy: policy, transport: transport, stop: stop)
+
+    runtime.run(Nokizaru::DirRec::LazyQueue.new(adaptive_plan(500), "http://fixture"), 4, Nokizaru::Http::Options.new)
+
+    requests.should eq(0)
+  end
   it "drains a healthy finite plan exactly once with bounded in-flight work" do
     now = Time.instant
     requests = [] of String

@@ -146,7 +146,6 @@ describe Nokizaru::CLI::Workflow do
       workflow.failed_collect(plan).should be_nil
       plan.state.modules.dns.should be_nil
       workflow.collect_result(plan, "dns", Modules::DnsEnumeration::Result.new({} of String => Array(String), "DNS Records Not Found"))
-      workflow.collect_result(plan, "arch", Modules::Arch::Result.skipped)
       workflow.collect_result(plan, "arch", Modules::Arch::Result.error)
       crawl = artifact_crawl
       crawl.stats = Nokizaru::Crawler::Stats.new

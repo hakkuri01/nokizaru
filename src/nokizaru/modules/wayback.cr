@@ -100,16 +100,16 @@ module Nokizaru
         return if snapshots.empty?
 
         UI.tree_header(title)
-        UI.tree_rows(snapshots.map { |snapshot| {yield(snapshot), snapshot.snapshot_url.as(String?)} })
+        UI.tree_rows(snapshots.map { |snapshot| {yield(snapshot), snapshot.snapshot_url} })
       end
 
       private def present_manual_pivots(pivots : Hash(String, String)) : Nil
         UI.tree_header("Wayback Manual Review Links")
         UI.tree_rows([
-          {"Calendar", pivots["calendar_url"]?.as(String?)},
-          {"Changes", pivots["changes_url"]?.as(String?)},
-          {"Availability API", pivots["availability_query_url"]?.as(String?)},
-          {"CDX API", pivots["cdx_query_url"]?.as(String?)},
+          {"Calendar", pivots["calendar_url"]?},
+          {"Changes", pivots["changes_url"]?},
+          {"Availability API", pivots["availability_query_url"]?},
+          {"CDX API", pivots["cdx_query_url"]?},
         ])
       end
 

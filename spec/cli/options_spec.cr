@@ -6,7 +6,7 @@ describe Nokizaru::CLI::Options do
     argv = [
       "--target", "https://example.com", "--full", "--export",
       "-nb", "-dt", "20", "-pt", "40", "-sp", "8443", "-p", "80,443",
-      "-T", "2.5", "-w", "large", "-H", "A: 1", "-H", "B: 2", "-r", "-s",
+      "-T", "2.5", "-w", "large", "-H", "A: 1", "-H", "B: 2", "-r", "--insecure",
       "-d", "1.1.1.1", "-e", "php,txt", "-o", "json,txt", "-cd", "/tmp/out", "-of", "scan", "-k", "shodan",
     ]
     opts = Nokizaru::CLI::Options.parse(argv)
@@ -22,7 +22,7 @@ describe Nokizaru::CLI::Options do
     opts.wordlist.should eq("large")
     opts.request_headers.should eq(["A: 1", "B: 2"])
     opts.redirects.should be_true
-    opts.verify_ssl.should be_true
+    opts.insecure?.should be_true
     opts.dns_servers.should eq("1.1.1.1")
     opts.extensions.should eq("php,txt")
     opts.formats.should eq("json,txt")
@@ -71,10 +71,10 @@ describe Nokizaru::CLI::Options do
     opts.timeout.should eq(0.001)
   end
 
-  it "leaves tri-state redirect and verify flags nil when unset" do
+  it "leaves the tri-state redirect flag nil and TLS verification on when unset" do
     opts = Nokizaru::CLI::Options.parse(["--headers"])
     opts.redirects.should be_nil
-    opts.verify_ssl.should be_nil
+    opts.insecure?.should be_false
   end
 
   it "selects modules from flags in execution order" do

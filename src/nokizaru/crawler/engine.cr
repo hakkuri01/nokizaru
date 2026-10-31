@@ -59,7 +59,10 @@ module Nokizaru
         apply_fetch_envelope(result, status)
 
         headers = status.request_headers
-        populate_page_links(result, XML.parse_html(status.body || ""), page_url, headers)
+        # A 2xx body that is not a document is not parsed: a tree built out of a
+        # PNG yields nothing and costs the whole response.
+        document = UrlRules.parseable_text?(status.content_type) ? status.body || "" : ""
+        populate_page_links(result, XML.parse_html(document), page_url, headers)
 
         counts = surface_of(result)
         @budget.apply(counts)
@@ -88,7 +91,7 @@ module Nokizaru
         sitemap_urls, updated = Sitemaps.new(@fetcher, headers, @budget, counts).crawl(result.sitemap_links, page_url)
         result.urls_inside_sitemap = sitemap_urls
         result.sitemap_links = updated
-        result.urls_inside_js = JavaScript.new(headers, @budget, counts).crawl(result.js_links, page_url)
+        result.urls_inside_js = JavaScript.new(headers, @budget, counts, @pool).crawl(result.js_links, page_url)
       end
 
       private def surface_of(result : Result) : Surface
@@ -114,18 +117,23 @@ module Nokizaru
         @wayback_seeds.first(WAYBACK_SEED_CAP).each do |url|
           next unless same_scope_seed?(url, scope_host)
 
-          fetch = @fetcher.fetch_following(url, headers)
+          # A seed on a sibling host is in scope but is not the page's own origin,
+          # so it is fetched without the operator's headers.
+          seed_headers = UrlRules.origin_headers(url, page_url, headers)
+          fetch = @fetcher.fetch_following(url, seed_headers)
           next unless fetch.success?
 
           live = fetch.effective_url
-          result.internal_links << live unless result.internal_links.includes?(live)
+          result.internal_links << live
           body = fetch.result.try(&.body)
           next if body.nil?
 
-          links = Links.new(@fetcher, headers, @budget).extract(XML.parse_html(body), live, UrlRules.base_url_for(live))
-          result.internal_links.concat(links.internal_links)
+          # Only the seed page's own anchors: robots.txt and the sitemap belong to
+          # the landing page, which already fetched them.
+          links = Links.new(@fetcher, seed_headers, @budget).internal_links(live, XML.parse_html(body))
+          result.internal_links.concat(links)
         end
-        result.internal_links.uniq!
+        result.internal_links = UrlRules.cap_links(result.internal_links, MAX_INTERNAL_LINKS)
       end
 
       private def same_scope_seed?(url : String, scope_host : String) : Bool

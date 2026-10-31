@@ -1,5 +1,6 @@
 require "json"
 require "../http/pool"
+require "../secrets"
 require "../target_intel"
 require "../ui"
 
@@ -97,23 +98,23 @@ module Nokizaru
       end
 
       # Long values gain readability as a tree; short values stay inline.
-      private def tree_segments(key : String, value : String) : Array(Tuple(String, String?))
-        return [] of Tuple(String, String?) if value.size <= 140
+      private def tree_segments(key : String, value : String) : Array(Tuple(String, String))
+        return [] of Tuple(String, String) if value.size <= 140
 
         case key.downcase
         when "content-security-policy" then split_segments(value, ';', "directive")
-        when "set-cookie"              then split_set_cookie(value).map { |segment| {"cookie", segment.as(String?)} }
+        when "set-cookie"              then split_set_cookie(value).map { |segment| {"cookie", segment} }
         when "vary"                    then split_segments(value, ',', "value")
-        else                                [] of Tuple(String, String?)
+        else                                [] of Tuple(String, String)
         end
       end
 
-      private def split_segments(value : String, separator : Char, label : String) : Array(Tuple(String, String?))
-        value.split(separator).map(&.strip).reject(&.empty?).map { |segment| {label, segment.as(String?)} }
+      private def split_segments(value : String, separator : Char, label : String) : Array(Tuple(String, String))
+        value.split(separator).map(&.strip).reject(&.empty?).map { |segment| {label, segment} }
       end
 
       def collect(target : String, pool : Http::Pool, request_headers : ::HTTP::Headers = ::HTTP::Headers.new) : Result
-        options = Http::Options.new(headers: request_headers, timeout_s: TIMEOUT, verify_ssl: false, follow_redirects: false)
+        options = Http::Options.new(headers: request_headers, timeout_s: TIMEOUT, follow_redirects: false)
         result = pool.get(target, options)
         if result.error?
           error_type = result.error_kind.tls? ? "SSLError" : nil
@@ -121,14 +122,19 @@ module Nokizaru
           return Result.failure(message, TargetIntel.profile(target, nil), error_type)
         end
 
-        Result.ok(header_hash(result.headers), TargetIntel.profile(target, result))
+        Result.ok(header_hash(result.headers, Secrets.from_headers(request_headers)), TargetIntel.profile(target, result))
       end
 
       # Keys are lowercased and multi-valued headers joined, as the Ruby tool
-      # stored them. O(H) over the bounded header set.
-      private def header_hash(headers : ::HTTP::Headers) : Hash(String, String)
+      # stored them. A value is sanitized before it is matched, so an escape
+      # planted inside a reflected credential cannot hide it, and a supplied
+      # credential the target echoes back reaches neither stdout nor an export.
+      # O(H) over the bounded header set.
+      private def header_hash(headers : ::HTTP::Headers, secrets : Array(String)) : Hash(String, String)
         collected = {} of String => String
-        headers.each { |name, values| collected[name.downcase] = values.join(", ") }
+        headers.each do |name, values|
+          collected[name.downcase] = Secrets.redact(TerminalText.plain(values.join(", ")), secrets)
+        end
         collected
       end
     end

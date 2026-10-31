@@ -4,6 +4,25 @@ require "../../src/nokizaru/portscan/scanner"
 
 describe Nokizaru::Portscan::Scanner do
   describe "#scan" do
+    it "starts no probe once the scan is stopped" do
+      listener = TCPServer.new("127.0.0.1", 0)
+      open_port = listener.local_address.port
+      begin
+        stop = Nokizaru::ScanStop.new
+        stop.stop!
+        options = Nokizaru::Portscan::Options.new(concurrency: 4, connect_timeout: 0.5, verify: false, stop: stop)
+        probes = Atomic(Int32).new(0)
+
+        opens = Nokizaru::Portscan::Scanner.new.scan("127.0.0.1", Array.new(50) { {open_port, "svc"} }, options,
+          ->(_scanned : Int32, _open : Int32) { probes.add(1); nil })
+
+        opens.should be_empty
+        probes.get.should eq(0)
+      ensure
+        listener.close
+      end
+    end
+
     it "reports an open port and skips a closed one" do
       listener = TCPServer.new("127.0.0.1", 0)
       open_port = listener.local_address.port

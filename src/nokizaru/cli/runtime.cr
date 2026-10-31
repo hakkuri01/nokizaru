@@ -24,7 +24,7 @@ module Nokizaru::CLI
     # where the opening scene shows the art instead).
     def banner : Nil
       UI.output.puts("#{UI::R}#{Banner::TEXT}#{UI::W}\n")
-      UI.rows(:plus, [{"AUTHOR", AUTHOR.as(String?)}, {"VERSION", Nokizaru::VERSION.as(String?)}])
+      UI.rows(:plus, [{"AUTHOR", AUTHOR}, {"VERSION", Nokizaru::VERSION}])
       UI.row(:plus, "GIT", GIT, label_width: 7)
       UI.blank_line
     end
@@ -38,7 +38,7 @@ module Nokizaru::CLI
       UI.row(:info, "Target Notice", notice) unless notice.nil?
       error = info.ip_resolution_error
       ip_display = info.ip || "unresolved (#{error})"
-      UI.rows(:info, [{"Target", info.target.as(String?)}, {"IP Address", ip_display.as(String?)}])
+      UI.rows(:info, [{"Target", info.target}, {"IP Address", ip_display}])
     end
 
     # Builds the initial run state from the resolved target: version, target,

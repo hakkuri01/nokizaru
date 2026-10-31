@@ -113,7 +113,7 @@ module Nokizaru
 
           if clean.includes?(':')
             key, _, value = clean.partition(':')
-            pairs << {key.strip, value.strip.as(String?)}
+            pairs << {key.strip, value.strip}
           else
             misc << normalize_misc_line(clean)
           end
@@ -127,10 +127,10 @@ module Nokizaru
         UI.rows(:info, [
           {"Domain", result.domain},
           {"Handle", result.handle},
-          {"Status", (result.registration_status || [] of String).join(", ").as(String?)},
-          {"Events", events.as(String?)},
-          {"Nameservers", (result.nameservers || [] of String).join(", ").as(String?)},
-        ])
+          {"Status", (result.registration_status || [] of String).join(", ")},
+          {"Events", events},
+          {"Nameservers", (result.nameservers || [] of String).join(", ")},
+        ] of Tuple(String, String?))
       end
 
       private def normalize_misc_line(line : String) : String
@@ -353,9 +353,11 @@ module Nokizaru
       end
 
       # WHOIS servers return assorted encodings; scrub invalid bytes to a "?" so
-      # the text is valid UTF-8 for storage and export, as the Ruby tool did.
+      # the text is valid UTF-8 for storage and export, as the Ruby tool did, and
+      # strip the escapes and bidi overrides a hostile server could plant in a
+      # record that lands in a report file. Line breaks are content here.
       private def normalize(text : String) : String
-        text.scrub("?")
+        TerminalText.plain_block(text.scrub("?"))
       end
     end
 

@@ -2,7 +2,7 @@ require "./spec_helper"
 require "digest/sha256"
 require "../src/nokizaru/psl"
 
-# The PSL integrity pin (C9): the embedded list must match the known-good hash
+# The PSL integrity pin: the embedded list must match the known-good hash
 # and must still be the structured Mozilla list. A refresh updates both the file
 # and Nokizaru::PSL::SHA256 together, so any unreviewed drift fails here.
 describe Nokizaru::PSL do

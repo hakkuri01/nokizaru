@@ -51,7 +51,7 @@ module Nokizaru
         Field.new("p", "Ports", "-p", Kind::Text, "", "OPTIONS", false),
         Field.new("T", "Timeout", "-T", Kind::Number, "", "OPTIONS", false),
         Field.new("r", "Follow Redirects", "-r", Kind::Toggle, "", "OPTIONS", false),
-        Field.new("s", "Verify SSL", "-s", Kind::Toggle, "", "OPTIONS", false),
+        Field.new("insecure", "Insecure TLS", "--insecure", Kind::Toggle, "", "OPTIONS", false),
         Field.new("export", "Export", "--export", Kind::Toggle, "", "EXPORT", false),
         Field.new("o", "Formats", "-o", Kind::Text, "txt,json,html", "EXPORT", false),
         Field.new("cd", "Directory", "-cd", Kind::Text, "", "EXPORT", false),
@@ -169,7 +169,7 @@ module Nokizaru
         opts.port_threads = text("pt").to_i? if present?("pt")
         opts.timeout = text("T").to_f? if present?("T")
         opts.redirects = true if toggle?("r")
-        opts.verify_ssl = true if toggle?("s")
+        opts.insecure = true if toggle?("insecure")
         apply_export(opts)
         opts.request_headers.concat(@request_headers)
         opts.ssl_port = @carried_ssl_port
@@ -197,7 +197,7 @@ module Nokizaru
         options.export_dir.try { |v| @values["cd"] = v }
         options.export_basename.try { |v| @values["of"] = v }
         @toggles["r"] = true if options.redirects
-        @toggles["s"] = true if options.verify_ssl
+        @toggles["insecure"] = true if options.insecure?
         @toggles["export"] = true if options.export?
         @modules << "full" if options.full?
         CLI::Options::MODULE_ORDER.each { |key| @modules << key if options.modules.includes?(key) }

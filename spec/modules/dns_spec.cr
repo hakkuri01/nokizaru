@@ -1,7 +1,7 @@
 require "../spec_helper"
 require "../support/dns_test_server"
 require "../../src/nokizaru/modules/dns"
-require "../../src/nokizaru/context"
+require "../../src/nokizaru/run_state"
 
 describe Nokizaru::Modules::DnsEnumeration do
   describe ".collect" do
@@ -48,26 +48,7 @@ describe Nokizaru::Modules::DnsEnumeration do
     end
   end
 
-  describe ".system_nameservers" do
-    it "parses the nameserver lines of a resolv.conf" do
-      path = File.tempname("resolv", ".conf")
-      File.write(path, "# a comment\nnameserver 192.0.2.1\nsearch example.com\nnameserver 192.0.2.2\n")
-      begin
-        Nokizaru::Modules::DnsEnumeration.system_nameservers(path).should eq(["192.0.2.1", "192.0.2.2"])
-      ensure
-        File.delete(path) rescue nil
-      end
-    end
-
-    it "falls back to the public pair when none are configured" do
-      path = File.tempname("resolv", ".conf")
-      File.write(path, "# nothing useful here\n")
-      begin
-        Nokizaru::Modules::DnsEnumeration.system_nameservers(path).should eq(["8.8.8.8", "1.1.1.1"])
-      ensure
-        File.delete(path) rescue nil
-      end
-    end
+  describe ".domain_exists?" do
   end
 
   describe "run-state wiring" do

@@ -93,4 +93,19 @@ describe "Directory worker cleanup" do
       server.close
     end
   end
+
+  it "runs every worker pool under the scan's destination policy" do
+    # No fixture server: a refused destination never reaches a connection, and
+    # the recorded host is the evidence that the worker's own pool carries the
+    # policy instead of starting a fresh unguarded one.
+    asked = [] of String
+    template = Nokizaru::Http::Pool.new(destination: ->(host : String) { asked << host; false })
+    base = "http://127.0.0.1:1"
+    plan = Nokizaru::DirRec::UrlPlan.new(["#{base}/admin"], [] of String, [] of String, [] of String, 1)
+    runtime = Nokizaru::DirRec::Runtime.new(base, base, nil, Nokizaru::DirRec::ConfidenceContext.new(nil, nil),
+      policy: Nokizaru::DirRec::AdaptivePolicy.new(1, 3.0, nil), pool_template: template)
+    runtime.run(Nokizaru::DirRec::LazyQueue.new(plan, base), 1, Nokizaru::Http::Options.new(timeout_s: 3.0))
+    asked.should eq(["127.0.0.1"])
+    runtime.success.should eq(0)
+  end
 end

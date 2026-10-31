@@ -5,8 +5,8 @@ require "./rdata_reader"
 
 module Nokizaru
   module Dns
-    # Renders a record's RDATA to its canonical zone-file / dig-style text
-    # (D4). The structured types each get an exact formatter; the opaque or
+    # Renders a record's RDATA to its canonical zone-file / dig-style text.
+    # The structured types each get an exact formatter; the opaque or
     # un-queryable tail (LOC, NSEC3, HIP, IPSECKEY, APL, DHCID, TKEY, TSIG)
     # falls back to the RFC 3597 generic form `\# <len> <hex>`, which still
     # surfaces the bytes losslessly. Dispatch is a frozen Hash keyed by type
@@ -16,9 +16,8 @@ module Nokizaru
     #
     # ponytail: LOC, NSEC3, RRSIG timestamps for SIG, and the rest of the
     # generic tail trade an exact decode for the lossless hex form. The owner
-    # may promote any of them to an exact formatter later (D4 lists LOC/NSEC3 as
-    # exact candidates); the bytes are preserved either way, so this is a
-    # presentation nicety, not a data loss.
+    # may promote any of them to an exact formatter later; the bytes are
+    # preserved either way, so this is a presentation nicety, not a data loss.
     module Presentation
       extend self
 

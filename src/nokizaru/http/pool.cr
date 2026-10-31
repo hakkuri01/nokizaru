@@ -1,5 +1,6 @@
 require "uri"
 require "./client"
+require "../destination"
 require "../target_intel"
 
 module Nokizaru
@@ -11,11 +12,11 @@ module Nokizaru
     SAME_HOST_SCOPE = ->(left : String, right : String) { left.downcase == right.downcase }
 
     # Per-request knobs, grouped so the request methods stay within the parameter
-    # budget. Defaults match the Ruby build: verify TLS, follow redirects.
+    # budget. Defaults match the Ruby build: follow redirects. TLS verification is
+    # not a per-request knob: the pool decides it from the operator's one choice.
     struct Options
       getter headers : ::HTTP::Headers
       getter timeout_s : Float64
-      getter? verify_ssl : Bool
       getter? follow_redirects : Bool
       getter max_redirects : Int32
       getter body : String?
@@ -28,7 +29,6 @@ module Nokizaru
       def initialize(
         @headers : ::HTTP::Headers = ::HTTP::Headers.new,
         @timeout_s : Float64 = OPERATION_TIMEOUT,
-        @verify_ssl : Bool = true,
         @follow_redirects : Bool = true,
         @max_redirects : Int32 = DEFAULT_MAX_REDIRECTS,
         @body : String? = nil,
@@ -38,7 +38,7 @@ module Nokizaru
       end
 
       def with_headers(headers : ::HTTP::Headers) : Options
-        Options.new(headers, @timeout_s, @verify_ssl, @follow_redirects, @max_redirects, @body, @scope_check, @read_timeout_s)
+        Options.new(headers, @timeout_s, @follow_redirects, @max_redirects, @body, @scope_check, @read_timeout_s)
       end
     end
 
@@ -51,10 +51,25 @@ module Nokizaru
     class Pool
       setter scope_check : Proc(String, String, Bool)
 
+      # `insecure_host` is the one host whose certificate is not verified: the
+      # operator's --insecure choice applies to the target they aimed at, never to
+      # the third-party APIs a scan also talks to (providers, archives, RDAP),
+      # whose certificates stay verified. A per-request option can only narrow
+      # verification, never widen it.
       def initialize(*, @scope_check : Proc(String, String, Bool) = SAME_HOST_SCOPE,
+                     @insecure_host : String? = nil,
+                     @destination : Proc(String, Bool)? = nil,
                      @client_factory : Proc(String, Int32, Bool, Bool, Client) = ->(host : String, port : Int32, tls : Bool, verify : Bool) { Client.new(host, port, tls, verify) })
         @clients = {} of String => Client
+        @allowed = {} of String => Bool
         @mutex = Mutex.new
+      end
+
+      # A fresh pool carrying this pool's transport policy, for a worker that
+      # needs its own connections (the crawler's fetch workers).
+      def derive : Pool
+        Pool.new(scope_check: @scope_check, insecure_host: @insecure_host,
+          destination: @destination, client_factory: @client_factory)
       end
 
       def request(method : String, url : String, options : Options = Options.new) : Result
@@ -66,10 +81,6 @@ module Nokizaru
 
       def get(url : String, options : Options = Options.new) : Result
         request("GET", url, options)
-      end
-
-      def head(url : String, options : Options = Options.new) : Result
-        request("HEAD", url, options)
       end
 
       def shutdown : Nil
@@ -138,10 +149,43 @@ module Nokizaru
 
       private def perform_once(method : String, url : String, options : Options) : Result
         uri = URI.parse(url)
-        client = client_for(uri, options.verify_ssl?)
+        host = uri.host
+        raise ArgumentError.new("URL has no host") if host.nil? || host.empty?
+        return Result.failure(ErrorKind::Other, "Refused #{host}: not a public destination") unless allowed_destination?(host)
+
+        client = client_for(uri, verified?(uri))
         client.request(method, request_target(uri), options.headers, options.timeout_s, options.body, options.read_timeout_s)
       rescue error : ArgumentError
         Result.failure(ErrorKind::Other, error.message || "Invalid URL: #{url}")
+      end
+
+      # One resolution per host, cached for the pool's life: a candidate loop asks
+      # about the same host thousands of times, so this stays O(1) per request.
+      # ponytail: the check and the connect resolve separately, so a name that
+      # flips between them is still reached (a DNS-rebinding window). Closing it
+      # needs a transport that connects to a pinned address while keeping the name
+      # for Host and SNI, which stdlib HTTP::Client cannot express; the upgrade
+      # path is the hand-rolled client.
+      private def allowed_destination?(host : String) : Bool
+        policy = @destination
+        return true if policy.nil?
+
+        key = host.downcase
+        cached = @mutex.synchronize { @allowed[key]? }
+        return cached unless cached.nil?
+
+        verdict = policy.call(key)
+        @mutex.synchronize { @allowed[key] = verdict }
+        verdict
+      end
+
+      # The one place TLS verification is decided: on for every request, off only
+      # for the single host the operator excused with --insecure.
+      private def verified?(uri : URI) : Bool
+        excused = @insecure_host
+        return true if excused.nil?
+
+        (uri.host || "").downcase != excused.downcase
       end
 
       private def client_for(uri : URI, verify_ssl : Bool) : Client

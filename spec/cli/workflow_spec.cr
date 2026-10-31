@@ -48,6 +48,31 @@ private def scan_handler(context : ::HTTP::Server::Context)
 end
 
 describe Nokizaru::CLI::Workflow do
+  it "starts no module and writes no export once the scan is stopped" do
+    wordlist = File.tempname("nok-stop", ".txt")
+    File.write(wordlist, "admin\n")
+    begin
+      requests = Atomic(Int32).new(0)
+      handler = ->(context : ::HTTP::Server::Context) do
+        requests.add(1)
+        scan_handler(context)
+      end
+      HttpTestServer.with_server(handler) do |base|
+        wf = Workflow.new(scan_options(base, wordlist), Nokizaru::Settings.new, STUB)
+        plan = silence { wf.plan! }
+        wf.stop.stop!
+
+        silence { wf.execute!(plan) }
+
+        requests.get.should eq(0)
+        plan.state.modules.headers.should be_nil
+        plan.state.modules.directory_enum.should be_nil
+      end
+    ensure
+      File.delete(wordlist) if File.exists?(wordlist)
+    end
+  end
+
   it "runs the enabled modules and fills the typed run state" do
     wordlist = File.tempname("nok-wf", ".txt")
     File.write(wordlist, "admin\nconfig\nsecret\n")

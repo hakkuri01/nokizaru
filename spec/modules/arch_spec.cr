@@ -1,5 +1,5 @@
 require "../spec_helper"
-require "../../src/nokizaru/context"
+require "../../src/nokizaru/run_state"
 require "json"
 
 private WAPPALYZER_BODY = <<-JSON
@@ -91,6 +91,28 @@ describe Nokizaru::Modules::Arch do
       result = Nokizaru::Http::Result.ok(200, HTTP::Headers{"Set-Cookie" => "JSESSIONID=abc; Path=/"}, "", false)
       Nokizaru::Modules::Arch::Fingerprint.detect(result).map(&.name).should contain("Java")
     end
+
+    it "reads the generator tag without matching one pattern over the whole body" do
+      # One pattern over the body backtracks quadratically on repeated
+      # unterminated <meta tags (736 KB took 10.6 s), so the evidence is that a
+      # hostile body returns at all and a real tag still resolves.
+      hostile = "<meta name=\"generator\" " * 40_000
+      Nokizaru::Modules::Arch::Fingerprint
+        .detect(Nokizaru::Http::Result.ok(200, HTTP::Headers.new, hostile, false))
+        .should be_empty
+
+      tagged = "#{"<p>pad</p>" * 100}<meta charset='utf-8'><meta name='generator' content='Drupal 10'>"
+      Nokizaru::Modules::Arch::Fingerprint
+        .detect(Nokizaru::Http::Result.ok(200, HTTP::Headers.new, tagged, false))
+        .map(&.name).should eq(["Drupal"])
+    end
+
+    it "ignores a generator tag past the document head" do
+      body = "#{" " * (64 * 1024)}<meta name=\"generator\" content=\"Joomla 5\">"
+      Nokizaru::Modules::Arch::Fingerprint
+        .detect(Nokizaru::Http::Result.ok(200, HTTP::Headers.new, body, false))
+        .should be_empty
+    end
   end
 
   it "serializes under the architecture_fingerprinting run key" do
@@ -123,9 +145,7 @@ describe "Nokizaru::Modules::Arch.present" do
     text.should contain("Total Unique Technologies Found")
   end
 
-  it "reports a missing API key and an empty result" do
-    present_capture { Nokizaru::Modules::Arch.present(Nokizaru::Modules::Arch::Result.skipped) }
-      .should contain("API key not found!")
+  it "reports an empty result" do
     present_capture { Nokizaru::Modules::Arch.present(Nokizaru::Modules::Arch::Result.ok([] of Nokizaru::Modules::Arch::Technology)) }
       .should contain("No technologies identified")
   end

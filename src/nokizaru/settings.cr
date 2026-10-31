@@ -38,7 +38,6 @@ module Nokizaru
       include JSON::Serializable
       getter threads : Int32 = 50
       getter? redirect : Bool = false
-      getter? verify_ssl : Bool = false
       getter extension : String = ""
 
       def initialize

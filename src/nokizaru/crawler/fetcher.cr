@@ -35,6 +35,7 @@ module Nokizaru
     # Complexity: O(1) requests per call (a fixed retry budget, a fixed redirect
     # budget); retains at most one capped sitemap seed and one worker origin.
     class Fetcher
+      getter pool : Http::Pool
       property sitemap_seed : ResourceFetch? = nil
       @previous_url : String? = nil
 
@@ -50,7 +51,6 @@ module Nokizaru
         options = Http::Options.new(
           headers: build_headers(headers, user_agent),
           timeout_s: timeout,
-          verify_ssl: false,
           follow_redirects: false,
         )
         result = @pool.get(url, options)
@@ -163,6 +163,7 @@ module Nokizaru
       getter failure_reason : String?
       getter http_status : Int32?
       getter error_class : String?
+      getter content_type : String?
 
       def initialize(
         @ok : Bool,
@@ -177,6 +178,7 @@ module Nokizaru
         @failure_reason : String? = nil,
         @http_status : Int32? = nil,
         @error_class : String? = nil,
+        @content_type : String? = nil,
       )
       end
 
@@ -313,6 +315,7 @@ module Nokizaru
           ok: true, body: result.body || "", effective_url: current,
           request_headers: state.headers, active_user_agent: state.user_agent,
           outcome: state.degraded? ? "degraded" : "ok", profiles: state.profiles,
+          content_type: result.headers["Content-Type"]?,
         )
       end
 

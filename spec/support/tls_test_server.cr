@@ -22,15 +22,33 @@ module TlsTestServer
     at_exit { FileUtils.rm_rf(dir) }
     cert = File.join(dir, "cert.pem")
     key = File.join(dir, "key.pem")
-    status = Process.run("openssl", [
+    ok = run_openssl([
       "req", "-x509", "-newkey", "rsa:2048", "-keyout", key, "-out", cert,
       "-days", "2", "-nodes", "-set_serial", "4096",
       "-subj", "/CN=nokizaru.test/O=NokizaruTest/C=US",
       "-addext", "subjectAltName=DNS:nokizaru.test,DNS:www.nokizaru.test",
-    ], output: Process::Redirect::Close, error: Process::Redirect::Close)
-    raise "openssl CLI unavailable for the TLS test fixture" unless status.success?
+    ])
+    raise "openssl CLI unavailable for the TLS test fixture" unless ok
 
     {cert, key}
+  end
+
+  # The one subprocess the gate runs. PATH is kept so the binary resolves, and
+  # nothing else is: a stray OPENSSL_CONF in the environment would otherwise
+  # steer the fixture. The deadline keeps a hung binary from hanging the suite.
+  private def run_openssl(args : Array(String)) : Bool
+    process = Process.new("openssl", args, clear_env: true,
+      env: {"PATH" => ENV["PATH"]? || "/usr/bin:/bin"},
+      output: Process::Redirect::Close, error: Process::Redirect::Close)
+    finished = Channel(Bool).new(1)
+    spawn { finished.send(process.wait.success?) }
+    select
+    when ok = finished.receive
+      ok
+    when timeout(30.seconds)
+      process.signal(Signal::KILL) rescue nil
+      false
+    end
   end
 
   def with_server(context = OpenSSL::SSL::Context::Server.new, &block : (String, Int32) ->) : Nil

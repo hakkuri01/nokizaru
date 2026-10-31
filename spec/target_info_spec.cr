@@ -35,7 +35,7 @@ describe Nokizaru::TargetInfo do
     info.wordlist.should eq("medium")
     info.extensions.should eq("")
     info.allow_redirects?.should be_false
-    info.verify_ssl?.should be_false
+    info.verify_ssl?.should be_true
     info.request_headers.empty?.should be_true
   end
 
@@ -58,7 +58,7 @@ describe Nokizaru::TargetInfo do
     opts.wordlist = "large"
     opts.extensions = "php,txt"
     opts.redirects = true
-    opts.verify_ssl = true
+    opts.insecure = true
     opts.ports = "1-1000"
     opts.dns_servers = "1.1.1.1"
     opts.request_headers << "Cookie: secret"
@@ -70,10 +70,18 @@ describe Nokizaru::TargetInfo do
     info.wordlist.should eq("large")
     info.extensions.should eq("php,txt")
     info.allow_redirects?.should be_true
-    info.verify_ssl?.should be_true
+    info.verify_ssl?.should be_false
     info.pscan_ports.should eq("1-1000")
     info.dns_servers.should eq("1.1.1.1")
     info.request_headers["Cookie"].should eq("secret")
+  end
+
+  it "refuses a -w path that does not exist" do
+    opts = options
+    opts.wordlist = File.tempname("nok-missing", ".txt")
+    expect_raises(TargetInfo::Error, "Wordlist not found") do
+      TargetInfo.resolve(opts, resolve_ip: STUB)
+    end
   end
 
   it "computes a notice for an unusual scheme and port" do

@@ -34,6 +34,8 @@ module Nokizaru
     # engine and queried here; each extraction is one O(nodes) pass over the tree
     # followed by an O(n) cap, so nothing grows with the response beyond the caps.
     class Links
+      ROBOTS_DIRECTIVES = {"disallow", "allow", "sitemap"}
+
       def initialize(@fetcher : Fetcher, @request_headers : ::HTTP::Headers, @budget : Budget)
       end
 
@@ -72,14 +74,22 @@ module Nokizaru
         {UrlRules.cap_links(links, MAX_ROBOTS_LINKS), UrlRules.cap_links(sitemaps, MAX_SITEMAP_LINKS)}
       end
 
+      # Security: split on the first colon rather than matching a pattern. A lazy
+      # capture before a trailing `\s*` backtracks quadratically on a long run of
+      # spaces, and robots.txt is target-controlled text read up to the body cap,
+      # so one line could stall every fiber in the process.
       private def parse_robots_line(line : String, base_url : String) : {String?, String?}?
-        match = line.match(/\A\s*(Disallow|Allow|Sitemap)\s*:\s*(\S.*?)\s*\z/i)
-        return nil if match.nil?
+        name, separator, rest = line.partition(':')
+        return nil if separator.empty?
 
-        directive = match[1]
-        url = UrlRules.url_filter(base_url, match[2])
-        sitemap = directive.compare("Sitemap", case_insensitive: true) == 0 ? url : nil
-        {url, sitemap}
+        directive = name.strip.downcase
+        return nil unless ROBOTS_DIRECTIVES.includes?(directive)
+
+        value = rest.strip
+        return nil if value.empty?
+
+        url = UrlRules.url_filter(base_url, value)
+        {url, directive == "sitemap" ? url : nil}
       end
 
       private def sitemap(url : String, discovered : Array(String)) : Array(String)
@@ -97,7 +107,10 @@ module Nokizaru
         UrlRules.cap_links(urls, limit)
       end
 
-      private def internal_links(page_url : String, doc : XML::Node) : Array(String)
+      # The page's own anchors. `extract` uses this; a caller that must not
+      # refetch robots.txt or the sitemap (the wayback seeds, whose landing page
+      # already fetched both) calls it directly.
+      def internal_links(page_url : String, doc : XML::Node) : Array(String)
         host = UrlRules.target_host(page_url)
         urls = doc.xpath_nodes("//a[@href]").compact_map { |node| UrlRules.internal_link(page_url, host, node["href"]?) }
         UrlRules.cap_links(urls, MAX_INTERNAL_LINKS)

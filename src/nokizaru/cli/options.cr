@@ -24,7 +24,7 @@ module Nokizaru::CLI
     property wordlist : String?
     getter request_headers : Array(String) = [] of String
     property redirects : Bool?
-    property verify_ssl : Bool?
+    property? insecure : Bool = false
     property dns_servers : String?
     property extensions : String?
     property formats : String?
@@ -45,7 +45,7 @@ module Nokizaru::CLI
         end
         o.on("--full", "Full recon") { opts.full = true }
         o.on("--export", "Export results") { opts.export = true }
-        o.on("--tui", "Interactive dashboard") { opts.tui = true }
+        o.on("--tui", "Force the command form instead of the running dashboard") { opts.tui = true }
         o.on("--nb", "Hide banner") { opts.nb = true }
         o.on("--dt THREADS", "Directory enum threads") { |v| opts.dir_threads = integer(v, "dt") }
         o.on("--pt THREADS", "Port scan concurrency") { |v| opts.port_threads = integer(v, "pt") }
@@ -55,7 +55,7 @@ module Nokizaru::CLI
         o.on("-w WORDLIST", "Wordlist size or path") { |v| opts.wordlist = v }
         o.on("-H HEADER", "--header HEADER", "Custom request header") { |v| opts.request_headers << v }
         o.on("-r", "Follow redirects") { opts.redirects = true }
-        o.on("-s", "Verify SSL") { opts.verify_ssl = true }
+        o.on("--insecure", "Skip TLS certificate verification for the target") { opts.insecure = true }
         o.on("-d DNS", "Custom DNS servers") { |v| opts.dns_servers = v }
         o.on("-e EXT", "File extensions") { |v| opts.extensions = v }
         o.on("-o FORMATS", "Export formats") { |v| opts.formats = v }

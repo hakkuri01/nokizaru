@@ -17,7 +17,7 @@ describe Nokizaru::Crawler::Fetcher do
         context.response.headers["Location"] = context.request.path == "/outside" ? "http://example.com/no" : "#{destination}/final"
       end
       HttpTestServer.with_server(redirect) do |base|
-        Nokizaru::Crawler::Concurrency.each_concurrently(["#{base}/start"]) do |url, fetcher|
+        Nokizaru::Crawler::Concurrency.each_concurrently(["#{base}/start"], Nokizaru::Http::Pool.new) do |url, fetcher|
           headers = HTTP::Headers{"X-Secret" => "private"}
           result = fetcher.fetch_following(url, headers)
           result.success?.should be_true
@@ -46,7 +46,7 @@ describe Nokizaru::Crawler::Fetcher do
       end
     end
     HttpTestServer.with_server(handler) do |base|
-      Nokizaru::Crawler::Concurrency.each_concurrently(["#{base}/bomb"]) do |url, fetcher|
+      Nokizaru::Crawler::Concurrency.each_concurrently(["#{base}/bomb"], Nokizaru::Http::Pool.new) do |url, fetcher|
         result = fetcher.get(url, HTTP::Headers.new, "probe")
         result.truncated?.should be_true
         result.body.not_nil!.bytesize.should eq(cap)

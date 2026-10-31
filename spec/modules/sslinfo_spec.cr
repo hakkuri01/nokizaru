@@ -1,7 +1,7 @@
 require "../spec_helper"
 require "../support/tls_test_server"
 require "../support/http_test_server"
-require "../../src/nokizaru/context"
+require "../../src/nokizaru/run_state"
 require "json"
 
 describe Nokizaru::Modules::SSLInfo do

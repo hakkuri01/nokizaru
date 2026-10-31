@@ -12,10 +12,17 @@ module Nokizaru
       module Fingerprint
         extend self
 
-        GENERATOR_META = /<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)["']/i
+        GENERATOR_TAG  = /name\s*=\s*["']?generator["']?/i
+        GENERATOR_BODY = /content\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
         VERSION_TOKEN  = /([0-9]+(?:\.[0-9]+)+)/
-        SERVERS        = {"nginx" => "Nginx", "apache" => "Apache", "microsoft-iis" => "IIS", "litespeed" => "LiteSpeed", "openresty" => "OpenResty", "caddy" => "Caddy"}
-        GENERATORS     = {"wordpress" => "WordPress", "drupal" => "Drupal", "joomla" => "Joomla"}
+        # A generator tag sits in the document head, and a single tag is short.
+        # Both bounds matter: one pattern over the whole body backtracks
+        # quadratically on repeated unterminated <meta tags (a 736 KB body took
+        # 10.6 s), so each tag is located by index and matched on its own.
+        HEAD_BYTES    = 64 * 1024
+        MAX_TAG_BYTES = 1024
+        SERVERS       = {"nginx" => "Nginx", "apache" => "Apache", "microsoft-iis" => "IIS", "litespeed" => "LiteSpeed", "openresty" => "OpenResty", "caddy" => "Caddy"}
+        GENERATORS    = {"wordpress" => "WordPress", "drupal" => "Drupal", "joomla" => "Joomla"}
 
         def detect(result : Http::Result) : Array(Technology)
           headers = result.headers
@@ -63,10 +70,7 @@ module Nokizaru
         end
 
         private def generator(headers : ::HTTP::Headers, body : String, techs : Array(Technology)) : Nil
-          raw = headers["X-Generator"]?.to_s
-          if match = GENERATOR_META.match(body)
-            raw = match[1]
-          end
+          raw = generator_meta(body) || headers["X-Generator"]?.to_s
           return if raw.empty?
 
           down = raw.downcase
@@ -76,6 +80,24 @@ module Nokizaru
             techs << Technology.new(name, version_in(raw), ["CMS"])
             break
           end
+        end
+
+        # The content of the first generator meta tag in the document head, found
+        # by walking <meta ... > tags and testing each one alone. One pass over
+        # the head, each tag test bounded by MAX_TAG_BYTES.
+        private def generator_meta(body : String) : String?
+          head = body.bytesize > HEAD_BYTES ? body.byte_slice(0, HEAD_BYTES) : body
+          offset = 0
+          while start = head.byte_index("<meta", offset)
+            stop = head.byte_index(">", start) || head.bytesize
+            tag = head.byte_slice(start, {stop - start, MAX_TAG_BYTES}.min)
+            if tag.matches?(GENERATOR_TAG) && (match = tag.match(GENERATOR_BODY))
+              value = match[1]? || match[2]? || match[3]?
+              return value if value && !value.empty?
+            end
+            offset = stop + 1
+          end
+          nil
         end
 
         private def body_markers(body : String, techs : Array(Technology)) : Nil

@@ -76,4 +76,18 @@ describe Nokizaru::TerminalText do
     T.active_sgr("\e[31mbanner line").should eq("\e[31m")
     T.active_sgr("\e[31mred\e[0m plain").should eq("")
   end
+
+  it "plain strips color and every control from a stored value" do
+    # A value on its way into a result or a report file is data, not a rendered
+    # line, so the color goes too.
+    # The last part is a C1 CSI sequence, so the whole sequence goes, not just
+    # its introducer.
+    T.plain("\e[31mred\e[0m \u202ereversed\u009b31m").should eq("red reversed")
+    T.plain("one\ntwo").should eq("onetwo")
+  end
+
+  it "plain_block keeps the line breaks of a multi-line record" do
+    # A WHOIS record's breaks are content; its escapes still are not.
+    T.plain_block("Domain: x\n\e[31mRegistrar: y\u202e\n").should eq("Domain: x\nRegistrar: y\n")
+  end
 end

@@ -43,7 +43,7 @@ module Nokizaru
         @dirty = true
         @dashboard = nil
         if launch
-          # Power-user launch (§12a): open straight on the dashboard with the scan
+          # Power-user launch: open straight on the dashboard with the scan
           # already running. q still steps back to the (prefilled) form as it does
           # from any dashboard, so a quick double-tap exits.
           @screen = Screen::Dashboard

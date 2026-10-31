@@ -1,6 +1,7 @@
 require "socket"
 require "http/headers"
 require "./cli/options"
+require "./destination"
 require "./settings"
 require "./target_intel"
 require "./psl/list"
@@ -75,7 +76,7 @@ module Nokizaru
         wordlist: wordlist_for(options),
         request_headers: request_headers_for(options),
         allow_redirects: bool_option(options.redirects, settings.dir_enum.redirect?),
-        verify_ssl: bool_option(options.verify_ssl, settings.dir_enum.verify_ssl?),
+        verify_ssl: !options.insecure?,
         extensions: options.extensions || settings.dir_enum.extension,
       )
     end
@@ -148,18 +149,27 @@ module Nokizaru
       {labels[0..-2].join("."), labels[-1]}
     end
 
+    # Loopback, private, link-local, or unspecified: the target the operator
+    # chose is itself internal, which also decides whether a scan may follow
+    # server data to an internal address (see Destination).
     private def self.private_ip?(ip : String?) : Bool
       return false if ip.nil? || ip.empty?
 
-      address = Socket::IPAddress.new(ip, 0)
-      address.loopback? || address.private?
-    rescue Socket::Error
-      false
+      Destination.internal_address?(ip)
     end
 
+    # The -w value: a curated size name stays a size name, and any other value is
+    # a custom path, which must exist and be readable before a scan starts.
+    # Validating here keeps every operator input refused at one boundary.
     private def self.wordlist_for(options : CLI::Options) : String
       chosen = options.wordlist
-      chosen ? Settings.wordlist(chosen) : Settings::DEFAULT_WORDLIST
+      return Settings::DEFAULT_WORDLIST if chosen.nil?
+
+      resolved = Settings.wordlist(chosen)
+      return resolved if Settings::WORDLISTS.has_key?(resolved)
+      raise Error.new("Wordlist not found: #{resolved}") unless File.file?(resolved)
+
+      resolved
     end
 
     private def self.request_headers_for(options : CLI::Options) : ::HTTP::Headers

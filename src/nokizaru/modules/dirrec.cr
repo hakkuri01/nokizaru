@@ -35,7 +35,6 @@ module Nokizaru
         getter wordlist : String
         getter extensions : String
         getter threads : Int32
-        getter? verify_ssl : Bool
         getter? allow_redirects : Bool
         getter request_headers : ::HTTP::Headers
         getter timeout_s : Float64
@@ -45,12 +44,15 @@ module Nokizaru
         getter arch : Modules::Arch::Result?
         getter portscan : Modules::PortScan::Result?
         getter profile : TargetIntel::Profile?
+        getter stop : ScanStop
+        # The scan's transport policy (TLS choice, destination guard). Every pool
+        # this module opens derives from it, so a worker never widens the policy.
+        getter pool : Http::Pool
 
         def initialize(
           @wordlist : String,
           @extensions : String = "",
           @threads : Int32 = 10,
-          @verify_ssl : Bool = true,
           @allow_redirects : Bool = false,
           @request_headers : ::HTTP::Headers = ::HTTP::Headers.new,
           @timeout_s : Float64 = Nokizaru::DirRec::DEFAULT_TIMEOUT,
@@ -60,6 +62,8 @@ module Nokizaru
           @arch : Modules::Arch::Result? = nil,
           @portscan : Modules::PortScan::Result? = nil,
           @profile : TargetIntel::Profile? = nil,
+          @stop : ScanStop = ScanStop.new,
+          @pool : Http::Pool = Http::Pool.new,
         )
         end
       end
@@ -130,7 +134,7 @@ module Nokizaru
         extension_enabled = !plan.extensions.empty?
         baseline = build_initial_baseline(normalized, config)
         policy = DirRec::AdaptivePolicy.new(concurrency, config.timeout_s, baseline, extensions: extension_enabled)
-        runtime = DirRec::Runtime.new(scan_target, normalized, baseline, DirRec::ConfidenceContext.new(config.headers, config.crawler), policy: policy)
+        runtime = DirRec::Runtime.new(scan_target, normalized, baseline, DirRec::ConfidenceContext.new(config.headers, config.crawler), policy: policy, stop: config.stop, pool_template: config.pool)
 
         runtime.run(DirRec::LazyQueue.new(plan, normalized, extension_enabled), concurrency, worker_options(config), progress, plan.estimated_total)
         info = DirRec::Target.new(original: target, effective: scan_target, reanchored: anchor.reanchor?, reason: anchor.reason)
@@ -141,20 +145,20 @@ module Nokizaru
         headers = ::HTTP::Headers.new
         config.request_headers.each { |name, values| headers[name] = values }
         headers["User-Agent"] = DirRec::DEFAULT_UA
-        Http::Options.new(headers: headers, timeout_s: config.timeout_s, verify_ssl: config.verify_ssl?,
+        Http::Options.new(headers: headers, timeout_s: config.timeout_s,
           follow_redirects: config.allow_redirects?, scope_check: TargetIntel.scope_check)
       end
 
       private def compute_profile(target : String, config : Config) : TargetIntel::Profile
-        pool = Http::Pool.new
-        options = Http::Options.new(timeout_s: {config.timeout_s, 10.0}.min, verify_ssl: config.verify_ssl?, follow_redirects: false)
+        pool = config.pool.derive
+        options = Http::Options.new(timeout_s: {config.timeout_s, 10.0}.min, follow_redirects: false)
         profile = TargetIntel.profile(target, pool.get(target, options))
         pool.shutdown
         profile
       end
 
       private def build_initial_baseline(normalized : String, config : Config) : DirRec::Baseline?
-        pool = Http::Pool.new
+        pool = config.pool.derive
         base = DirRec::Fields.normalize_target_base(normalized)
         samples = [] of DirRec::Sample
         DirRec::SOFT_404_PROBES.times do

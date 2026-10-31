@@ -75,25 +75,33 @@ module Nokizaru
         width = [TOTAL_LABEL.size, "Results truncated".size].max
         unless found.empty?
           UI.tree_header("Results")
-          UI.tree_rows(found.first(20).map { |subdomain| {"Subdomain", subdomain.as(String?)} })
+          UI.tree_rows(found.first(20).map { |subdomain| {"Subdomain", subdomain} })
           UI.row(:info, "Results truncated", "#{found.size - 20} more", label_width: width) if found.size > 20
         end
         UI.blank_line
         UI.row(:info, TOTAL_LABEL, found.size.to_s, label_width: width)
       end
 
-      def collect(host : String, timeout : Float64, pool : Http::Pool = Http::Pool.new, providers : Array(Subdom::Provider) = PROVIDERS, progress : ProgressReporter = ProgressReporter::NULL, sslinfo : Modules::SSLInfo::Result? = nil, dns : Modules::DnsEnumeration::Result? = nil) : Result
-        keys = resolve_keys(providers)
-        seeds = certificate_seeds(sslinfo, host)
-        seeds.concat(dns_seeds(dns, host))
-        seeds.uniq!
-        names, outcomes = Subdom::Enumerator.new(providers).run(host, pool, keys, timeout, progress, seeds)
-        # Sources that opt out of health reporting (Wayback) still contribute
-        # names but are left out of the summary so their server-side flakiness
-        # does not misrepresent the module's health.
-        silent = providers.reject(&.report_health?).map(&.name)
-        reported = outcomes.reject { |outcome| silent.includes?(outcome.name) }
-        Result.new(names, build_health(reported))
+      def collect(host : String, timeout : Float64, pool : Http::Pool? = nil, providers : Array(Subdom::Provider) = PROVIDERS, progress : ProgressReporter = ProgressReporter::NULL, sslinfo : Modules::SSLInfo::Result? = nil, dns : Modules::DnsEnumeration::Result? = nil) : Result
+        # A pool this module created is also closed by it, so a scan does not
+        # leave 17 provider connections open for the garbage collector to find.
+        own_pool = pool.nil?
+        transport = pool || Http::Pool.new
+        begin
+          keys = resolve_keys(providers)
+          seeds = certificate_seeds(sslinfo, host)
+          seeds.concat(dns_seeds(dns, host))
+          seeds.uniq!
+          names, outcomes = Subdom::Enumerator.new(providers).run(host, transport, keys, timeout, progress, seeds)
+          # Sources that opt out of health reporting (Wayback) still contribute
+          # names but are left out of the summary so their server-side flakiness
+          # does not misrepresent the module's health.
+          silent = providers.reject(&.report_health?).map(&.name)
+          reported = outcomes.reject { |outcome| silent.includes?(outcome.name) }
+          Result.new(names, build_health(reported))
+        ensure
+          transport.shutdown if own_pool
+        end
       end
 
       # Subdomains harvested from the DNS zone: NS, CNAME, and MX hostnames are

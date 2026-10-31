@@ -7,7 +7,7 @@ module Nokizaru
     # crt.sh serves certificate-transparency data far more reliably over Postgres
     # than over its degraded HTTP JSON frontend (502s, timeouts), so this is the
     # crt.sh provider's primary path, with HTTP as the fallback. Hand-rolled with
-    # no pg shard, like Nokizaru's hand-rolled HTTP/2 and DNS wire, to stay
+    # no pg shard, like Nokizaru's hand-rolled DNS wire client, to stay
     # dependency-free. Only the simple-query protocol over plaintext TCP is
     # implemented: no TLS, no auth beyond "trust", no prepared statements.
     #
@@ -24,6 +24,15 @@ module Nokizaru
       # A valid DNS hostname: the only thing inlined into the SQL. The scan target
       # is already validated upstream; this is defense in depth.
       SAFE_HOST = /\A[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,251}[a-zA-Z0-9])?\z/
+
+      # The connection is plaintext TCP, so the peer (or anyone on the path)
+      # chooses every byte including the self-declared message length. Both
+      # bounds are enforced while reading: the length before a buffer is
+      # allocated, the name count as names accumulate. MAX_NAMES sits well above
+      # the query's own LIMIT because one row's NAME_VALUE is a SAN list that can
+      # carry many names, so a large real domain must not hit it.
+      MAX_MESSAGE_BYTES = 1 << 20
+      MAX_NAMES         = 100_000
 
       class ProtocolError < Exception
       end
@@ -121,15 +130,30 @@ module Nokizaru
         loop do
           type, payload = read_message(io)
           case type.chr
-          when 'D'
-            if value = first_column(payload)
-              value.each_line { |line| stripped = line.strip; names << stripped unless stripped.empty? }
-            end
+          when 'D' then return names if append_names(names, payload)
           when 'E' then raise ProtocolError.new(error_message(payload))
           when 'Z' then return names
           else # RowDescription, CommandComplete, NoticeResponse: ignore
           end
         end
+      end
+
+      # A DataRow's first column, one name per line. Returns true once MAX_NAMES
+      # is reached, which stops the read: a server streaming rows without end
+      # cannot grow the array, and the names already collected are kept rather
+      # than thrown away with the connection.
+      private def self.append_names(names : Array(String), payload : Bytes) : Bool
+        value = first_column(payload)
+        return false if value.nil?
+
+        value.each_line do |line|
+          stripped = line.strip
+          next if stripped.empty?
+          return true if names.size >= MAX_NAMES
+
+          names << stripped
+        end
+        false
       end
 
       # A backend message: a type byte, a self-inclusive Int32 length, then the
@@ -138,6 +162,7 @@ module Nokizaru
         type = io.read_byte || raise ProtocolError.new("connection closed")
         length = io.read_bytes(Int32, IO::ByteFormat::BigEndian)
         raise ProtocolError.new("invalid message length") if length < 4
+        raise ProtocolError.new("message exceeds #{MAX_MESSAGE_BYTES} bytes") if length - 4 > MAX_MESSAGE_BYTES
         payload = Bytes.new(length - 4)
         io.read_fully(payload) unless payload.empty?
         {type, payload}

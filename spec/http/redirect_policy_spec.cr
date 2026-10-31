@@ -108,11 +108,10 @@ describe "Shared redirect policy" do
   it "preserves every option when replacing headers" do
     scope = Nokizaru::TargetIntel.scope_check
     options = Nokizaru::Http::Options.new(headers: redirect_credentials, timeout_s: 2.0,
-      verify_ssl: false, follow_redirects: false, max_redirects: 2, body: "payload", scope_check: scope)
+      follow_redirects: false, max_redirects: 2, body: "payload", scope_check: scope)
     copy = options.with_headers(HTTP::Headers.new)
     copy.headers.empty?.should be_true
     copy.timeout_s.should eq(2.0)
-    copy.verify_ssl?.should be_false
     copy.follow_redirects?.should be_false
     copy.max_redirects.should eq(2)
     copy.body.should eq("payload")

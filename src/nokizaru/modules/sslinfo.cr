@@ -21,7 +21,10 @@ module Nokizaru
       extend self
 
       CONNECT_TIMEOUT = 5.0
-      LABEL_WIDTH     = "serialNumber".size
+      # The TLS handshake after the connect gets its own bound; a stalled peer
+      # must not outlive the module's budget.
+      HANDSHAKE_TIMEOUT = 10.seconds
+      LABEL_WIDTH       = "serialNumber".size
 
       # Ruby SSLSocket#cipher: name, cipher version, effective bits, algorithm bits
       alias CipherInfo = Tuple(String, String, Int32, Int32)
@@ -107,14 +110,14 @@ module Nokizaru
 
       private def present_tree(label : String, values : Hash(String, String)) : Nil
         UI.tree_header(label)
-        UI.tree_rows(values.map { |key, value| {key, value.as(String?)} })
+        UI.tree_rows(values.map { |key, value| {key, value} })
       end
 
       private def present_san(san : Array(String)?) : Nil
         return if san.nil? || san.empty?
 
         UI.tree_header("subjectAltName")
-        UI.tree_rows(san.map_with_index { |value, index| {index.to_s, value.as(String?)} })
+        UI.tree_rows(san.map_with_index { |value, index| {index.to_s, value} })
       end
 
       def collect(hostname : String, ssl_port : Int32, verify_ssl : Bool = false) : Result
@@ -133,6 +136,11 @@ module Nokizaru
 
       private def connect(hostname : String, ssl_port : Int32, verify_ssl : Bool) : OpenSSL::SSL::Socket::Client
         tcp = TCPSocket.new(hostname, ssl_port, connect_timeout: CONNECT_TIMEOUT)
+        # The handshake itself must be bounded too: a peer that accepts TCP and
+        # then stalls would otherwise hold this fiber open past the module's
+        # budget, and the runner cannot cancel a fiber.
+        tcp.read_timeout = HANDSHAKE_TIMEOUT
+        tcp.write_timeout = HANDSHAKE_TIMEOUT
         context = OpenSSL::SSL::Context::Client.new
         context.verify_mode = OpenSSL::SSL::VerifyMode::NONE unless verify_ssl
         OpenSSL::SSL::Socket::Client.new(tcp, context: context, hostname: hostname, sync_close: true)

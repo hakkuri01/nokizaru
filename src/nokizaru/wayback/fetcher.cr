@@ -12,12 +12,17 @@ module Nokizaru
     # O(1) requests per call (fixed retry budget). Named Fetcher so `Http::*`
     # inside Wayback still resolves to the Nokizaru::Http module.
     class Fetcher
+      @pool_factory : Proc(Http::Pool)
+
+      # A worker's pool derives from this one by default, so every CDX fetch runs
+      # under the scan's transport policy rather than a fresh unguarded pool.
       def initialize(@pool : Http::Pool,
                      *,
                      @clock : Proc(Time::Instant) = -> { Time.instant },
                      @wall_clock : Proc(Time) = -> { Time.utc },
                      @sleeper : Proc(Time::Span, Nil) = ->(delay : Time::Span) { sleep(delay) },
-                     @pool_factory : Proc(Http::Pool) = -> { Http::Pool.new })
+                     pool_factory : Proc(Http::Pool)? = nil)
+        @pool_factory = pool_factory || -> { @pool.derive }
       end
 
       def now : Time::Instant

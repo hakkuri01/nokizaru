@@ -2,7 +2,7 @@ module Nokizaru
   module Dns
     # The DNS record types Nokizaru enumerates, with their RFC-assigned numeric
     # codes. CODES is written in the Ruby DNS_RECORDS order, which Crystal's Hash
-    # preserves, so both the enumeration (E2) and the sorted presentation follow
+    # preserves, so both the enumeration and the sorted presentation follow
     # it without a separate sort. name<->code lookups go through frozen hashes,
     # so each is O(1).
     module RecordType

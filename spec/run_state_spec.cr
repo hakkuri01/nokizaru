@@ -1,6 +1,6 @@
 require "./spec_helper"
 require "json"
-require "../src/nokizaru/context"
+require "../src/nokizaru/run_state"
 
 private def meta
   Nokizaru::Meta.new(version: "1.0.0", target: "https://example.com", started_at: "2026-10-20T00:00:00Z")
@@ -66,13 +66,5 @@ describe Nokizaru::Finding do
   it "omits an unset optional field" do
     finding = Nokizaru::Finding.new(id: "x", severity: "low", title: "t", source_module: "m", tags: [] of String)
     JSON.parse(finding.to_json).as_h.has_key?("evidence").should be_false
-  end
-end
-
-describe Nokizaru::Context do
-  it "delegates artifact collection to the shared run state" do
-    ctx = Nokizaru::Context.new(Nokizaru::RunState.new(meta))
-    ctx.add_artifact("hosts", ["x.example.com"])
-    ctx.run.artifacts["hosts"].should eq(["x.example.com"])
   end
 end

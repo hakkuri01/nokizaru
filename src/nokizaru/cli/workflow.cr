@@ -10,6 +10,7 @@ require "../dns/resolver"
 require "../findings/engine"
 require "../ui"
 require "../log"
+require "../scan_stop"
 require "./options"
 require "./runtime"
 require "./workflow_artifacts"
@@ -63,8 +64,12 @@ module Nokizaru::CLI
       @options : Options,
       @settings : Settings = Settings.new,
       @resolve_ip : Proc(String, String?) = ->(host : String) { Dns::Resolver.new.resolve(host) },
+      @stop : ScanStop = ScanStop.new,
     )
     end
+
+    # The scan's stop signal, so an interactive session can end a run it started.
+    getter stop
 
     # Classic end-to-end run: banner, plan, execute, finalize. Returns the
     # elapsed seconds and the export directory (nil when export is off).
@@ -102,7 +107,11 @@ module Nokizaru::CLI
     # other rather than running in isolation). Skips honor the rules (port scan
     # needs an IP, subdomains need a non-IP host).
     def execute!(plan : Plan) : Nil
-      pool = Http::Pool.new
+      info = plan.info
+      pool = Http::Pool.new(
+        insecure_host: info.verify_ssl? ? nil : info.hostname,
+        destination: Destination.policy(allow_internal: info.private_ip?, resolve: @resolve_ip),
+      )
       begin
         run_headers(plan, pool)
         run_sslinfo(plan)
@@ -113,7 +122,7 @@ module Nokizaru::CLI
         run_portscan(plan)
         run_wayback(plan, pool)
         run_crawler(plan, pool)
-        run_directory(plan)
+        run_directory(plan, pool)
       ensure
         pool.shutdown
       end
@@ -230,7 +239,8 @@ module Nokizaru::CLI
     private def run_arch(plan : Plan, pool : Http::Pool) : Nil
       info = plan.info
       result = run_module(plan, "arch", module_timeout_s(info, "arch")) do
-        Modules::Arch.collect(third_party_target(info.target), pool, KeyStore.fetch("wappalyzer", "NK_WAPPALYZER_KEY"), info.timeout)
+        Modules::Arch.collect(third_party_target(info.target), pool, KeyStore.fetch("wappalyzer", "NK_WAPPALYZER_KEY"), info.timeout,
+          request_headers: info.request_headers)
       end
       return if result.nil?
 
@@ -248,7 +258,7 @@ module Nokizaru::CLI
       end
 
       result = run_guarded(plan, "ps", module_timeout_s(info, "ps")) do
-        Modules::PortScan.collect(ip, info.pscan_threads, spec: info.pscan_ports, progress: plan.rail.reporter("ps"))
+        Modules::PortScan.collect(ip, info.pscan_threads, spec: info.pscan_ports, progress: plan.rail.reporter("ps"), stop: @stop)
       end
       return if result.nil?
 
@@ -265,10 +275,10 @@ module Nokizaru::CLI
       Modules::Crawler.present(result)
     end
 
-    private def run_directory(plan : Plan) : Nil
+    private def run_directory(plan : Plan, pool : Http::Pool) : Nil
       info = plan.info
       result = run_module(plan, "dir", module_timeout_s(info, "dir")) do
-        Modules::DirectoryEnum.collect(info.target, directory_config(info, plan.state), plan.rail.reporter("dir"))
+        Modules::DirectoryEnum.collect(info.target, directory_config(info, plan.state, pool), plan.rail.reporter("dir"))
       end
       return if result.nil?
 
@@ -291,6 +301,7 @@ module Nokizaru::CLI
     # timeout; a raise or timeout marks the module failed and returns nil.
     private def run_module(plan : Plan, key : String, timeout_s : Float64, &block : -> T) : T? forall T
       return nil unless plan.enabled.includes?(key)
+      return nil if @stop.stopped?
 
       run_guarded(plan, key, timeout_s, &block)
     end
@@ -370,7 +381,7 @@ module Nokizaru::CLI
         suffix = finding.source_module ? " (#{finding.source_module})" : ""
         UI.line(:info, "#{colorize_severity(severity)} #{finding.title}#{suffix}")
         evidence = finding.evidence
-        UI.tree_rows([{"Evidence", evidence.as(String?)}]) unless evidence.nil?
+        UI.tree_rows([{"Evidence", evidence}]) unless evidence.nil?
       end
     end
 
@@ -445,12 +456,11 @@ module Nokizaru::CLI
       state.modules.wayback.try(&.urls) || [] of String
     end
 
-    private def directory_config(info : TargetInfo, state : RunState) : Modules::DirectoryEnum::Config
+    private def directory_config(info : TargetInfo, state : RunState, pool : Http::Pool) : Modules::DirectoryEnum::Config
       Modules::DirectoryEnum::Config.new(
         wordlist: info.wordlist,
         extensions: info.extensions,
         threads: info.dir_threads,
-        verify_ssl: info.verify_ssl?,
         allow_redirects: info.allow_redirects?,
         request_headers: info.request_headers,
         timeout_s: info.timeout,
@@ -460,6 +470,8 @@ module Nokizaru::CLI
         wayback: state.modules.wayback,
         arch: state.modules.arch,
         portscan: state.modules.portscan,
+        stop: @stop,
+        pool: pool,
       )
     end
 

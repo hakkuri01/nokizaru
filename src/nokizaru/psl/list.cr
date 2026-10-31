@@ -2,7 +2,7 @@ require "../psl"
 
 module Nokizaru::PSL
   # Hand-rolled Public Suffix List matcher over the embedded list, replacing the
-  # public_suffix gem (D3c). The list is parsed once into a rule table keyed by
+  # public_suffix gem. The list is parsed once into a rule table keyed by
   # suffix string; a lookup then finds the public suffix of a host by the
   # publicsuffix.org algorithm: an exception rule (`!foo.bar`) wins, else the
   # matching rule with the most labels, and a wildcard label (`*`) matches any
@@ -14,6 +14,12 @@ module Nokizaru::PSL
       Wildcard
       Exception
     end
+
+    # RFC 1035: a hostname holds at most 253 octets. Hosts arrive from server
+    # data (crawled links, redirect targets), so the bound is enforced here
+    # rather than assumed: it keeps the label count under 128, which is what
+    # makes the suffix walk below cheap.
+    MAX_HOST_BYTES = 253
 
     @@default : List?
 
@@ -55,13 +61,15 @@ module Nokizaru::PSL
     private def normalize_labels(host : String) : Array(String)
       value = host.strip.downcase
       value = value[0...-1] if value.ends_with?('.')
-      return [] of String if value.empty?
+      return [] of String if value.empty? || value.bytesize > MAX_HOST_BYTES
 
       value.split('.')
     end
 
-    # Labels of the prevailing rule's public suffix. Complexity: O(L) over the
-    # host's L labels (bounded, single digits), each an O(1) Hash lookup.
+    # Labels of the prevailing rule's public suffix. Each step is an O(1) Hash
+    # lookup but builds its candidate key, so the walk is O(L squared) in the
+    # label count; MAX_HOST_BYTES caps L at 127, which keeps it a few hundred
+    # byte copies per host.
     private def suffix_labels(labels : Array(String)) : Array(String)
       best : Array(String)? = nil
       best_size = -1

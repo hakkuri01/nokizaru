@@ -167,7 +167,6 @@ The default config file is `${XDG_CONFIG_HOME:-$HOME/.config}/nokizaru/config.js
   "dir_enum": {
     "threads": 50,
     "redirect": false,
-    "verify_ssl": false,
     "extension": ""
   }
 }
@@ -208,7 +207,7 @@ Extra Options:
   -w W         Wordlist size (small, medium, large) or custom path [ Default : medium ]
   -H, --header HEADER  Add custom request header (repeatable)
   -r           Follow redirects during directory enum [ Default : False ]
-  -s           Enable SSL verification for directory enum [ Default : False ]
+  --insecure   Skip TLS certificate verification for the target [ Default : False ]
   -sp SP       Specify SSL Port [ Default : 443 ]
   -d D         Custom DNS Servers [ Default : 8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1 ]
   -e E         File Extension(s) (comma separated) [ Example : txt,xml,php,etc. ]
@@ -239,7 +238,16 @@ nokizaru --crawl --dir --target https://example.com \
   -H 'X-Role: admin'
 ```
 
-Custom headers are applied only to in-scope target requests. Nokizaru does not echo supplied header values back in module banners.
+Custom headers are applied only to in-scope target requests, and only to the
+target's own origin: a sibling host that is in scope (a CDN, a status page, a
+historic subdomain from the archive) is fetched without them. Nokizaru does not
+echo supplied header values back in module banners, and redacts a value a target
+reflects into a response header so it stays out of stdout and the exports.
+
+TLS certificates are verified by default on every request. `--insecure` turns
+verification off for the target you named, which a self-signed or expired
+certificate needs; third-party services (subdomain providers, the archive, RDAP)
+stay verified either way.
 
 Directory enumeration ships curated `small` (2K), `medium` (5K), and `large` (10K) wordlists, embedded in the binary. `medium` is the default; `-w` also accepts any custom wordlist path.
 

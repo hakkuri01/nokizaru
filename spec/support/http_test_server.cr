@@ -9,7 +9,9 @@ module HttpTestServer
   def with_server(handler : ::HTTP::Server::Context ->, &block : String ->) : Nil
     server = ::HTTP::Server.new { |context| handler.call(context) }
     address = server.bind_tcp("127.0.0.1", 0)
-    spawn { server.listen }
+    # A block that makes no request can close the server before the listen fiber
+    # is scheduled, and listen raises when it is called after close.
+    spawn { server.listen unless server.closed? }
     begin
       block.call("http://127.0.0.1:#{address.port}")
     ensure

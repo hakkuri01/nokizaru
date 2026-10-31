@@ -2,7 +2,7 @@ require "../spec_helper"
 require "../support/http_test_server"
 require "../../src/nokizaru/modules/dirrec"
 require "../../src/nokizaru/findings/directory_rules"
-require "../../src/nokizaru/context"
+require "../../src/nokizaru/run_state"
 
 private GENERIC = "<html><title>welcome</title><body>default landing</body></html>"
 private ADMIN   = "<html><title>admin dashboard</title><body>#{"administration console user management settings panel audit logs roles permissions sessions " * 3}</body></html>"
