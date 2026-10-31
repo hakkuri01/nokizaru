@@ -87,8 +87,9 @@ module Nokizaru::CLI
 
     # Resolves the target (and prints its context), checks that at least one
     # module is enabled, validates the export destination up front, and builds
-    # the run state and progress rail. Raises Error on a fatal condition.
-    def plan! : Plan
+    # the run state and progress rail (with the caller's lifecycle listener, if
+    # any). Raises Error on a fatal condition.
+    def plan!(listener : ProgressRail::Listener? = nil) : Plan
       enabled = @options.enabled_modules
       raise Error.new("No Modules Specified! Use --full or a module flag") if enabled.empty?
 
@@ -97,7 +98,7 @@ module Nokizaru::CLI
       prepare_export(info)
 
       started = Time.utc
-      Plan.new(info, Runtime.initial_run_state(info, started), ProgressRail.new(enabled), started, enabled)
+      Plan.new(info, Runtime.initial_run_state(info, started), ProgressRail.new(enabled, listener), started, enabled)
     end
 
     # Runs each enabled module against a shared HTTP pool, storing each typed
@@ -318,13 +319,12 @@ module Nokizaru::CLI
       plan.rail.module_finished(key)
       result
     rescue error
-      plan.rail.module_failed(key)
-      record_module_failure(plan, key, error)
+      plan.rail.module_failed(key, record_module_failure(plan, key, error))
       nil
     end
 
     private def skip(plan : Plan, key : String, message : String) : Nil
-      plan.rail.module_skipped(key, LABELS[key]? || key)
+      plan.rail.module_skipped(key, LABELS[key]? || key, message)
       UI.line(:error, message)
       Log.write("[#{key}] Skipped: #{message}")
     end

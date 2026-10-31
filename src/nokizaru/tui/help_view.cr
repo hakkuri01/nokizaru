@@ -43,6 +43,7 @@ module Nokizaru
           {"-T", "Base timeout / module budget seconds [30]"},
           {"-r", "Follow redirects during directory enum"},
           {"--insecure", "Skip TLS certificate verification for the target"},
+          {"--headless", "Run with no TUI: JSON on stdout, progress on stderr"},
         ]},
         {"EXPORT", [
           {"--export", "Write results to the export directory"},

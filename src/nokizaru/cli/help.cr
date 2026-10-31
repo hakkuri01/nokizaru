@@ -2,11 +2,11 @@ require "../version"
 
 module Nokizaru::CLI
   # The hand-rendered --help and --version output, matching the Ruby tool's text
-  # (the version number differs: this is the 1.0.0 Crystal rewrite).
+  # (the version number differs: the Crystal rewrite restarted at 1.0.0).
   module Help
     extend self
 
-    USAGE = "usage: nokizaru [-h] [-v] [--target TARGET] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--ps]\n                [--full] [--no-MODULE] [--export] [--tui] [-nb] [-dt DT] [-pt PT] [-p PORTS] [-T T] [-w W] [-H HEADER] [-r] [--insecure] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]"
+    USAGE = "usage: nokizaru [-h] [-v] [--target TARGET] [--headers] [--sslinfo] [--whois] [--crawl] [--dns] [--sub] [--arch] [--dir] [--wayback] [--ps]\n                [--full] [--no-MODULE] [--export] [--tui] [--headless] [-nb] [-dt DT] [-pt PT] [-p PORTS] [-T T] [-w W] [-H HEADER] [-r] [--insecure] [-sp SP] [-d D] [-e E] [-o O] [-cd CD] [-of OF] [-k K]"
 
     ARGUMENT_ROWS = [
       {"-h, --help", "Show this help message and exit"}, {"-v, --version", "Show version number and exit"},
@@ -18,6 +18,7 @@ module Nokizaru::CLI
       {"--no-[MODULE]", "Skip specified modules above during full scan (eg. --no-dir)"},
       {"--export", "Write results to export directory [ Default : False ]"},
       {"--tui", "Force the command form instead of the running dashboard"},
+      {"--headless", "Run with no TUI or terminal: JSON results on stdout (or the --export files), progress on stderr"},
     ]
 
     EXTRA_ROWS = [

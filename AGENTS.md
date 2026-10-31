@@ -258,6 +258,16 @@ Some upkeep is the maintainer's alone and is not documented for contributors.
   the diff and commit. The tool is never run by the build, a scan, or CI, and there
   is no LLM in the loop: the one-time legitimacy judgment is already captured as
   the pinned baseline.
+- **Distribution packages.** The maintainer takes on nixpkgs, Kali, Arch Linux,
+  and Homebrew only once real users ask for them; any other distribution is left
+  to whoever wants to maintain it. The flake's `packages.nokizaru` is kept in the
+  nixpkgs recipe's shape. To submit, it moves to `pkgs/by-name/no/nokizaru/package.nix`
+  with `src = fetchFromGitHub { owner = "hakkuri01"; repo = "nokizaru"; tag = "v${version}"; hash = ...; }`
+  at a release tag, `passthru.updateScript = nix-update-script { }`, and
+  `meta.maintainers = [ lib.maintainers.hakkuri01 ]`, as commit
+  `nokizaru: init at X.Y.Z` after a separate `maintainers: add hakkuri01` commit
+  (`name = "hakkuri"; github = "hakkuri01"; githubId = 168425986;`). Build it and
+  run `nixpkgs-review` on a Nix machine before opening the PR.
 
 ## Dev
 

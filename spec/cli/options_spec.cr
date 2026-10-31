@@ -97,4 +97,12 @@ describe Nokizaru::CLI::Options do
   it "raises on an unknown flag" do
     expect_raises(OptionParser::InvalidOption) { Nokizaru::CLI::Options.parse(["--bogus"]) }
   end
+
+  it "parses --headless and refuses it alongside --tui" do
+    Nokizaru::CLI::Options.parse(["--headless", "--dir"]).headless?.should be_true
+    Nokizaru::CLI::Options.parse(["--dir"]).headless?.should be_false
+    expect_raises(OptionParser::Exception, "--headless and --tui cannot be combined") do
+      Nokizaru::CLI::Options.parse(["--headless", "--tui"])
+    end
+  end
 end

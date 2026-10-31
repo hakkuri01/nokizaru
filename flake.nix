@@ -57,15 +57,22 @@
           pkgs = pkgsFor system;
         in
         rec {
+          # Kept in the shape of the nixpkgs recipe, so a flake build previews it
           nokizaru = pkgs.crystal.buildCrystalPackage {
             pname = "nokizaru";
             inherit version;
             src = sourceFor pkgs;
             format = "crystal";
             crystalBinaries.nokizaru.src = "src/nokizaru.cr";
-            doCheck = false;
+            # The TLS fixture shells out to openssl, and the specs write config under HOME
+            nativeCheckInputs = [ pkgs.openssl ];
+            preCheck = ''
+              export HOME="$TMPDIR/home"
+              mkdir -p "$HOME"
+            '';
+            nativeInstallCheckInputs = [ pkgs.versionCheckHook ];
             meta = {
-              description = "Fast modular web reconnaissance CLI";
+              description = "Modular web reconnaissance CLI with an interactive terminal dashboard";
               homepage = "https://github.com/hakkuri01/nokizaru";
               license = pkgs.lib.licenses.mit;
               mainProgram = "nokizaru";

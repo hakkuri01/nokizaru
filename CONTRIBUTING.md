@@ -68,7 +68,8 @@ Entering the shell installs the Nix-built pinned linter into `bin/ameba`, so
 during setup; `just verify` and the sandboxed checks run offline. `nix flake check`
 runs the canonical gate plus the release package and CLI smoke tests (help,
 version, invalid invocation, config creation, and private key-store writes).
-`nix build` produces `result/bin/nokizaru`, with embedded data and no runtime
+`nix build` runs the spec suite and a version check, as the nixpkgs build
+would, then produces `result/bin/nokizaru`, with embedded data and no runtime
 shards; Nix manages its linked system libraries.
 
 After changing the Ameba pin in `shard.lock`, update its source hash in

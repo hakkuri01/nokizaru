@@ -3,12 +3,14 @@ require "../secrets"
 
 module Nokizaru::CLI
   class Workflow
-    private def record_module_failure(plan : Plan, key : String, error : Exception) : Nil
+    # Returns the safe message the export carries, so the progress listener reports the same text
+    private def record_module_failure(plan : Plan, key : String, error : Exception) : String
       detail = error.is_a?(File::Error) ? "Module failed; check local file access" : error.message.to_s
       message = "#{error.class}: #{safe_failure_text(detail, plan.info)}"
       outcome = ModuleOutcome.new("failed", message, timed_out: error.is_a?(ModuleTimeout), module_name: key, label: LABELS[key]? || key)
       plan.state.modules.outcomes[ModuleResults::STORAGE_KEYS[key]? || key] = outcome
       Log.write("[#{key}] Module failed = #{message}")
+      message
     end
 
     private def skip_portscan_without_ip(plan : Plan) : Nil

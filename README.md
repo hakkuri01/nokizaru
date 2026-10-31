@@ -4,7 +4,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Crystal-black.svg?style=plastic&logo=crystal&logoColor=white">
-<img src="https://img.shields.io/badge/v1.0.0-black.svg?style=plastic&logo=git&logoColor=red">
+<img src="https://img.shields.io/badge/v1.1.0-black.svg?style=plastic&logo=git&logoColor=red">
 <img src="https://img.shields.io/badge/Bug%20Bounty-black.svg?style=plastic&logo=owasp&logoColor=red">
 </p>
 
@@ -197,6 +197,7 @@ Arguments:
   --no-[MODULE]    Skip specified modules above during full scan (eg. --no-dir)
   --export         Write results to export directory
   --tui            Force the interactive dashboard (and the command form)
+  --headless       Run with no TUI or terminal: JSON on stdout, progress on stderr
 
 Extra Options:
   -nb          Hide Banner
@@ -276,7 +277,24 @@ Results stream into one tab per module, plus a Summary tab. When a scan finishes
 | Dashboard | `q` | Interactive launch: back to the form (stops a running scan). Power-user launch: press again to exit to the terminal |
 | Anywhere | `ctrl+c` | Quit |
 
-The app does not capture the mouse, so a plain drag selects and copies text, and the wheel scrolls the results. Piped or redirected runs (for example `nokizaru --full --target https://example.com --export | tee scan.txt`) skip the app and print the classic line output.
+The app does not capture the mouse, so a plain drag selects and copies text, and the wheel scrolls the results. Piped or redirected runs (for example `nokizaru --full --target https://example.com --export | tee scan.txt`) skip the app and print the classic line output; for machine-readable output, use headless mode.
+
+### Headless Mode
+
+`--headless` runs the same scan with no TUI and no terminal, for scripts, CI, and AI-agent workflows. It takes the same flags as any other run and wins over the dashboard even on a terminal.
+
+- **stdout** carries only the result: the run as JSON, the same shape as the JSON export, written when the scan finishes. With `--export`, the export files are written instead (narrowed by `-o`, placed by `-cd` and `-of`) and stdout stays empty.
+- **stderr** carries one plain line per module event (`[dir] running`, `[dir] done`, `[sub] skipped: <reason>`, `[ps] failed: <reason>`), then the completion time, the export directory when exporting, and any `error:` line.
+- **Exit code:** `0` when the scan completed, `1` when it cannot run (no modules, a missing or invalid target, a non-positive number, an export failure), `2` for an unknown flag or a malformed value, `130` when interrupted. A module's own errors, such as an unreachable target, are recorded in its JSON and do not change the exit code.
+- **Interrupts** (SIGINT, SIGTERM, SIGHUP) stop the scan cooperatively: nothing new starts, the module in flight finishes or reaches its time budget, and the partial result is still written. A second signal exits at once with no output.
+
+```bash
+# Full recon for a pipeline: JSON on stdout, progress on stderr
+nokizaru --headless --full --target https://example.com | jq '.findings'
+
+# Write JSON and HTML exports; stderr names the export directory
+nokizaru --headless --dir --ps --target https://example.com --export -o json,html
+```
 
 ---
 
@@ -299,5 +317,8 @@ Exports are grouped by hostname and use timestamped filenames. Override the dire
 
 ## Roadmap
 
-- **Headless mode (`--headless`):** a no-TUI, no-TTY run for AI-agent and automation workflows. Structured results to `-o`/exports or stdout, progress and errors on stderr, an exit code for chaining, the same engine and flag grammar. (Piped runs already produce the classic line output today; `--headless` will make that an explicit, TTY-independent contract.)
-- **Prebuilt binaries** for the Crystal release.
+- **Pause and resume a running scan:** a dashboard key holds the scan at its next unit of work (the runner starts no new module, directory enumeration admits no new candidate, the port scan starts no new probe) and a second press resumes it where it left off. Today the dashboard can only stop a scan.
+- **Raise or lower concurrency live:** change the directory enumeration (`-dt`) and port scan (`-pt`) limits from the dashboard while the scan runs. Directory enumeration already adapts its concurrency under pressure, so the new value becomes the ceiling that adaptation works under.
+- **Add or remove a filter mid-run:** status and size filters for directory enumeration results (Nokizaru has none today), set or cleared from the dashboard while the scan runs, so a noisy class of responses drops out of the results and the export without a restart.
+- **HTTP/2:** Nokizaru speaks HTTP/1.1 today. The plan is to negotiate HTTP/2 over TLS (ALPN) when the target offers it and fall back to HTTP/1.1, for the requests that go to the target (headers, architecture fingerprinting, crawler, directory enumeration). Crystal's standard library has no HTTP/2 client and Nokizaru takes no runtime shards, so the client is hand-rolled, with explicit caps on frame size, header-list size, and concurrent streams, and stays single-threaded.
+- **Distribution packages:** nixpkgs, Kali, Arch Linux, and Homebrew, once enough users ask for them. Until then, the flake covers Nix users and a source build covers everyone else. Packaging for any other distribution is welcome from anyone willing to maintain it.

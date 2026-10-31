@@ -42,6 +42,33 @@ describe Nokizaru::CLI do
       present_capture { Nokizaru::CLI.start(["--bogus"], interactive: false).should eq(2) }
     end
 
+    describe "--headless" do
+      it "runs headless even on a terminal, with every diagnostic on stderr" do
+        io = IO::Memory.new
+        err = IO::Memory.new
+        ui = present_capture do
+          Nokizaru::CLI.start(["--headless", "--target", "https://example.com"], interactive: true, io: io, err: err).should eq(1)
+        end
+        io.to_s.should be_empty
+        ui.should be_empty
+        err.to_s.should eq("error: No Modules Specified! Use --full or a module flag\n")
+      end
+
+      {
+        ["--headless", "--bogus"]        => "error: Invalid option: --bogus\n",
+        ["--headless", "--tui", "--dir"] => "error: --headless and --tui cannot be combined\n",
+      }.each do |argv, expected|
+        it "reports #{argv.last} as an option error on stderr with status 2" do
+          io = IO::Memory.new
+          err = IO::Memory.new
+          ui = present_capture { Nokizaru::CLI.start(argv, interactive: false, io: io, err: err).should eq(2) }
+          io.to_s.should be_empty
+          ui.should be_empty
+          err.to_s.should eq(expected)
+        end
+      end
+    end
+
     {
       "-dt" => %w[nope 2147483648 -2147483649 NaN inf],
       "-pt" => %w[nope 2147483648 -2147483649 NaN inf],

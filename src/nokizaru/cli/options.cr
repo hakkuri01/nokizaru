@@ -16,6 +16,7 @@ module Nokizaru::CLI
     property? export : Bool = false
     property? nb : Bool = false
     property? tui : Bool = false
+    property? headless : Bool = false
     property dir_threads : Int32?
     property port_threads : Int32?
     property ssl_port : Int32?
@@ -46,6 +47,7 @@ module Nokizaru::CLI
         o.on("--full", "Full recon") { opts.full = true }
         o.on("--export", "Export results") { opts.export = true }
         o.on("--tui", "Force the command form instead of the running dashboard") { opts.tui = true }
+        o.on("--headless", "Run with no TUI or terminal") { opts.headless = true }
         o.on("--nb", "Hide banner") { opts.nb = true }
         o.on("--dt THREADS", "Directory enum threads") { |v| opts.dir_threads = integer(v, "dt") }
         o.on("--pt THREADS", "Port scan concurrency") { |v| opts.port_threads = integer(v, "pt") }
@@ -64,6 +66,7 @@ module Nokizaru::CLI
         o.on("-k KEY", "Save an API key") { |v| opts.key = v }
       end
       parser.parse(Argv.normalize(argv))
+      raise OptionParser::Exception.new("--headless and --tui cannot be combined") if opts.headless? && opts.tui?
       opts
     end
 

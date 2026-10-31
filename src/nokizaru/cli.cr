@@ -4,21 +4,23 @@ require "./cli/help"
 require "./cli/key_saver"
 require "./cli/workflow"
 require "./cli/session"
+require "./cli/headless"
 require "./settings"
 require "./target_info"
+require "./terminal_text"
 require "./ui"
 
 module Nokizaru
   # The command-line entrypoint: parses argv, handles --help/--version and the
-  # -k key-save flow, then runs either the interactive dashboard (on a terminal
-  # or with --tui) or a classic one-shot scan. Returns the process exit status.
-  # `interactive` and `io` are injected so the routing is testable without a
-  # terminal.
+  # -k key-save flow, then runs a headless scan (--headless), the interactive
+  # dashboard (on a terminal or with --tui), or a classic one-shot scan. Returns
+  # the process exit status. `interactive`, `io`, and `err` are injected so the
+  # routing is testable without a terminal.
   module CLI
     HELP_FLAGS    = {"-h", "--help"}
     VERSION_FLAGS = {"-v", "--version"}
 
-    def self.start(argv : Array(String), interactive : Bool = STDOUT.tty?, io : IO = STDOUT) : Int32
+    def self.start(argv : Array(String), interactive : Bool = STDOUT.tty?, io : IO = STDOUT, err : IO = STDERR) : Int32
       return render_help(io) if argv.any? { |arg| HELP_FLAGS.includes?(arg) }
       return render_version(io) if argv.any? { |arg| VERSION_FLAGS.includes?(arg) }
 
@@ -26,10 +28,17 @@ module Nokizaru
       settings = Settings.load
       key = options.key
       return KeySaver.run(key) unless key.nil?
+      return Headless.new(Workflow.new(options, settings), sink: io, log: err).run if options.headless?
 
       run_scan(options, settings, interactive)
     rescue error : OptionParser::Exception
-      UI.line(:error, error.message || "Invalid arguments")
+      message = error.message || "Invalid arguments"
+      # A headless caller reads stdout as data, so its diagnostics go to stderr
+      if argv.includes?("--headless")
+        err.puts("error: #{TerminalText.plain(message)}")
+      else
+        UI.line(:error, message)
+      end
       2
     end
 
@@ -65,23 +74,13 @@ module Nokizaru
     # nothing leaks to the terminal ahead of the alternate screen.
     private def self.run_power_user(options : Options, settings : Settings) : Int32
       workflow = Workflow.new(options, settings)
-      plan = plan_quietly(workflow)
+      plan = UI.muted { workflow.plan! }
       session = Session.new(options, settings)
       session.launch!(workflow, plan)
       session.run
     rescue error : Workflow::Error | TargetInfo::Error
       UI.line(:error, error.message || "Scan failed")
       1
-    end
-
-    private def self.plan_quietly(workflow : Workflow) : Workflow::Plan
-      original = UI.output
-      UI.output = IO::Memory.new
-      begin
-        workflow.plan!
-      ensure
-        UI.output = original
-      end
     end
 
     private def self.run_classic(options : Options, settings : Settings) : Int32

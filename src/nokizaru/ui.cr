@@ -45,6 +45,17 @@ module Nokizaru
       @@tui_mode = value
     end
 
+    # Runs the block with all module output discarded, then restores the sink
+    def muted(&)
+      original = @@output
+      File.open(File::NULL, "w") do |null|
+        @@output = null
+        yield
+      ensure
+        @@output = original
+      end
+    end
+
     def section(title : String, kind : Kind = :plus) : Nil
       output.puts
       output.puts("#{prefix(kind)} #{C}#{safe(title)}#{W}")
