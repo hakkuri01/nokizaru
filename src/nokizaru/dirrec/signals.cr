@@ -3,8 +3,7 @@ require "./limits"
 module Nokizaru
   module DirRec
     # High-signal path recognition shared by confidence scoring and result
-    # ranking. Ports the path-signal helpers from dirrec/results.rb. O(len) per
-    # path against the fixed HIGH_SIGNAL_PATHS list.
+    # ranking. O(len) per path against the fixed HIGH_SIGNAL_PATHS list.
     module Signals
       extend self
 

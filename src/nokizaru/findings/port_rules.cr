@@ -5,8 +5,9 @@ module Nokizaru
   module Findings
     # Flags open ports that commonly front unauthenticated sensitive services
     # (Docker API, MongoDB, Redis, Elasticsearch, Memcached). Consumes the typed
-    # portscan result and skips tarpit-downgraded (low-confidence) ports. Ports
-    # findings/port_rules.rb.
+    # portscan result and skips tarpit-downgraded (low-confidence) ports, because
+    # an all-accept middlebox would otherwise report every sensitive service as
+    # exposed.
     module PortRules
       extend self
 

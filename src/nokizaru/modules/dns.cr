@@ -8,13 +8,11 @@ module Nokizaru
   module Modules
     # DNS record enumeration across the common and security-relevant types
     # (RecordType::NAMES, the Ruby DNS_RECORDS list). Named DnsEnumeration to
-    # avoid colliding with the wire-client namespace Nokizaru::Dns. Ports
-    # modules/dns.rb: check the domain exists, enumerate every type, add DMARC
-    # as a TXT query at _dmarc.<domain>, and shape the result as the Ruby JSON
-    # (the parity contract): a `records` map of type => presented values, plus
-    # an `error` when the name does not resolve. The UI rendering, the
-    # add_artifact("dns_txt", ...) call, and the nameserver source wiring are
-    # assembled with the runner.
+    # avoid colliding with the wire-client namespace Nokizaru::Dns. Check the
+    # domain exists, enumerate every type, add DMARC as a TXT query at
+    # _dmarc.<domain>, and shape the result as the Ruby JSON (the parity
+    # contract): a `records` map of type => presented values, plus an `error`
+    # when the name does not resolve.
     module DnsEnumeration
       extend self
 
@@ -59,11 +57,9 @@ module Nokizaru
       # Complexity: O(T) queries for the T = 38 fixed types (plus one existence
       # probe and one DMARC query), each a bounded round trip tried against the
       # nameservers in order, each response parsed and presented in a bounded
-      # pass. ponytail: the Ruby tool spread these over a 12-thread pool; this
-      # port runs them serially for simplicity (a resolver answers an empty type
-      # fast, so only an unreachable resolver pays the per-query timeout). The
-      # upgrade path is bounded fibers over a Channel, deferred to the
-      # benchmarking pass.
+      # pass. ponytail: the queries run serially for simplicity (a resolver
+      # answers an empty type fast, so only an unreachable resolver pays the
+      # per-query timeout). The upgrade path is bounded fibers over a Channel.
       def collect(domain : String, nameservers : Array(String), client : Dns::Client = Dns::Client.new) : Result
         records = {} of String => Array(String)
         return Result.new(records, "DNS Records Not Found") unless domain_exists?(domain, nameservers, client)

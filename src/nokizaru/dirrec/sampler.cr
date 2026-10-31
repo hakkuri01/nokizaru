@@ -5,9 +5,9 @@ require "../http/result"
 
 module Nokizaru
   module DirRec
-    # Turns a fetched response into a compact Sample. Ports response_sample from
-    # dirrec/soft_404.rb: only statuses the module reasons about are sampled, and
-    # the body is read once for its length, title, and fingerprint, then dropped.
+    # Turns a fetched response into a compact Sample: only statuses the module
+    # reasons about are sampled, and the body is read once for its length,
+    # title, and fingerprint, then dropped.
     module Sampler
       extend self
 

@@ -5,8 +5,7 @@ require "../modules/headers"
 module Nokizaru
   module Findings
     # Response-header posture findings: missing security headers and cookies
-    # missing recommended flags. Consumes the typed Headers result. Ports
-    # findings/header_rules.rb.
+    # missing recommended flags. Consumes the typed Headers result.
     module HeaderRules
       extend self
 

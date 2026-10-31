@@ -17,7 +17,7 @@ module Nokizaru
       TLS_NAME         = /SSL|TLS|HTTPS|SMTPS|IMAPS|POP3S|LDAPS|FTPS/i
 
       # Category tokens checked in order (web wins ties), matched as substrings
-      # of the service name. Ports SERVICE_CATEGORIES.
+      # of the service name.
       SERVICE_CATEGORIES = {
         "web"           => %w[HTTP HTTPS Proxy Grafana Jenkins SonarQube Kibana Webmin Elasticsearch CouchDB Kubernetes Docker],
         "remote_access" => %w[SSH Telnet RDP VNC TeamViewer],

@@ -1,9 +1,9 @@
 module Nokizaru
   module DirRec
     # A compact, fixed-size summary of one response, the unit soft-404 learning
-    # and confidence scoring work on. Ports the Ruby response-sample hash. Content
-    # samples carry content_type/body_length/title/fingerprint; redirect samples
-    # carry location/redirect_pattern. Never holds the body.
+    # and confidence scoring work on. Content samples carry content_type,
+    # body_length, title, and fingerprint; redirect samples carry location and
+    # redirect_pattern. Never holds the body.
     struct Sample
       getter status : Int32
       getter content_type : String?

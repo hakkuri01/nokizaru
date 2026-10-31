@@ -11,10 +11,11 @@ module Nokizaru
   # The policy follows the target the operator chose. A scan aimed at a public
   # host refuses internal destinations, and a scan aimed at an internal one (an
   # intranet name, a lab address) allows them, so pointing the tool at 10.0.0.5
-  # still works. Katana offers the same distinction as an opt-in `-exclude
-  # private-ips` filter; here it is the default, because Nokizaru's scope grows
-  # from server data (crawled links, redirect targets, archive seeds) and those
-  # requests carry the operator's -H credentials.
+  # still works. Refusing by default is the right way round here because
+  # Nokizaru's scope grows from server data (crawled links, redirect targets,
+  # archive seeds) and those requests carry the operator's -H credentials: the
+  # cost of a wrong refusal is one missing result, the cost of a wrong allow is a
+  # request the operator never asked for, aimed inside their own network.
   module Destination
     extend self
 

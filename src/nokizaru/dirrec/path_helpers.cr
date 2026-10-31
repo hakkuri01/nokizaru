@@ -1,8 +1,8 @@
 module Nokizaru
   module DirRec
-    # URL and path-segment construction for candidate URLs. Ports
-    # dirrec/path_helpers.rb. Percent-encoding is done per byte so a space never
-    # becomes "+" (which a server would treat as a different path). O(len).
+    # URL and path-segment construction for candidate URLs. Percent-encoding is
+    # done per byte so a space never becomes "+" (which a server would treat as
+    # a different path). O(len).
     module PathHelpers
       extend self
 

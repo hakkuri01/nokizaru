@@ -8,9 +8,8 @@ module Nokizaru
     # (the TC bit), retries the same query over TCP (RFC 1035 §4.2.1). Every
     # receive is size-bounded (the parser's cap) and deadline-bounded (socket
     # timeouts), so a slow, silent, or flooding resolver cannot hang the scan or
-    # grow memory without limit. Ports the dnsruby transport the Ruby tool drove
-    # per record type. The port defaults to 53 and is injectable only so the
-    # loopback fixture can bind a non-privileged one.
+    # grow memory without limit. The port defaults to 53 and is injectable only
+    # so the loopback fixture can bind a non-privileged one.
     class Client
       DEFAULT_TIMEOUT = 2.0
       DNS_PORT        =  53

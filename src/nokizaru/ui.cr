@@ -5,9 +5,6 @@ module Nokizaru
   # (`output`), so the interactive dashboard can capture module output by swapping
   # the sink instead of reassigning the process streams. Values often come from
   # the target, so only their SGR color survives (see TerminalText.sanitize).
-  #
-  # The live status line and pulse rail, which render a progress snapshot, arrive
-  # with the progress rail in a later phase.
   module UI
     extend self
 

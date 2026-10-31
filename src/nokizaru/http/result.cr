@@ -5,7 +5,7 @@ require "openssl"
 module Nokizaru
   module Http
     # How a request failed, so a module can branch on the cause without parsing a
-    # message. `None` is success. Ports the Ruby HttpResult error catalog.
+    # message. `None` is success.
     enum ErrorKind
       None
       Timeout
@@ -20,7 +20,7 @@ module Nokizaru
     TIMEOUT_MESSAGE = "Connection timeout - target took too long to respond"
 
     # SSL handshake failures, matched by substring against the OpenSSL message
-    # (downcased). Ports Nokizaru::HTTPErrorCatalog::SSL_MESSAGES.
+    # (downcased).
     SSL_MESSAGES = {
       "wrong version number"      => "SSL/TLS handshake failed - server may not support HTTPS on this port",
       "certificate verify failed" => "SSL certificate verification failed - likely self-signed certificate",
@@ -29,7 +29,7 @@ module Nokizaru
     }
 
     # A normalized HTTP outcome: either a response (status, headers, capped body)
-    # or a classified error. Ports Ruby's HttpResult behind one typed interface.
+    # or a classified error, behind one typed interface.
     struct Result
       getter status : Int32?
       getter headers : ::HTTP::Headers
@@ -68,7 +68,7 @@ module Nokizaru
     # Maps a transport exception to a kind and an operator-facing message. A fired
     # deadline wins over the raw exception: closing the socket to wake a blocked
     # read surfaces as an IO error, but the cause the operator cares about is the
-    # timeout. Ports HttpResult#error_message and HttpResultHelpers.
+    # timeout.
     def self.classify_error(error : Exception, deadline_hit : Bool) : {ErrorKind, String}
       return {ErrorKind::Timeout, TIMEOUT_MESSAGE} if deadline_hit
 

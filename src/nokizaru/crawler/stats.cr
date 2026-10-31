@@ -4,10 +4,10 @@ require "./result"
 
 module Nokizaru
   module Crawler
-    # Computes the crawl stats and the high-signal URL ranking. Ports
-    # crawler/stats.rb. All work is over the already-capped link buckets, so it
-    # runs once per scan: an O(n) dedup across the buckets and an O(n log n) sort
-    # to rank the high-signal URLs (n bounded by the sum of the caps).
+    # Computes the crawl stats and the high-signal URL ranking. All work is over
+    # the already-capped link buckets, so it runs once per scan: an O(n) dedup
+    # across the buckets and an O(n log n) sort to rank the high-signal URLs
+    # (n bounded by the sum of the caps).
     module Statistics
       extend self
 

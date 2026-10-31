@@ -8,12 +8,11 @@ require "./concurrency"
 
 module Nokizaru
   module Crawler
-    # Pulls absolute URLs out of same-scope JavaScript files. Ports
-    # crawler/javascript.rb. Each JS body is fetched once and scanned with a
-    # linear character-class regex; only in-scope http(s) URLs are kept, capped
-    # per file and overall. Complexity: at most `max_js_targets` fetches over the
-    # bounded fiber pool, each an O(bytes) scan; dedup is a Set, the overall list
-    # is capped at `max_js_urls_total`.
+    # Pulls absolute URLs out of same-scope JavaScript files. Each JS body is
+    # fetched once and scanned with a linear character-class regex; only in-scope
+    # http(s) URLs are kept, capped per file and overall. Complexity: at most
+    # `max_js_targets` fetches over the bounded fiber pool, each an O(bytes)
+    # scan; dedup is a Set, the overall list is capped at `max_js_urls_total`.
     class JavaScript
       # A linear-time match (character class, no backtracking construct) for an
       # absolute URL embedded in a script body.

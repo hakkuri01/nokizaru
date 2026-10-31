@@ -11,9 +11,7 @@ module Nokizaru
     # The crawler module entry. Resolves the target's redirect profile (reusing
     # the Headers module's when the runner passes it), then drives the crawl
     # engine to a typed result whose JSON shape matches the Ruby run hash (the
-    # parity contract). Ports modules/crawler.rb's `call`; the UI rendering, the
-    # add_artifact("urls"/"high_signal_urls", ...) calls, and the ctx/progress
-    # wiring are assembled with the runner.
+    # parity contract).
     module Crawler
       extend self
 

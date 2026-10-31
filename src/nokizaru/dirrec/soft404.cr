@@ -4,13 +4,13 @@ require "./fields"
 
 module Nokizaru
   module DirRec
-    # Soft-404 (wildcard page) detection. Ports the deterministic parts of
-    # dirrec/soft_404.rb: building a baseline from the random-path probes, and
-    # learning one on the fly from live responses when the probes were
-    # inconclusive but the target serves a dominant generic page. The HTTP probing
-    # that feeds these samples belongs to the runtime. Complexity: O(probes) to
-    # build, O(1) per learned sample (a signature counter), bounded by
-    # SOFT_404_MAX_LEARNING_SAMPLES.
+    # Soft-404 (wildcard page) detection: building a baseline from the
+    # random-path probes, and learning one on the fly from live responses when
+    # the probes were inconclusive but the target serves a dominant generic
+    # page. Scoring stays pure so it can be reasoned about alone; the HTTP
+    # probing that feeds these samples belongs to the runtime. Complexity:
+    # O(probes) to build, O(1) per learned sample (a signature counter), bounded
+    # by SOFT_404_MAX_LEARNING_SAMPLES.
     module Soft404
       extend self
 

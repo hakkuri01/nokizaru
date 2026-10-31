@@ -43,9 +43,9 @@ module Nokizaru
 
     # Walks the sitemap graph breadth-first over a bounded fiber pool, following
     # `<sitemap><loc>` children in scope and collecting `<url><loc>` page URLs,
-    # all under the live caps. Ports crawler/sitemaps.rb. Gzip (`.xml.gz`) bodies
-    # are inflated with the inflated size capped (a small `.gz` can inflate
-    # without bound). Complexity: at most `max_sitemaps` documents fetched, each
+    # all under the live caps. Gzip (`.xml.gz`) bodies are inflated with the
+    # inflated size capped (a small `.gz` can inflate without bound).
+    # Complexity: at most `max_sitemaps` documents fetched, each
     # parsed once in O(bytes) capped at MAX_BYTES; extraction and merging append
     # capped unique prefixes, with O(1) membership checks and no merge lock.
     class Sitemaps

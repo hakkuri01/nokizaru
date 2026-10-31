@@ -30,9 +30,9 @@ module Nokizaru
     end
 
     # Extracts links from the parsed landing page and from robots.txt, and seeds
-    # the sitemap list. Ports crawler/links.rb. The document is parsed once by the
-    # engine and queried here; each extraction is one O(nodes) pass over the tree
-    # followed by an O(n) cap, so nothing grows with the response beyond the caps.
+    # the sitemap list. The document is parsed once by the engine and queried
+    # here; each extraction is one O(nodes) pass over the tree followed by an
+    # O(n) cap, so nothing grows with the response beyond the caps.
     class Links
       ROBOTS_DIRECTIVES = {"disallow", "allow", "sitemap"}
 

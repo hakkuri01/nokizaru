@@ -16,7 +16,7 @@ module Nokizaru
     # version, serial, validity, and SAN. Field names and shape match the Ruby
     # tool's JSON (the parity contract): the module stores a cert payload on
     # success or an Error string on failure. Certificate fields the stdlib does
-    # not expose come from Http::X509Ext. Ports modules/sslinfo.rb.
+    # not expose come from Http::X509Ext.
     module SSLInfo
       extend self
 

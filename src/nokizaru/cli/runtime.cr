@@ -8,11 +8,9 @@ require "../ui"
 module Nokizaru::CLI
   # Runtime assembly helpers for the scan runner: the startup banner, the
   # resolved-target context block, the initial typed run state built from the
-  # resolved target, and the finalize-time timing stamps. Ports the Ruby
-  # Runner::Runtime (plus the banner Ruby kept in Runner::Keys and the target
-  # context print Ruby kept in Runner::Parsing). TargetInfo.resolve is pure, so
-  # the rendering it deferred lands here; everything is a thin wrapper over the
-  # UI sink or a pure value builder, assembled by the Workflow runner.
+  # resolved target, and the finalize-time timing stamps. TargetInfo.resolve is
+  # pure, so the rendering it leaves out lands here; everything is a thin wrapper
+  # over the UI sink or a pure value builder, assembled by the Workflow runner.
   module Runtime
     extend self
 

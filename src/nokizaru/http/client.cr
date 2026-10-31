@@ -24,16 +24,15 @@ module Nokizaru
 
     # Caps every response body at MAX_BYTES of decoded payload. The target may
     # answer with an endless body or a gzip bomb (a few KB inflating to GBs), so
-    # buffering stops at the cap. Ports Ruby's BodyCap.
+    # buffering stops at the cap.
     module BodyCap
       MAX_BYTES = 8 * 1024 * 1024
     end
 
     # One persistent connection to a single origin, wrapping stdlib HTTP::Client.
     # Requests are serialized by a Mutex because a stdlib client holds one
-    # connection and is not safe for concurrent requests; the concurrent modules
-    # (dirrec, crawler, port scan) take their own connections per fiber in later
-    # phases. Ports ConnectionPool's per-host client plus the operation deadline.
+    # connection and is not safe for concurrent requests, so the concurrent
+    # modules (dirrec, crawler, port scan) take their own connections per fiber.
     class Client
       @client : ::HTTP::Client
 

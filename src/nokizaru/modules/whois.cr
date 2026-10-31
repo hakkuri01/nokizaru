@@ -6,13 +6,12 @@ require "../ui"
 
 module Nokizaru
   module Modules
-    # WHOIS lookup with an RDAP fallback. Ports modules/whois.rb: query the
-    # registry over TCP 43 (the hand-rolled Whois::Client), classify the text,
-    # and when it is retired/unsupported/unusable fall back to rdap.org over the
-    # HTTP layer. The result shape matches the Ruby run hash (the parity
-    # contract): a `whois` text plus status/source, or RDAP summary fields, or a
-    # degraded marker. UI rendering and the nameserver/suffix wiring are
-    # assembled with the runner.
+    # WHOIS lookup with an RDAP fallback: query the registry over TCP 43 (the
+    # hand-rolled Whois::Client), classify the text, and when it is
+    # retired/unsupported/unusable fall back to rdap.org over the HTTP layer.
+    # The result shape matches the Ruby run hash (the parity contract): a
+    # `whois` text plus status/source, or RDAP summary fields, or a degraded
+    # marker.
     module WhoisLookup
       extend self
 

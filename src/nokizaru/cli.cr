@@ -12,8 +12,8 @@ module Nokizaru
   # The command-line entrypoint: parses argv, handles --help/--version and the
   # -k key-save flow, then runs either the interactive dashboard (on a terminal
   # or with --tui) or a classic one-shot scan. Returns the process exit status.
-  # Ports the Ruby CLI dispatch; `interactive` and `io` are injected so the
-  # routing is testable without a terminal.
+  # `interactive` and `io` are injected so the routing is testable without a
+  # terminal.
   module CLI
     HELP_FLAGS    = {"-h", "--help"}
     VERSION_FLAGS = {"-v", "--version"}

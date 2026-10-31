@@ -6,10 +6,10 @@ module Nokizaru
   module Subdom
     # The curated subdomain sources: a trusted keyless core (CT + passive DNS +
     # URL-derived) plus key-enriched sources that run only when a key is present.
-    # Deliberately leaner than subfinder's catalog; we offer the mature, reliable
-    # providers rather than every source in existence. Nothing here hits the
-    # network in a test: build/parse are pure and unit-tested with canned bodies
-    # (crt.sh's Postgres path is injected).
+    # The list is deliberately short: every provider costs a network round and a
+    # health row, so a source earns its place by returning results reliably, not
+    # by existing. Nothing here hits the network in a test: build/parse are pure
+    # and unit-tested with canned bodies (crt.sh's Postgres path is injected).
 
     # ---- keyless core ----
 
@@ -125,9 +125,11 @@ module Nokizaru
         Request.new("https://certificatedetails.com/#{host}")
       end
 
-      # 200 and 404 both carry subdomains (subfinder issue #774); any other
-      # status (e.g. a Cloudflare 403) is a real block, surfaced as an error
-      # rather than masked as an empty-but-healthy result.
+      # This service answers 404 with a populated page, so the body is parsed on
+      # both statuses. Any other status (a Cloudflare 403, a 5xx) is a real
+      # block, surfaced as an error rather than masked as an empty-but-healthy
+      # result: a source that is down must not read as a source that found
+      # nothing.
       def fetch(host : String, operation : Operation, keys : Hash(String, String)) : Nil
         result = operation.execute(build(host, keys))
         status = result.status

@@ -6,7 +6,7 @@ module Nokizaru
     # Flags prioritized discovered paths that look sensitive (admin, backup,
     # .git, .env, config, debug, swagger, api, graphql). Consumes the typed
     # directory enumeration result, preferring prioritized paths and falling back
-    # to confirmed ones. Ports findings/directory_rules.rb.
+    # to confirmed ones.
     module DirectoryRules
       extend self
 

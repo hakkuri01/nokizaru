@@ -30,9 +30,9 @@ module Nokizaru
     end
 
     # URL hygiene, scope filtering, and signal classification for the archived
-    # URLs. Ports modules/wayback/normalize.rb. Every URL is from an untrusted
-    # archive response, so each is validated (length, control chars, userinfo)
-    # before use, and each classification is one O(len) pass over a single URL.
+    # URLs. Every URL is from an untrusted archive response, so each is
+    # validated (length, control chars, userinfo) before use, and each
+    # classification is one O(len) pass over a single URL.
     module Normalize
       extend self
 

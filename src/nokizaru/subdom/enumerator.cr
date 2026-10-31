@@ -6,8 +6,8 @@ module Nokizaru
   module Subdom
     # The in-scope, deduplicated set of discovered names. A name is kept only if
     # it is the host or a subdomain of it and matches the permissive hostname
-    # charset (ports ResultSet + VALID). A Set gives O(1) dedup; providers add
-    # from fibers so adds are serialized by a Mutex.
+    # charset. A Set gives O(1) dedup; providers add from fibers so adds are
+    # serialized by a Mutex.
     class ResultSet
       VALID = /\A[A-Za-z0-9._~()'!*:@,;+?-]*\z/
 

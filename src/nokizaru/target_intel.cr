@@ -5,12 +5,11 @@ require "./psl/list"
 require "./http/result"
 
 module Nokizaru
-  # Target URL and scope intelligence, backed by the embedded PSL. Ports the pure
-  # URL/scope helpers of the Ruby TargetIntel (registrable domain, scope, origin,
-  # redirect resolution) plus the lightweight target profile modules use for
-  # context-aware anchoring. The scan context injects `same_scope_host?` into the
-  # HTTP pool as its redirect scope predicate, so a redirect is followed only
-  # within the target's registrable domain.
+  # Target URL and scope intelligence, backed by the embedded PSL: registrable
+  # domain, scope, origin, and redirect resolution, plus the lightweight target
+  # profile modules use for context-aware anchoring. The scan context injects
+  # `same_scope_host?` into the HTTP pool as its redirect scope predicate, so a
+  # redirect is followed only within the target's registrable domain.
   module TargetIntel
     extend self
 
@@ -42,7 +41,8 @@ module Nokizaru
 
     # A redirect resolution outcome: either the next URL to follow, or a stop
     # with a reason (and a canonical_handoff target when the Location leaves
-    # scope). Ports the Ruby `redirect_target` hash to a typed value.
+    # scope). A typed value rather than a hash, so a caller cannot read a key
+    # that was never set.
     struct RedirectDecision
       getter next_url : String?
       getter stop_reason : String?
@@ -66,7 +66,6 @@ module Nokizaru
 
     # The anchoring decision for a scan: whether to re-anchor to the profiled
     # effective URL, the target to actually scan, and the reason classification.
-    # Ports the Ruby `decision_payload` hash.
     struct ReanchorDecision
       getter? reanchor : Bool
       getter effective_target : String
@@ -215,8 +214,9 @@ module Nokizaru
     # Decides whether a scan should re-anchor from the requested target to the
     # profiled effective URL. A high-confidence HTTP->HTTPS upgrade always
     # re-anchors; a medium-confidence canonical same-scope redirect re-anchors
-    # only when scheme and path line up and the host actually changed. Ports the
-    # Ruby `reanchor_decision`.
+    # only when scheme and path line up and the host actually changed: a scan
+    # must not follow a redirect onto a different site and then report it as the
+    # target the operator named.
     def reanchor_decision(target : String, profile : Profile) : ReanchorDecision
       effective = profile.effective_url
       reanchor = (profile.mode == "http_to_https" && profile.confidence == "high" && !effective.empty?) ||
@@ -241,7 +241,7 @@ module Nokizaru
     end
 
     # Maps a redirect profile to the short reason code the crawler and dirrec
-    # modules record alongside their re-anchor decision. Ports `reason_code_for`.
+    # modules record alongside their re-anchor decision.
     def reason_code_for(profile : Profile) : String
       case profile.mode
       when "http_to_https"        then "http->https"

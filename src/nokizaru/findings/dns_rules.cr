@@ -5,9 +5,10 @@ module Nokizaru
   module Findings
     # DNS email-posture findings: a missing SPF (a TXT record with v=spf1) or
     # DMARC (a _dmarc TXT record with v=DMARC1). Consumes the typed dns result.
-    # Ports findings/dns_rules.rb, except that a module which could not read the
-    # zone yields nothing: the Ruby rules reported both records missing when the
-    # lookup itself failed, which turns a resolver outage into two findings.
+    # A module that could not read the zone yields nothing: reporting both
+    # records missing when the lookup itself failed turns a resolver outage into
+    # two findings about the target's email posture, which is a claim the scan
+    # has no evidence for.
     module DNSRules
       extend self
 

@@ -8,10 +8,10 @@ module Nokizaru
   module Modules
     # TCP connect port scan. Drives the low-level Nokizaru::Portscan::Scanner,
     # enriches each open port into a PortRecord, and flags a tarpit-shaped
-    # result. Ports modules/portscan.rb; the two Ruby scan engines collapse into
-    # the one fiber scanner, with the careful default-spec behavior (verify +
-    # rate limit) and the fast custom/all behavior expressed through
-    # Portscan::Options. Result shape matches the Ruby run hash (parity).
+    # result. One fiber scanner serves both profiles rather than two engines: the
+    # careful default-spec behavior (verify + rate limit) and the fast custom/all
+    # behavior are the same loop under different Portscan::Options, so a fix to
+    # either lands in one place. Result shape matches the Ruby run hash (parity).
     module PortScan
       extend self
 
@@ -20,9 +20,9 @@ module Nokizaru
       DEFAULT_RETRIES         =     1
       DEFAULT_RATE_PER_SECOND = 200.0
 
-      # Tarpit heuristic thresholds (ports ALL_OPEN_*): a scan that accepts an
-      # implausibly large fraction of ports with very uniform latency is almost
-      # certainly a tarpit or an all-accept middlebox, not a real host.
+      # Tarpit heuristic thresholds: a scan that accepts an implausibly large
+      # fraction of ports with very uniform latency is almost certainly a tarpit
+      # or an all-accept middlebox, not a real host.
       ALL_OPEN_MIN_PORTS      =   25
       ALL_OPEN_RATIO          = 0.75
       ALL_OPEN_LATENCY_CV_MAX = 0.35
@@ -32,7 +32,7 @@ module Nokizaru
       ALL_PORT_SPEC      = "all"
       MAX_PORT           = 65_535
 
-      # port => service name, the default "top 100+" scan set. Ports PORT_LIST.
+      # port => service name, the default "top 100+" scan set.
       PORT_LIST = {
         1 => "tcpmux", 9 => "Discard", 15 => "netstat", 20 => "FTP-CLI", 21 => "FTP", 22 => "SSH", 23 => "Telnet",
         25 => "SMTP", 26 => "rsftp", 53 => "DNS", 67 => "DHCP (Server)", 68 => "DHCP (Client)", 69 => "TFTP",
@@ -83,7 +83,7 @@ module Nokizaru
         end
 
         # Open port numbers worth carrying forward, excluding tarpit-downgraded
-        # ones. Ports artifact_ports.
+        # ones.
         def artifact_ports : Array(String)
           @ports.compact_map { |record| record.port.to_s unless record.confidence == "low" }
         end

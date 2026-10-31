@@ -8,8 +8,7 @@ module Nokizaru
   module DirRec
     # Pure field extraction and normalization over a response: the title, a stable
     # body fingerprint, the content type, and the redirect pattern used to cluster
-    # path-preserving redirects. Ports the normalization and fingerprint helpers
-    # from dirrec/redirects.rb. Each is one O(len) pass over a single value.
+    # path-preserving redirects. Each is one O(len) pass over a single value.
     module Fields
       extend self
 

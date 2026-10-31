@@ -38,7 +38,7 @@ module Nokizaru
     INTERESTING_STATUSES       = {200, 204, 401, 403, 405, 500}
     FINDING_CANDIDATE_STATUSES = {200, 204, 401, 403, 405, 500, 301, 302, 303, 307, 308}
 
-    # WAF-likelihood scoring and noise-suppression thresholds (confidence.rb).
+    # WAF-likelihood scoring and noise-suppression thresholds.
     WAF_LIKELIHOOD_HIGH                = 0.75
     WAF_REDIRECT_CLUSTER_DOMINANCE     = 0.85
     WAF_SENSITIVE_HOMOGENEITY          =  0.8

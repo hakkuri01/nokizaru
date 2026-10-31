@@ -5,10 +5,10 @@ require "./fetcher"
 
 module Nokizaru
   module Wayback
-    # The strict CDX request/response boundary. Ports modules/wayback/cdx.rb. The
-    # response is untrusted JSON from web.archive.org, so parsing is defensive:
-    # byte-capped, one O(bytes) pass, every field type/size checked and rejected
-    # on anything unexpected. A page is at most PAGE_SIZE rows.
+    # The strict CDX request/response boundary. The response is untrusted JSON
+    # from web.archive.org, so parsing is defensive: byte-capped, one O(bytes)
+    # pass, every field type/size checked and rejected on anything unexpected.
+    # A page is at most PAGE_SIZE rows.
     module Cdx
       extend self
 

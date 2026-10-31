@@ -28,10 +28,10 @@ module Nokizaru
       end
     end
 
-    # GETs over the shared pool with the crawler's retry semantics: TLS
-    # verification off, redirects handled by the caller (not the pool), and a
-    # retry on a 429/5xx or a transport error, backing off 0.15*attempt up to
-    # MAX_HTTP_RETRIES. Also follows same-scope redirects for resource fetches.
+    # GETs over the shared pool with the crawler's retry semantics: redirects are
+    # handled by the caller (not the pool), and a retry follows a 429/5xx or a
+    # transport error, backing off 0.15*attempt up to MAX_HTTP_RETRIES. Also
+    # follows same-scope redirects for resource fetches.
     # Complexity: O(1) requests per call (a fixed retry budget, a fixed redirect
     # budget); retains at most one capped sitemap seed and one worker origin.
     class Fetcher
@@ -75,7 +75,7 @@ module Nokizaru
 
       # Follows same-scope redirects up to MAX_MAIN_REDIRECTS, dropping the
       # operator headers on an origin change (so credentials never leak to a
-      # sibling host). Ports fetch_following_same_scope_redirects.
+      # sibling host).
       def fetch_following(url : String, headers : ::HTTP::Headers) : ResourceFetch
         normalized = TargetIntel.normalize_http_url(url)
         return ResourceFetch.new(nil, url, 0, "invalid_url") if normalized.nil?
@@ -232,9 +232,8 @@ module Nokizaru
     # The main-page fetch state machine. Fetches the scan target, falls back to a
     # browser user-agent on a bot block (403/405/429), and follows same-scope
     # redirects up to MAX_MAIN_REDIRECTS, recording the fetch profiles along the
-    # way. Ports crawler/http.rb's fetch_page_status and its helpers. Complexity:
-    # O(1) rounds (fixed redirect budget plus one fallback), each an O(1)-request
-    # fetch.
+    # way. Complexity: O(1) rounds (fixed redirect budget plus one fallback),
+    # each an O(1)-request fetch.
     class MainFetch
       def initialize(@fetcher : Fetcher, @request_headers : ::HTTP::Headers)
       end

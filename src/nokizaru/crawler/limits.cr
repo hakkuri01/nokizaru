@@ -1,10 +1,8 @@
 module Nokizaru
   # The passive crawler: fetch the target, extract links from the HTML, read
-  # robots.txt and the sitemap graph, and pull URLs out of same-scope
-  # JavaScript. Ports modules/crawler.rb and its crawler/* helpers. Every
-  # collection is capped so an adversarial target cannot make the crawl grow
-  # without bound. UI rendering, logging, and the ctx/progress wiring are
-  # assembled with the runner.
+  # robots.txt and the sitemap graph, and pull URLs out of same-scope JavaScript.
+  # Every collection is capped so an adversarial target cannot make the crawl
+  # grow without bound.
   module Crawler
     # Per-request fetch budget, matching the Ruby crawler.
     TIMEOUT          = 10.0

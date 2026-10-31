@@ -288,9 +288,9 @@ gate through `nix flake check`.
 ## Committing
 
 - **One logical change per commit.** Release commits lead with the version and a
-  colon (`1.0.0: ...`); smaller commits use a category prefix (`Docs:`, `Chore:`,
-  `Fix:`) or a brief bare summary. Capitalized, no trailing period, no body unless
-  it earns one.
+  colon (`1.0.0: ...`); smaller commits use a lowercase category prefix (`docs:`,
+  `chore:`, `fix:`, `feat:`) or a brief bare summary. Lowercase throughout, no
+  trailing period, no body unless it earns one.
 - **No AI attribution** anywhere, in a commit or a PR.
 - Agent commits only when the owner asks; the owner pushes.
 

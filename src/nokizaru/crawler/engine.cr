@@ -16,9 +16,8 @@ module Nokizaru
     # Orchestrates one crawl: re-anchor the target, fetch the landing page, pull
     # links from the HTML and robots/sitemaps, crawl the sitemap graph and
     # same-scope JavaScript, then compute the stats and high-signal ranking.
-    # Ports crawler.rb's `call` plus crawler/core.rb's orchestration. One scan's
-    # worth of work: the page is parsed once, every collection is capped, and the
-    # budget bounds the deep crawl.
+    # One scan's worth of work: the page is parsed once, every collection is
+    # capped, and the budget bounds the deep crawl.
     class Engine
       WAYBACK_SEED_CAP = 10
 

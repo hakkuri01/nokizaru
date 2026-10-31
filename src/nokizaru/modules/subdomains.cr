@@ -10,13 +10,12 @@ require "../ui"
 
 module Nokizaru
   module Modules
-    # Subdomain enumeration across a curated 17-source set (Nokizaru::Modules::Subdomains),
-    # driving the Nokizaru::Subdom engine. Ports modules/subdom.rb. The JSON
-    # result matches the Ruby run hash (parity): the sorted unique subdomains
-    # plus a provider_health summary. The event-capture/replay machinery that
-    # ordered concurrent provider UI output in the Ruby tool is a rendering
-    # concern and is replaced by each provider returning a typed Outcome; the UI
-    # rendering wires up with the runner.
+    # Subdomain enumeration across a curated 17-source set
+    # (Nokizaru::Modules::Subdomains), driving the Nokizaru::Subdom engine. The
+    # JSON result matches the Ruby run hash (parity): the sorted unique
+    # subdomains plus a provider_health summary. Each provider returns a typed
+    # Outcome, so concurrent provider output needs no capture-and-replay step to
+    # come out in a stable order.
     module Subdomains
       extend self
 
@@ -124,12 +123,13 @@ module Nokizaru
         end.uniq!
       end
 
-      # Subdomains harvested from the TLS certificate's SAN list (certificate
-      # transparency is the passive source subfinder-class tools lean on). Only
-      # strict subdomains of the target host are kept; a wildcard SAN is reduced to
-      # its base, and the apex and out-of-scope names are dropped (the enumerator
-      # re-applies scope, this keeps the seed set tight). sslinfo runs before this
-      # module, so its result is already on the run state.
+      # Subdomains harvested from the TLS certificate's SAN list: a certificate
+      # names every host it is valid for, so one handshake the scan already made
+      # yields names no provider has to be asked for. Only strict subdomains of
+      # the target host are kept; a wildcard SAN is reduced to its base, and the
+      # apex and out-of-scope names are dropped (the enumerator re-applies scope,
+      # this keeps the seed set tight). sslinfo runs before this module, so its
+      # result is already on the run state.
       private def certificate_seeds(sslinfo : Modules::SSLInfo::Result?, host : String) : Array(String)
         cert = sslinfo.try(&.cert)
         return [] of String if cert.nil?

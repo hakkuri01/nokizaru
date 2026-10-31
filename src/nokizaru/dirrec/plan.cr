@@ -7,9 +7,8 @@ require "./fields"
 module Nokizaru
   module DirRec
     # The enumeration plan: the seed URLs (high-signal paths plus crawler-derived
-    # paths), the prioritized word list, and the file extensions. Ports the pure
-    # planning of dirrec/preparation.rb (build_scan_plan). crawler_paths are
-    # supplied already extracted from the crawler result.
+    # paths), the prioritized word list, and the file extensions. Planning is
+    # pure; crawler_paths are supplied already extracted from the crawler result.
     struct UrlPlan
       getter seed_urls : Array(String)
       getter crawler_paths : Array(String)

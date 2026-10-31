@@ -19,12 +19,11 @@ require "./workflow_failures"
 module Nokizaru::CLI
   # The scan runner: resolves the target, plans the module set and export
   # destination, runs each enabled module in order, then finalizes (timing,
-  # findings, export, completion). Ports the Ruby Runner::Workflow. The Crystal
-  # modules are pure `collect→Result`, so this stores each typed Result on the
-  # run and drives each module's `present`; guarded failures and port skips are
-  # recorded as typed outcome envelopes under the same exported module keys.
-  # The interactive Session drives plan!/execute!/
-  # finalize! directly; classic mode calls `run`.
+  # findings, export, completion). The Crystal modules are pure
+  # `collect→Result`, so this stores each typed Result on the run and drives each
+  # module's `present`; guarded failures and port skips are recorded as typed
+  # outcome envelopes under the same exported module keys. The interactive
+  # Session drives plan!/execute!/finalize! directly; classic mode calls `run`.
   class Workflow
     # A fatal condition the runner cannot proceed past (no target, no modules, a
     # bad export option). CLI.start renders the message and exits non-zero.
@@ -342,7 +341,7 @@ module Nokizaru::CLI
     # background (Crystal has no fiber cancellation); its result is dropped. The
     # process is short-lived and the modules bound their own IO, so the abandoned
     # fiber is harmless. Upgrade path: a cancellation token threaded through the
-    # HTTP pool, deferred.
+    # HTTP pool.
     private def with_timeout(seconds : Float64, &block : -> T) : T forall T
       return block.call if seconds <= 0.0
 

@@ -6,11 +6,10 @@ require "../ui"
 
 module Nokizaru
   module Modules
-    # Response header collection. Fetches the target once (no redirects, TLS
-    # verification off, as the Ruby tool did), records the headers and the target
-    # redirect profile, and never reads the body. Field names and shape match the
-    # Ruby JSON (the parity contract). Ports modules/headers.rb. The UI rendering
-    # and ctx/progress wiring are assembled with the runner.
+    # Response header collection. Fetches the target once, following no
+    # redirects, and records the headers and the target redirect profile without
+    # ever reading the body. Field names and shape match the Ruby JSON (the
+    # parity contract).
     module Headers
       extend self
 

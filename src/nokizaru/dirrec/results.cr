@@ -15,7 +15,8 @@ module Nokizaru
     # Assembles the scan result at finalize: re-decides every observation against
     # the final soft-404 baseline and WAF context, demotes a dominant homogeneous
     # guess cluster, buckets by confidence, ranks the high-signal paths, and
-    # builds the stats block. Ports the deterministic parts of dirrec/results.rb.
+    # builds the stats block. Assembly is pure: it reads the observations the
+    # runtime collected and never issues a request of its own.
     # Complexity: one O(observations) reconcile and O(k log k) ranking, once.
     module Results
       extend self

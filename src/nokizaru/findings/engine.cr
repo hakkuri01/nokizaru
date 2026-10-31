@@ -10,11 +10,10 @@ require "./adversary_rules"
 module Nokizaru
   module Findings
     # Runs every available rule over the typed run state and returns the combined
-    # findings. Each rule consumes one module's typed result. The directory rule
-    # is added here when that module lands (its result type does not exist yet),
-    # so the aggregation grows one line at a time. Ports findings/engine.rb; the
-    # Ruby normalize step (defaulting a missing id or severity) is unnecessary
-    # because a typed Finding always carries both.
+    # findings. Each rule consumes one module's typed result, so a module that
+    # did not run contributes nothing instead of producing a finding about
+    # missing data. No normalize step is needed: a typed Finding always carries
+    # an id and a severity, so there is nothing to default.
     module Engine
       extend self
 

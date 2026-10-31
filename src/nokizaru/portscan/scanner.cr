@@ -93,7 +93,7 @@ module Nokizaru
       end
 
       # One port is open when a TCP connect completes; `verify` requires a second
-      # connect to agree, cutting transient false positives. Ports open_port?.
+      # connect to agree, cutting transient false positives.
       private def open?(ip : String, port : Int32, options : Options) : Bool
         (options.retries + 1).times do
           next unless connect?(ip, port, options.connect_timeout)
@@ -113,7 +113,7 @@ module Nokizaru
 
       # min(threads * 20, 1024, fd_safe_limit). Security: bounding socket
       # fan-out guards against local FD exhaustion and accidental traffic
-      # spikes. Ports large_scan_concurrency.
+      # spikes.
       def self.large_scan_concurrency(threads : Int32) : Int32
         requested = {threads, 1}.max * LARGE_SCAN_CONCURRENCY_MULTIPLIER
         {requested, LARGE_SCAN_MAX_CONCURRENCY, fd_safe_limit}.min
@@ -134,7 +134,7 @@ module Nokizaru
 
     # Spaces probe starts to at most rate_per_second across all fibers. A Mutex
     # serializes the next-start time so the whole scan honors one rate; a rate
-    # of zero is a no-op. Ports throttle_probe!.
+    # of zero is a no-op.
     class Throttle
       def initialize(rate_per_second : Float64)
         @interval = rate_per_second > 0 ? (1.0 / rate_per_second).seconds : Time::Span.zero

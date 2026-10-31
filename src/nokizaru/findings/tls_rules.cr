@@ -4,7 +4,7 @@ require "../modules/sslinfo"
 module Nokizaru
   module Findings
     # TLS certificate posture findings: expired or soon-to-expire certificates.
-    # Consumes the typed sslinfo result. Ports findings/tls_rules.rb.
+    # Consumes the typed sslinfo result.
     module TLSRules
       extend self
 

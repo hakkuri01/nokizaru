@@ -13,9 +13,8 @@ module Nokizaru
     # matches, redirect-pattern clustering, and sensitive-status homogeneity,
     # plus edge/WAF hints read once from the headers and crawler results. From
     # these it derives a WAF-likelihood score and downgrades confidence decisions
-    # that look like anti-enumeration noise. Ports the deferred context/WAF part
-    # of dirrec/confidence.rb. update! is O(1) per response; the snapshot is
-    # memoized and recomputed only after a change.
+    # that look like anti-enumeration noise. update! is O(1) per response; the
+    # snapshot is memoized and recomputed only after a change.
     class ConfidenceContext
       SENSITIVE       = {401, 403, 405, 500}
       HINT_NAMES      = %w[headers_edge_hint crawler_blocked_hint crawler_low_unique_hint]

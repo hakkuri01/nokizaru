@@ -45,9 +45,9 @@ module Nokizaru
 
     # Selects a small, diverse set of useful replay snapshots from CDX history:
     # one set anchored near fixed look-back windows, one set at content/status/
-    # mime transitions. Ports modules/wayback/history.rb. The record sets are
-    # bounded by the CDX caps, so selection is O(n) grouping plus O(k log k)
-    # ranking of the matched candidates.
+    # mime transitions. The record sets are bounded by the CDX caps, so
+    # selection is O(n) grouping plus O(k log k) ranking of the matched
+    # candidates.
     module History
       extend self
 

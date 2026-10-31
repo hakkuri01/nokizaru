@@ -4,10 +4,10 @@ require "../target_intel"
 
 module Nokizaru
   module Crawler
-    # Pure URL normalization and scope helpers for link extraction. Ports
-    # crawler/link_support.rb plus the sitemap-candidate and base-URL helpers.
-    # Every method is O(len) over a single URL (or O(n) for cap_links over a
-    # list), with scope decided by the registrable domain through TargetIntel.
+    # Pure URL normalization and scope helpers for link extraction, plus the
+    # sitemap-candidate and base-URL helpers. Every method is O(len) over a
+    # single URL (or O(n) for cap_links over a list), with scope decided by the
+    # registrable domain through TargetIntel.
     module UrlRules
       extend self
 

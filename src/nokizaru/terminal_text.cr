@@ -94,9 +94,9 @@ module Nokizaru
     # Hard-wraps at cols cells like a terminal does, reopening the active color on each continuation row.
     # ponytail: reopening the open SGR state on each continuation row is O(rows x open-SGR length), so one
     # line packed with distinct non-reset SGR codes is O(n^2 / cols) (measured ~13x allocation at 4x input).
-    # The bound is the caller: the TUI feed caps line bytes (lands with the dashboard) before a line reaches
+    # The bound is the caller: the TUI feed caps line bytes before a line reaches
     # wrap, so n is bounded; the upgrade path is collapsing the active state to a canonical fg/bg/attrs set,
-    # which is O(1) however many SGR codes the target sent. Flagged for the Phase B complexity review.
+    # which is O(1) however many SGR codes the target sent.
     def wrap(line : String, cols : Int32) : Array(String)
       return [line] if cols <= 0 || width(line) <= cols
 

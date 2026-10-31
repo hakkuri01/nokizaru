@@ -12,8 +12,9 @@ module Nokizaru
     SAME_HOST_SCOPE = ->(left : String, right : String) { left.downcase == right.downcase }
 
     # Per-request knobs, grouped so the request methods stay within the parameter
-    # budget. Defaults match the Ruby build: follow redirects. TLS verification is
-    # not a per-request knob: the pool decides it from the operator's one choice.
+    # budget. Redirects are followed by default, matching the Ruby build. TLS
+    # verification is not a per-request knob: the pool decides it from the
+    # operator's one choice.
     struct Options
       getter headers : ::HTTP::Headers
       getter timeout_s : Float64
@@ -44,18 +45,18 @@ module Nokizaru
 
     # A per-origin pool of persistent clients. Sequential requests to the same
     # origin reuse one connection; the key is (scheme, host, port, verify), looked
-    # up in O(1) through a Hash behind a Mutex. Ports Ruby's ConnectionPool, and
-    # is the transport the scan context injects into modules. Operator headers are
-    # passed per request rather than baked into the key, so one connection serves
-    # a host regardless of per-request header variation.
+    # up in O(1) through a Hash behind a Mutex. This is the transport the scan
+    # context injects into modules. Operator headers are passed per request
+    # rather than baked into the key, so one connection serves a host regardless
+    # of per-request header variation.
     class Pool
       setter scope_check : Proc(String, String, Bool)
 
       # `insecure_host` is the one host whose certificate is not verified: the
       # operator's --insecure choice applies to the target they aimed at, never to
       # the third-party APIs a scan also talks to (providers, archives, RDAP),
-      # whose certificates stay verified. A per-request option can only narrow
-      # verification, never widen it.
+      # whose certificates stay verified. Verification is not a per-request knob,
+      # so no caller can widen it.
       def initialize(*, @scope_check : Proc(String, String, Bool) = SAME_HOST_SCOPE,
                      @insecure_host : String? = nil,
                      @destination : Proc(String, Bool)? = nil,
@@ -94,7 +95,8 @@ module Nokizaru
       # Location. On an origin change the operator's custom headers are dropped so
       # credentials never leak to a different origin; an out-of-scope or downgraded
       # Location stops the chain and returns the 3xx response for the caller to
-      # inspect. Ports the dirrec/crawler redirect rules (security-critical).
+      # inspect. The dirrec and crawler redirect rules both route through here,
+      # so the scope and credential decisions have one home (security-critical).
       private def follow(method : String, url : String, options : Options, result : Result) : Result
         current = url
         current_options = options

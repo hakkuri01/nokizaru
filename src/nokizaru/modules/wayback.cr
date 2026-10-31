@@ -12,9 +12,7 @@ module Nokizaru
   module Modules
     # The Wayback Machine module entry. Runs the query engine and assembles the
     # typed payload (the parity contract), falling back to a failed payload on an
-    # unexpected error, as the Ruby Wayback.call did. The UI rendering, the
-    # add_artifact("urls"/"wayback_*", ...) calls, and the ctx/progress wiring are
-    # assembled with the runner.
+    # unexpected error so one archive outage never fails the whole scan.
     module Wayback
       extend self
 

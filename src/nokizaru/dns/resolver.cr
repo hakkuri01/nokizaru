@@ -5,8 +5,8 @@ module Nokizaru
     # Resolves a hostname to an IP for connection setup, preferring IPv4 as the
     # Ruby resolver did. stdlib getaddrinfo is concurrency-safe in 1.21; the
     # lookup runs in a fiber and a select enforces the deadline, returning
-    # nil if the lookup outruns it. Ports resolve_hostname_ip; record
-    # enumeration (the dns module, 38 types) is its own wire client.
+    # nil if the lookup outruns it. This resolves a name for connection setup
+    # only; record enumeration (the dns module, 38 types) is its own wire client.
     class Resolver
       DEFAULT_TIMEOUT = 5.0
 

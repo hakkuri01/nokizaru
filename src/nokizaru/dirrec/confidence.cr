@@ -17,10 +17,10 @@ module Nokizaru
       end
     end
 
-    # Scores one candidate response into a confidence decision. Ports the
-    # deterministic core of dirrec/confidence.rb (finding_confidence and its
-    # predicates); the WAF-context adjustment that depends on live runtime
-    # counters lands with the runtime. Each call is O(len) over the URL/sample.
+    # Scores one candidate response into a confidence decision. Scoring is pure
+    # and depends only on the URL and the sample; the WAF-context adjustment that
+    # needs live counters lives in ConfidenceContext, so this stays testable
+    # without a running scan. Each call is O(len) over the URL/sample.
     module Confidence
       extend self
 

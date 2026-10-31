@@ -6,10 +6,10 @@ module Nokizaru
   module DirRec
     # The lazy candidate queue: it walks seed URLs, then base words, then the
     # word×extension product, by cursor, materializing no list and deduplicating
-    # through a Set. Ports dirrec/lazy_directory_queue.rb; `pop` returns nil when
-    # exhausted (the Ruby version raised ThreadError). Thread-safe for the worker
-    # fibers via a Mutex. Complexity: O(1) amortized per pop; memory is the seen
-    # Set plus the cursor, never the full candidate space.
+    # through a Set. `pop` returns nil when exhausted (the Ruby version raised
+    # ThreadError). Thread-safe for the worker fibers via a Mutex. Complexity:
+    # O(1) amortized per pop; memory is the seen Set plus the cursor, never the
+    # full candidate space.
     class LazyQueue
       enum Stage
         Seed

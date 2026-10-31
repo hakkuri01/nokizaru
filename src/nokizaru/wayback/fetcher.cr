@@ -6,9 +6,10 @@ module Nokizaru
     READ_TIMEOUT     = 10.0
     MIN_RETRY_BUDGET = 0.25
 
-    # GETs the Wayback endpoints with the Ruby retry policy:
-    # redirects off, and a retry only on a 429/5xx (never on a transport error,
-    # matching with_retries), all attempts and backoff share one deadline. Complexity:
+    # GETs the Wayback endpoints with the Ruby retry policy: redirects off, and a
+    # retry only on a 429/5xx and never on a transport error, because a refused
+    # or reset connection to the archive is not something a second attempt fixes;
+    # all attempts and backoff share one deadline. Complexity:
     # O(1) requests per call (fixed retry budget). Named Fetcher so `Http::*`
     # inside Wayback still resolves to the Nokizaru::Http module.
     class Fetcher
